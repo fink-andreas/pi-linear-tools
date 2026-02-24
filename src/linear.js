@@ -567,67 +567,37 @@ export async function createIssue(client, input) {
     throw new Error('Failed to create issue');
   }
 
-  // The create response has _issue (private property), not issue
-  const created = result._issue;
+  // Prefer official data path: resolve created issue ID then refetch full issue.
+  const createdIssueId =
+    result.issue?.id
+    || result._issue?.id
+    || null;
 
-  // Try to fetch the full issue to get computed fields like identifier
-  try {
-    if (!created?.id) {
-      throw new Error('created.id is missing');
+  if (createdIssueId) {
+    try {
+      const fullIssue = await client.issue(createdIssueId);
+      if (fullIssue) {
+        const transformed = await transformIssue(fullIssue);
+        return transformed;
+      }
+    } catch {
+      // continue to fallback
     }
-    const fullIssue = await client.issue(created.id);
-    if (fullIssue) {
-      const transformed = await transformIssue(fullIssue);
-      return transformed;
-    }
-  } catch {
-    // Continue with fallback
   }
 
-  // Fallback: Build response from create result + input values
-  const issueResponse = {
-    id: created.id,
-    identifier: created.identifier || null,
-    title: created.title || title,
-    description: created.description ?? input.description ?? null,
-    url: created.url || null,
-    priority: created.priority ?? input.priority ?? null,
+  // Minimal fallback when SDK payload does not expose a resolvable issue ID.
+  return {
+    id: createdIssueId,
+    identifier: null,
+    title,
+    description: input.description ?? null,
+    url: null,
+    priority: input.priority ?? null,
     state: null,
     team: null,
     project: null,
     assignee: null,
   };
-
-  // Try to resolve relations (they may be promises)
-  try {
-    if (created.team) {
-      const teamData = await created.team;
-      if (teamData) issueResponse.team = { id: teamData.id, key: teamData.key, name: teamData.name };
-    }
-  } catch { /* ignore */ }
-
-  try {
-    if (created.project) {
-      const projectData = await created.project;
-      if (projectData) issueResponse.project = { id: projectData.id, name: projectData.name };
-    }
-  } catch { /* ignore */ }
-
-  try {
-    if (created.state) {
-      const stateData = await created.state;
-      if (stateData) issueResponse.state = { id: stateData.id, name: stateData.name, type: stateData.type };
-    }
-  } catch { /* ignore */ }
-
-  try {
-    if (created.assignee) {
-      const assigneeData = await created.assignee;
-      if (assigneeData) issueResponse.assignee = { id: assigneeData.id, name: assigneeData.name, displayName: assigneeData.displayName };
-    }
-  } catch { /* ignore */ }
-
-  return issueResponse;
 }
 
 /**
@@ -743,10 +713,18 @@ export async function updateIssue(client, issueRef, patch = {}) {
     throw new Error('Failed to update issue');
   }
 
-  const updatedIssue = await transformIssue(result.issue);
+  // Prefer official data path: refetch the issue after successful mutation.
+  let updatedSdkIssue = null;
+  try {
+    updatedSdkIssue = await client.issue(targetIssue.id);
+  } catch {
+    updatedSdkIssue = null;
+  }
+
+  const updatedIssue = await transformIssue(updatedSdkIssue);
 
   return {
-    issue: updatedIssue,
+    issue: updatedIssue || targetIssue,
     changed: Object.keys(updateInput),
   };
 }
