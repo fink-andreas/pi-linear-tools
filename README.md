@@ -152,3 +152,4 @@ node index.js --help
 ```
 
 Release checklist: see `RELEASE.md`.
+Post-release verification checklist: see `POST_RELEASE_CHECKLIST.md`.
