@@ -678,6 +678,18 @@ export async function updateIssue(client, issueRef, patch = {}) {
   const targetIssue = await resolveIssue(client, issueRef);
   const updateInput = {};
 
+  debug('updateIssue: received patch', {
+    issueRef,
+    resolvedIssueId: targetIssue?.id,
+    resolvedIdentifier: targetIssue?.identifier,
+    patchKeys: Object.keys(patch || {}),
+    hasTitle: patch.title !== undefined,
+    hasDescription: patch.description !== undefined,
+    priority: patch.priority,
+    state: patch.state,
+    assigneeId: patch.assigneeId,
+  });
+
   if (patch.title !== undefined) {
     updateInput.title = String(patch.title);
   }
@@ -704,6 +716,17 @@ export async function updateIssue(client, issueRef, patch = {}) {
     const states = await getTeamWorkflowStates(client, team.id);
     updateInput.stateId = resolveStateIdFromInput(states, patch.state);
   }
+
+  if (patch.assigneeId !== undefined) {
+    updateInput.assigneeId = patch.assigneeId;
+  }
+
+  debug('updateIssue: computed update input', {
+    issueRef,
+    resolvedIdentifier: targetIssue?.identifier,
+    updateKeys: Object.keys(updateInput),
+    updateInput,
+  });
 
   if (Object.keys(updateInput).length === 0) {
     throw new Error('No update fields provided');
