@@ -147,12 +147,68 @@ async function testIssueToolListUsesSdkWrapper() {
   }
 }
 
+async function testInteractiveConfigWizard() {
+  const prev = process.env.LINEAR_API_KEY;
+  delete process.env.LINEAR_API_KEY;
+
+  try {
+    await withTempHome(async () => {
+      const mockClient = {
+        viewer: Promise.resolve({
+          id: 'u1',
+          name: 'Tester',
+          displayName: 'Tester',
+          organization: Promise.resolve({ id: 'w1', name: 'Workspace One', urlKey: 'workspace-one' }),
+        }),
+        teams: async () => ({
+          nodes: [{ id: 't1', key: 'ENG', name: 'Engineering' }],
+        }),
+      };
+
+      setTestClientFactory(() => mockClient);
+
+      const pi = createMockPi();
+      extension(pi);
+
+      const config = pi.commands.get('linear-tools-config').handler;
+
+      const ctx = {
+        hasUI: true,
+        ui: {
+          async select(_title, options) {
+            if (options.includes('OAuth')) return 'API Key';
+            if (options[0].includes('Workspace One')) return options[0];
+            if (options[0].includes('ENG')) return options[0];
+            return undefined;
+          },
+          async input() {
+            return 'lin_interactive_key';
+          },
+          notify() {},
+        },
+      };
+
+      await config('', ctx);
+
+      const settings = JSON.parse(await readFile(getSettingsPath(), 'utf-8'));
+      assert.equal(settings.linearApiKey, 'lin_interactive_key');
+      assert.equal(settings.defaultTeam, 'ENG');
+      assert.equal(settings.defaultWorkspace.id, 'w1');
+      assert.equal(settings.defaultWorkspace.name, 'Workspace One');
+    });
+  } finally {
+    resetTestClientFactory();
+    process.env.LINEAR_API_KEY = prev;
+  }
+}
+
 async function main() {
   await testRegistration();
   await testConfigSavesApiKey();
   await testConfigSavesDefaultTeam();
   await testIssueToolRequiresApiKey();
   await testIssueToolListUsesSdkWrapper();
+  await testInteractiveConfigWizard();
   console.log('✓ tests/test-extension-registration.js passed');
 }
 

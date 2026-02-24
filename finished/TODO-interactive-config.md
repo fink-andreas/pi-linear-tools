@@ -1,0 +1,5 @@
+- [x] Add workspace-fetch helper in `src/linear.js`
+- [x] Implement interactive `/linear-tools-config` wizard in `extensions/pi-linear-tools.js`
+- [x] Integrate wizard as default no-args path (UI mode) with non-UI fallback unchanged
+- [x] Add tests for interactive config flow in `tests/test-extension-registration.js`
+- [x] Run full test suite and verify

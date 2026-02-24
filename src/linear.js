@@ -251,6 +251,29 @@ export async function fetchProjects(client) {
 }
 
 /**
+ * Fetch available workspaces (organization context) from Linear API
+ * @param {LinearClient} client - Linear SDK client
+ * @returns {Promise<Array<{id: string, name: string}>>}
+ */
+export async function fetchWorkspaces(client) {
+  const viewer = await client.viewer;
+  const organization = await (viewer?.organization?.catch?.(() => null) ?? viewer?.organization ?? null);
+
+  if (!organization) {
+    debug('No organization available from viewer context');
+    return [];
+  }
+
+  const workspace = { id: organization.id, name: organization.name || organization.urlKey || 'Workspace' };
+
+  debug('Fetched Linear workspace from viewer organization', {
+    workspace,
+  });
+
+  return [workspace];
+}
+
+/**
  * Fetch all accessible teams from Linear API
  * @param {LinearClient} client - Linear SDK client
  * @returns {Promise<Array<{id: string, key: string, name: string}>>}

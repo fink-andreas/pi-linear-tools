@@ -28,6 +28,7 @@ async function testDefaults() {
   assert.equal(defaults.schemaVersion, 1);
   assert.equal(defaults.linearApiKey, null);
   assert.equal(defaults.defaultTeam, null);
+  assert.equal(defaults.defaultWorkspace, null);
   assert.deepEqual(defaults.projects, {});
 }
 
