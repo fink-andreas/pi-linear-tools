@@ -1,0 +1,45 @@
+{
+  "name": "pi-linear-tools",
+  "version": "0.1.0",
+  "description": "Pi extension with Linear SDK tools and configuration commands",
+  "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "main": "index.js",
+  "bin": {
+    "pi-linear-tools": "bin/pi-linear-tools.js"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "extensions/",
+    "index.js",
+    "README.md",
+    "FUNCTIONALITY.md",
+    "settings.json.example"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "test": "node tests/test-package-manifest.js && node tests/test-extension-registration.js && node tests/test-settings.js"
+  },
+  "keywords": [
+    "linear",
+    "pi",
+    "pi-package",
+    "tools",
+    "sdk"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions"
+    ]
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@linear/sdk": "^75.0.0"
+  }
+}
