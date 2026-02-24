@@ -17,6 +17,7 @@
     "index.js",
     "README.md",
     "CHANGELOG.md",
+    "RELEASE.md",
     "FUNCTIONALITY.md",
     "settings.json.example"
   ],
@@ -25,7 +26,8 @@
   },
   "scripts": {
     "start": "node index.js",
-    "test": "node tests/test-package-manifest.js && node tests/test-extension-registration.js && node tests/test-settings.js && node tests/test-assignee-update.js && node tests/test-full-assignee-flow.js"
+    "test": "node tests/test-package-manifest.js && node tests/test-extension-registration.js && node tests/test-settings.js && node tests/test-assignee-update.js && node tests/test-full-assignee-flow.js",
+    "release:check": "npm test && npm pack --dry-run"
   },
   "keywords": [
     "linear",

@@ -147,5 +147,8 @@ Environment fallback:
 ```bash
 npm install
 npm test
+npm run release:check
 node index.js --help
 ```
+
+Release checklist: see `RELEASE.md`.
