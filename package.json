@@ -24,7 +24,7 @@
   },
   "scripts": {
     "start": "node index.js",
-    "test": "node tests/test-package-manifest.js && node tests/test-extension-registration.js && node tests/test-settings.js && node tests/test-assignee-update.js"
+    "test": "node tests/test-package-manifest.js && node tests/test-extension-registration.js && node tests/test-settings.js && node tests/test-assignee-update.js && node tests/test-full-assignee-flow.js"
   },
   "keywords": [
     "linear",
