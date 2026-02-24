@@ -515,22 +515,41 @@ async function executeIssueCreate(client, params) {
 async function executeIssueUpdate(client, params) {
   const issue = ensureNonEmpty(params.issue, 'issue');
 
-  const result = await updateIssue(client, issue, {
+  const updatePatch = {
     title: params.title,
     description: params.description,
     priority: params.priority,
     state: params.state,
-  });
+  };
 
-  const friendlyChanges = result.changed.map((field) => (field === 'stateId' ? 'state' : field));
+  // Handle assignee parameter
+  if (params.assignee === 'me') {
+    const viewer = await client.viewer;
+    updatePatch.assigneeId = viewer.id;
+  } else if (params.assignee) {
+    updatePatch.assigneeId = params.assignee;
+  }
+
+  const result = await updateIssue(client, issue, updatePatch);
+
+  const friendlyChanges = result.changed.map((field) => {
+    if (field === 'stateId') return 'state';
+    if (field === 'assigneeId') return 'assignee';
+    return field;
+  });
   const changeSummaryParts = [];
 
   if (friendlyChanges.includes('state') && result.issue?.state?.name) {
     changeSummaryParts.push(`state: ${result.issue.state.name}`);
   }
 
+  if (friendlyChanges.includes('assignee')) {
+    const assigneeLabel = result.issue?.assignee?.displayName || 'Unassigned';
+    changeSummaryParts.push(`assignee: ${assigneeLabel}`);
+  }
+
   for (const field of friendlyChanges) {
-    if (field !== 'state') changeSummaryParts.push(field);
+    if (field !== 'state' && field !== 'assignee') changeSummaryParts.push(field);
   }
 
   const suffix = changeSummaryParts.length > 0

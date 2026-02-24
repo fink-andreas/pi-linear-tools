@@ -705,6 +705,10 @@ export async function updateIssue(client, issueRef, patch = {}) {
     updateInput.stateId = resolveStateIdFromInput(states, patch.state);
   }
 
+  if (patch.assigneeId !== undefined) {
+    updateInput.assigneeId = patch.assigneeId;
+  }
+
   if (Object.keys(updateInput).length === 0) {
     throw new Error('No update fields provided');
   }
