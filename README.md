@@ -1,6 +1,6 @@
 # pi-linear-tools
 
-`pi-linear-tools` is a **Pi extension package** for the [Pi coding harness](https://github.com/badlogic/pi-mono), with Linear SDK-powered tools for issues, projects, and milestones.
+`pi-linear-tools` is a **Pi extension package** for the [Pi coding agent](https://github.com/badlogic/pi-mono), with Linear SDK-powered tools for issues, projects, and milestones.
 
 ## Install
 
