@@ -9,7 +9,7 @@ async function main() {
   const packageJsonPath = resolve('package.json');
   const packageJson = JSON.parse(await readFile(packageJsonPath, 'utf-8'));
 
-  assert.equal(packageJson.name, 'pi-linear-tools');
+  assert.equal(packageJson.name, '@fink-andreas/pi-linear-tools');
   assert.ok(packageJson.pi, 'package.json must contain a pi manifest');
   assert.ok(Array.isArray(packageJson.pi.extensions), 'pi.extensions must be an array');
   assert.ok(packageJson.pi.extensions.includes('./extensions'), 'pi.extensions must include ./extensions');

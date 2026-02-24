@@ -18,7 +18,7 @@ Enable the `pi-linear-tools` extension resource.
 
 ### As an npm package
 ```bash
-npm install -g pi-linear-tools
+npm install -g @fink-andreas/pi-linear-tools
 ```
 
 ## Initial configuration
