@@ -1,5 +1,6 @@
 import { loadSettings, saveSettings } from '../src/settings.js';
 import { createLinearClient } from '../src/linear-client.js';
+import { debug } from '../src/logger.js';
 import {
   prepareIssueStart,
   setIssueState,
@@ -171,6 +172,10 @@ function registerLinearTools(pi) {
         assignee: {
           type: 'string',
           description: 'For list: "me" or "all". For create/update: "me" or assignee ID.',
+        },
+        assigneeId: {
+          type: 'string',
+          description: 'Optional explicit assignee ID alias for update/create debugging/compatibility.',
         },
         limit: {
           type: 'number',
@@ -469,6 +474,8 @@ async function executeIssueCreate(client, params) {
     createInput.assigneeId = viewer.id;
   } else if (params.assignee) {
     createInput.assigneeId = params.assignee;
+  } else if (params.assigneeId) {
+    createInput.assigneeId = params.assigneeId;
   }
 
   if (params.state) {
@@ -515,6 +522,16 @@ async function executeIssueCreate(client, params) {
 async function executeIssueUpdate(client, params) {
   const issue = ensureNonEmpty(params.issue, 'issue');
 
+  debug('executeIssueUpdate: incoming params', {
+    issue,
+    hasTitle: params.title !== undefined,
+    hasDescription: params.description !== undefined,
+    priority: params.priority,
+    state: params.state,
+    assignee: params.assignee,
+    assigneeId: params.assigneeId,
+  });
+
   const updatePatch = {
     title: params.title,
     description: params.description,
@@ -522,13 +539,29 @@ async function executeIssueUpdate(client, params) {
     state: params.state,
   };
 
+  if (params.assignee !== undefined && params.assigneeId !== undefined) {
+    debug('executeIssueUpdate: both assignee and assigneeId provided; assignee takes precedence', {
+      issue,
+      assignee: params.assignee,
+      assigneeId: params.assigneeId,
+    });
+  }
+
   // Handle assignee parameter
   if (params.assignee === 'me') {
     const viewer = await client.viewer;
     updatePatch.assigneeId = viewer.id;
   } else if (params.assignee) {
     updatePatch.assigneeId = params.assignee;
+  } else if (params.assigneeId) {
+    updatePatch.assigneeId = params.assigneeId;
   }
+
+  debug('executeIssueUpdate: constructed updatePatch', {
+    issue,
+    patchKeys: Object.keys(updatePatch).filter((k) => updatePatch[k] !== undefined),
+    assigneeId: updatePatch.assigneeId,
+  });
 
   const result = await updateIssue(client, issue, updatePatch);
 
