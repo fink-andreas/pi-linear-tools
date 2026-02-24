@@ -30,11 +30,21 @@ npm install -g @fink-andreas/pi-linear-tools
 pi-linear-tools --help
 ```
 
-## GitHub release (if required)
+## GitHub release
 
 ```bash
 git tag v0.1.0
 git push origin v0.1.0
 ```
 
-Then create a GitHub release using the notes in `CHANGELOG.md`.
+Create release notes from `RELEASE_NOTES_v0.1.0.md`:
+
+```bash
+gh release create v0.1.0 --title "v0.1.0" --notes-file RELEASE_NOTES_v0.1.0.md
+```
+
+Verify release:
+
+```bash
+gh release view v0.1.0
+```

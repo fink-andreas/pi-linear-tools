@@ -13,3 +13,4 @@ Initial public release of `@fink-andreas/pi-linear-tools`.
 ### Notes
 - npm package: `@fink-andreas/pi-linear-tools`
 - Planned git tag: `v0.1.0`
+- GitHub release notes source: `RELEASE_NOTES_v0.1.0.md`
