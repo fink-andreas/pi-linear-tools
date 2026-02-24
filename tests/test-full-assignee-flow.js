@@ -21,6 +21,7 @@ const createMockClient = () => {
     team: { id: 'team-1', key: 'TEST', name: 'Test Team' },
     assignee: null,
     project: null,
+    projectMilestone: null,
     priority: null,
     url: 'https://linear.app/test/TEST-123/test-issue',
     branchName: 'test/test-issue',
@@ -39,6 +40,11 @@ const createMockClient = () => {
         issue.assignee = input.assigneeId === viewer.id
           ? viewer
           : { id: input.assigneeId, name: 'Other User', displayName: 'Other User' };
+      }
+      if (input.projectMilestoneId !== undefined) {
+        issue.projectMilestone = input.projectMilestoneId
+          ? { id: input.projectMilestoneId, name: 'Sprint Milestone' }
+          : null;
       }
 
       issues.set(id, issue);
@@ -77,6 +83,8 @@ async function executeIssueUpdate(client, params) {
     description: params.description,
     priority: params.priority,
     state: params.state,
+    milestone: params.milestone,
+    projectMilestoneId: params.projectMilestoneId,
   };
 
   // Handle assignee parameter - THIS IS THE KEY PART OF THE FIX
@@ -92,6 +100,7 @@ async function executeIssueUpdate(client, params) {
   const friendlyChanges = result.changed.map((field) => {
     if (field === 'stateId') return 'state';
     if (field === 'assigneeId') return 'assignee';
+    if (field === 'projectMilestoneId') return 'milestone';
     return field;
   });
 
@@ -106,8 +115,13 @@ async function executeIssueUpdate(client, params) {
     changeSummaryParts.push(`assignee: ${assigneeLabel}`);
   }
 
+  if (friendlyChanges.includes('milestone')) {
+    const milestoneLabel = result.issue?.projectMilestone?.name || 'None';
+    changeSummaryParts.push(`milestone: ${milestoneLabel}`);
+  }
+
   for (const field of friendlyChanges) {
-    if (field !== 'state' && field !== 'assignee') changeSummaryParts.push(field);
+    if (field !== 'state' && field !== 'assignee' && field !== 'milestone') changeSummaryParts.push(field);
   }
 
   const suffix = changeSummaryParts.length > 0
@@ -248,8 +262,62 @@ async function runTests() {
 
   console.log();
 
-  // Test 5: Update with no fields should throw error
-  console.log('Test 5: Update with no fields (should throw error)');
+  // Test 5: Assign issue to milestone by explicit ID
+  console.log('Test 5: Assign issue to milestone by ID');
+  console.log('-'.repeat(40));
+  try {
+    const result = await executeIssueUpdate(client, {
+      issue: 'TEST-123',
+      projectMilestoneId: 'milestone-123',
+    });
+
+    console.log(`✓ Result: ${result.text}`);
+    console.log(`  Changed fields: ${result.changed.join(', ')}`);
+    console.log(`  Milestone: ${result.issue.projectMilestone?.name || 'None'}`);
+
+    if (result.changed.includes('milestone') && result.issue.projectMilestone?.id === 'milestone-123') {
+      console.log('✅ PASSED: Milestone assigned by ID');
+      testsPassed++;
+    } else {
+      console.log('❌ FAILED: Milestone assignment did not apply');
+      testsFailed++;
+    }
+  } catch (err) {
+    console.log(`❌ FAILED: ${err.message}`);
+    testsFailed++;
+  }
+
+  console.log();
+
+  // Test 6: Clear milestone assignment
+  console.log('Test 6: Clear milestone assignment');
+  console.log('-'.repeat(40));
+  try {
+    const result = await executeIssueUpdate(client, {
+      issue: 'TEST-123',
+      milestone: 'none',
+    });
+
+    console.log(`✓ Result: ${result.text}`);
+    console.log(`  Changed fields: ${result.changed.join(', ')}`);
+    console.log(`  Milestone: ${result.issue.projectMilestone?.name || 'None'}`);
+
+    if (result.changed.includes('milestone') && !result.issue.projectMilestone) {
+      console.log('✅ PASSED: Milestone cleared');
+      testsPassed++;
+    } else {
+      console.log('❌ FAILED: Milestone was not cleared');
+      testsFailed++;
+    }
+  } catch (err) {
+    console.log(`❌ FAILED: ${err.message}`);
+    testsFailed++;
+  }
+
+  console.log();
+
+  // Test 7: Update with no fields should throw error
+  console.log('Test 7: Update with no fields (should throw error)');
   console.log('-'.repeat(40));
   try {
     await executeIssueUpdate(client, {

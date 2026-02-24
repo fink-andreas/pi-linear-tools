@@ -201,6 +201,14 @@ function registerLinearTools(pi) {
           type: 'string',
           description: 'Target state name or ID (for create, update)',
         },
+        milestone: {
+          type: 'string',
+          description: 'For update: milestone name/ID, or "none" to clear milestone assignment.',
+        },
+        projectMilestoneId: {
+          type: 'string',
+          description: 'Optional explicit milestone ID alias for update.',
+        },
         team: {
           type: 'string',
           description: 'Team key (e.g. ENG) or name (optional if default team configured)',
@@ -530,6 +538,8 @@ async function executeIssueUpdate(client, params) {
     state: params.state,
     assignee: params.assignee,
     assigneeId: params.assigneeId,
+    milestone: params.milestone,
+    projectMilestoneId: params.projectMilestoneId,
   });
 
   const updatePatch = {
@@ -537,6 +547,8 @@ async function executeIssueUpdate(client, params) {
     description: params.description,
     priority: params.priority,
     state: params.state,
+    milestone: params.milestone,
+    projectMilestoneId: params.projectMilestoneId,
   };
 
   if (params.assignee !== undefined && params.assigneeId !== undefined) {
@@ -561,6 +573,8 @@ async function executeIssueUpdate(client, params) {
     issue,
     patchKeys: Object.keys(updatePatch).filter((k) => updatePatch[k] !== undefined),
     assigneeId: updatePatch.assigneeId,
+    milestone: updatePatch.milestone,
+    projectMilestoneId: updatePatch.projectMilestoneId,
   });
 
   const result = await updateIssue(client, issue, updatePatch);
@@ -568,6 +582,7 @@ async function executeIssueUpdate(client, params) {
   const friendlyChanges = result.changed.map((field) => {
     if (field === 'stateId') return 'state';
     if (field === 'assigneeId') return 'assignee';
+    if (field === 'projectMilestoneId') return 'milestone';
     return field;
   });
   const changeSummaryParts = [];
@@ -581,8 +596,13 @@ async function executeIssueUpdate(client, params) {
     changeSummaryParts.push(`assignee: ${assigneeLabel}`);
   }
 
+  if (friendlyChanges.includes('milestone')) {
+    const milestoneLabel = result.issue?.projectMilestone?.name || 'None';
+    changeSummaryParts.push(`milestone: ${milestoneLabel}`);
+  }
+
   for (const field of friendlyChanges) {
-    if (field !== 'state' && field !== 'assignee') changeSummaryParts.push(field);
+    if (field !== 'state' && field !== 'assignee' && field !== 'milestone') changeSummaryParts.push(field);
   }
 
   const suffix = changeSummaryParts.length > 0
@@ -597,6 +617,7 @@ async function executeIssueUpdate(client, params) {
       changed: friendlyChanges,
       state: result.issue.state,
       priority: result.issue.priority,
+      projectMilestone: result.issue.projectMilestone,
     }
   );
 }

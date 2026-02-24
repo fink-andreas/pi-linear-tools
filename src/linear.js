@@ -33,11 +33,12 @@ async function transformIssue(sdkIssue) {
   if (!sdkIssue) return null;
 
   // Handle SDK issue with lazy-loaded relations
-  const [state, team, project, assignee] = await Promise.all([
+  const [state, team, project, assignee, projectMilestone] = await Promise.all([
     sdkIssue.state?.catch?.(() => null) ?? sdkIssue.state,
     sdkIssue.team?.catch?.(() => null) ?? sdkIssue.team,
     sdkIssue.project?.catch?.(() => null) ?? sdkIssue.project,
     sdkIssue.assignee?.catch?.(() => null) ?? sdkIssue.assignee,
+    sdkIssue.projectMilestone?.catch?.(() => null) ?? sdkIssue.projectMilestone,
   ]);
 
   return {
@@ -51,6 +52,7 @@ async function transformIssue(sdkIssue) {
     state: state ? { id: state.id, name: state.name, type: state.type } : null,
     team: team ? { id: team.id, key: team.key, name: team.name } : null,
     project: project ? { id: project.id, name: project.name } : null,
+    projectMilestone: projectMilestone ? { id: projectMilestone.id, name: projectMilestone.name } : null,
     assignee: assignee ? { id: assignee.id, name: assignee.name, displayName: assignee.displayName } : null,
   };
 }
@@ -74,6 +76,20 @@ function resolveStateIdFromInput(states, stateInput) {
   if (byType) return byType.id;
 
   throw new Error(`State not found in team workflow: ${target}`);
+}
+
+function resolveProjectMilestoneIdFromInput(milestones, milestoneInput) {
+  const target = String(milestoneInput || '').trim();
+  if (!target) return null;
+
+  const byId = milestones.find((m) => m.id === target);
+  if (byId) return byId.id;
+
+  const lower = target.toLowerCase();
+  const byName = milestones.find((m) => String(m.name || '').toLowerCase() === lower);
+  if (byName) return byName.id;
+
+  throw new Error(`Milestone not found in project: ${target}`);
 }
 
 // ===== QUERY FUNCTIONS =====
@@ -392,6 +408,7 @@ export async function fetchIssueDetails(client, issueRef, options = {}) {
     state,
     team,
     project,
+    projectMilestone,
     assignee,
     creator,
     labelsResult,
@@ -403,6 +420,7 @@ export async function fetchIssueDetails(client, issueRef, options = {}) {
     sdkIssue.state?.catch?.(() => null) ?? sdkIssue.state,
     sdkIssue.team?.catch?.(() => null) ?? sdkIssue.team,
     sdkIssue.project?.catch?.(() => null) ?? sdkIssue.project,
+    sdkIssue.projectMilestone?.catch?.(() => null) ?? sdkIssue.projectMilestone,
     sdkIssue.assignee?.catch?.(() => null) ?? sdkIssue.assignee,
     sdkIssue.creator?.catch?.(() => null) ?? sdkIssue.creator,
     sdkIssue.labels?.()?.catch?.(() => ({ nodes: [] })) ?? sdkIssue.labels?.() ?? { nodes: [] },
@@ -471,6 +489,7 @@ export async function fetchIssueDetails(client, issueRef, options = {}) {
     state: state ? { name: state.name, color: state.color, type: state.type } : null,
     team: team ? { id: team.id, key: team.key, name: team.name } : null,
     project: project ? { id: project.id, name: project.name } : null,
+    projectMilestone: projectMilestone ? { id: projectMilestone.id, name: projectMilestone.name } : null,
     assignee: assignee ? { id: assignee.id, name: assignee.name, displayName: assignee.displayName } : null,
     creator: creator ? { id: creator.id, name: creator.name, displayName: creator.displayName } : null,
     labels,
@@ -658,6 +677,8 @@ export async function updateIssue(client, issueRef, patch = {}) {
     priority: patch.priority,
     state: patch.state,
     assigneeId: patch.assigneeId,
+    milestone: patch.milestone,
+    projectMilestoneId: patch.projectMilestoneId,
   });
 
   if (patch.title !== undefined) {
@@ -689,6 +710,25 @@ export async function updateIssue(client, issueRef, patch = {}) {
 
   if (patch.assigneeId !== undefined) {
     updateInput.assigneeId = patch.assigneeId;
+  }
+
+  if (patch.projectMilestoneId !== undefined) {
+    updateInput.projectMilestoneId = patch.projectMilestoneId;
+  } else if (patch.milestone !== undefined) {
+    const milestoneRef = String(patch.milestone || '').trim();
+    const clearMilestoneValues = new Set(['', 'none', 'null', 'unassigned', 'clear']);
+
+    if (clearMilestoneValues.has(milestoneRef.toLowerCase())) {
+      updateInput.projectMilestoneId = null;
+    } else {
+      const projectId = targetIssue.project?.id;
+      if (!projectId) {
+        throw new Error(`Issue ${targetIssue.identifier} has no project; cannot resolve milestone by name`);
+      }
+
+      const milestones = await fetchProjectMilestones(client, projectId);
+      updateInput.projectMilestoneId = resolveProjectMilestoneIdFromInput(milestones, milestoneRef);
+    }
   }
 
   debug('updateIssue: computed update input', {
@@ -1150,6 +1190,9 @@ export function formatIssueAsMarkdown(issueData, options = {}) {
   }
   if (issueData.project?.name) {
     metaParts.push(`**Project:** ${issueData.project.name}`);
+  }
+  if (issueData.projectMilestone?.name) {
+    metaParts.push(`**Milestone:** ${issueData.projectMilestone.name}`);
   }
   if (issueData.assignee?.displayName) {
     metaParts.push(`**Assignee:** ${issueData.assignee.displayName}`);
