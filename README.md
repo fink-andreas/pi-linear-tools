@@ -2,11 +2,6 @@
 
 `pi-linear-tools` is a **pi extension package** with Linear SDK-powered tools for issues, projects, and milestones.
 
-It is extracted from `pi-linear-service`, but intentionally excludes:
-- systemd service management
-- background poll loops
-- tmux/RPC daemon orchestration
-
 ## Install
 
 ### As a pi package (recommended)
@@ -23,24 +18,22 @@ npm install -g @fink-andreas/pi-linear-tools
 
 ## Initial configuration
 
-Set API key in extension settings:
-```text
-/linear-tools-config --api-key lin_xxx
-```
+After installation, run `/linear-tools-config` in pi.
 
-Optional default team:
-```text
-/linear-tools-config --default-team ENG
-```
+When used **without parameters**, it starts the interactive setup flow and guides you through:
+- authentication (API key)
+- workspace selection
+- default team selection
 
-Optional project-specific team mapping:
-```text
-/linear-tools-config --team ENG --project "My Project"
-```
-
-Show current configuration:
 ```text
 /linear-tools-config
+```
+
+Optional non-interactive commands:
+```text
+/linear-tools-config --api-key lin_xxx
+/linear-tools-config --default-team ENG
+/linear-tools-config --team ENG --project "My Project"
 ```
 
 ## Extension commands
@@ -61,12 +54,21 @@ Actions: `list`, `view`, `create`, `update`, `delete`
 
 ## CLI usage
 
+If installed globally via npm, you can run:
+
 ```bash
+npm install -g @fink-andreas/pi-linear-tools
 pi-linear-tools --help
 pi-linear-tools config
 pi-linear-tools config --api-key lin_xxx
 pi-linear-tools config --default-team ENG
 pi-linear-tools config --team ENG --project "My Project"
+```
+
+If `pi-linear-tools` is not found, run it from the repo:
+
+```bash
+node bin/pi-linear-tools.js --help
 ```
 
 ### Issue commands
