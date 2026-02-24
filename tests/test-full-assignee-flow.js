@@ -58,6 +58,7 @@ const createMockClient = () => {
 
   return {
     viewer,
+    createIssueRelation: async () => ({ success: true }),
     // Mock issue lookup
     issue: async (id) => {
       if (issues.has(id)) {
@@ -85,6 +86,12 @@ async function executeIssueUpdate(client, params) {
     state: params.state,
     milestone: params.milestone,
     projectMilestoneId: params.projectMilestoneId,
+    subIssueOf: params.subIssueOf,
+    parentOf: params.parentOf,
+    blockedBy: params.blockedBy,
+    blocking: params.blocking,
+    relatedTo: params.relatedTo,
+    duplicateOf: params.duplicateOf,
   };
 
   // Handle assignee parameter - THIS IS THE KEY PART OF THE FIX
@@ -316,8 +323,42 @@ async function runTests() {
 
   console.log();
 
-  // Test 7: Update with no fields should throw error
-  console.log('Test 7: Update with no fields (should throw error)');
+  // Test 7: Add dependency/relation links
+  console.log('Test 7: Add dependency and relation links');
+  console.log('-'.repeat(40));
+  try {
+    const result = await executeIssueUpdate(client, {
+      issue: 'TEST-123',
+      blockedBy: ['TEST-900'],
+      blocking: ['TEST-901'],
+      relatedTo: ['TEST-902'],
+      duplicateOf: 'TEST-903',
+    });
+
+    console.log(`✓ Result: ${result.text}`);
+    console.log(`  Changed fields: ${result.changed.join(', ')}`);
+
+    if (
+      result.changed.includes('blockedBy')
+      && result.changed.includes('blocking')
+      && result.changed.includes('relatedTo')
+      && result.changed.includes('duplicateOf')
+    ) {
+      console.log('✅ PASSED: Dependency/relation links processed');
+      testsPassed++;
+    } else {
+      console.log('❌ FAILED: Missing relation change markers');
+      testsFailed++;
+    }
+  } catch (err) {
+    console.log(`❌ FAILED: ${err.message}`);
+    testsFailed++;
+  }
+
+  console.log();
+
+  // Test 8: Update with no fields should throw error
+  console.log('Test 8: Update with no fields (should throw error)');
   console.log('-'.repeat(40));
   try {
     await executeIssueUpdate(client, {

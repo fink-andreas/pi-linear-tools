@@ -92,6 +92,17 @@ function resolveProjectMilestoneIdFromInput(milestones, milestoneInput) {
   throw new Error(`Milestone not found in project: ${target}`);
 }
 
+function normalizeIssueRefList(value) {
+  if (value === undefined || value === null) return [];
+  if (Array.isArray(value)) {
+    return value.map((v) => String(v || '').trim()).filter(Boolean);
+  }
+  return String(value)
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean);
+}
+
 // ===== QUERY FUNCTIONS =====
 
 /**
@@ -679,6 +690,12 @@ export async function updateIssue(client, issueRef, patch = {}) {
     assigneeId: patch.assigneeId,
     milestone: patch.milestone,
     projectMilestoneId: patch.projectMilestoneId,
+    subIssueOf: patch.subIssueOf,
+    parentOf: patch.parentOf,
+    blockedBy: patch.blockedBy,
+    blocking: patch.blocking,
+    relatedTo: patch.relatedTo,
+    duplicateOf: patch.duplicateOf,
   });
 
   if (patch.title !== undefined) {
@@ -731,26 +748,89 @@ export async function updateIssue(client, issueRef, patch = {}) {
     }
   }
 
+  if (patch.subIssueOf !== undefined) {
+    const parentRef = String(patch.subIssueOf || '').trim();
+    const clearParentValues = new Set(['', 'none', 'null', 'unassigned', 'clear']);
+    if (clearParentValues.has(parentRef.toLowerCase())) {
+      updateInput.parentId = null;
+    } else {
+      const parentIssue = await resolveIssue(client, parentRef);
+      updateInput.parentId = parentIssue.id;
+    }
+  }
+
+  const relationCreates = [];
+  const parentOfRefs = normalizeIssueRefList(patch.parentOf);
+  const blockedByRefs = normalizeIssueRefList(patch.blockedBy);
+  const blockingRefs = normalizeIssueRefList(patch.blocking);
+  const relatedToRefs = normalizeIssueRefList(patch.relatedTo);
+  const duplicateOfRef = patch.duplicateOf !== undefined ? String(patch.duplicateOf || '').trim() : null;
+
+  for (const childRef of parentOfRefs) {
+    const childIssue = await resolveIssue(client, childRef);
+    const childSdkIssue = await client.issue(childIssue.id);
+    if (!childSdkIssue) {
+      throw new Error(`Issue not found: ${childRef}`);
+    }
+    const rel = await childSdkIssue.update({ parentId: targetIssue.id });
+    if (!rel.success) {
+      throw new Error(`Failed to set parent for issue: ${childRef}`);
+    }
+  }
+
+  for (const blockerRef of blockedByRefs) {
+    const blocker = await resolveIssue(client, blockerRef);
+    relationCreates.push({ issueId: blocker.id, relatedIssueId: targetIssue.id, type: 'blocks' });
+  }
+
+  for (const blockedRef of blockingRefs) {
+    const blocked = await resolveIssue(client, blockedRef);
+    relationCreates.push({ issueId: targetIssue.id, relatedIssueId: blocked.id, type: 'blocks' });
+  }
+
+  for (const relatedRef of relatedToRefs) {
+    const related = await resolveIssue(client, relatedRef);
+    relationCreates.push({ issueId: targetIssue.id, relatedIssueId: related.id, type: 'related' });
+  }
+
+  if (duplicateOfRef) {
+    const duplicateTarget = await resolveIssue(client, duplicateOfRef);
+    relationCreates.push({ issueId: targetIssue.id, relatedIssueId: duplicateTarget.id, type: 'duplicate' });
+  }
+
   debug('updateIssue: computed update input', {
     issueRef,
     resolvedIdentifier: targetIssue?.identifier,
     updateKeys: Object.keys(updateInput),
     updateInput,
+    relationCreateCount: relationCreates.length,
+    parentOfCount: parentOfRefs.length,
   });
 
-  if (Object.keys(updateInput).length === 0) {
+  if (Object.keys(updateInput).length === 0
+    && relationCreates.length === 0
+    && parentOfRefs.length === 0) {
     throw new Error('No update fields provided');
   }
 
-  // Get fresh issue instance for update
-  const sdkIssue = await client.issue(targetIssue.id);
-  if (!sdkIssue) {
-    throw new Error(`Issue not found: ${targetIssue.id}`);
+  if (Object.keys(updateInput).length > 0) {
+    // Get fresh issue instance for update
+    const sdkIssue = await client.issue(targetIssue.id);
+    if (!sdkIssue) {
+      throw new Error(`Issue not found: ${targetIssue.id}`);
+    }
+
+    const result = await sdkIssue.update(updateInput);
+    if (!result.success) {
+      throw new Error('Failed to update issue');
+    }
   }
 
-  const result = await sdkIssue.update(updateInput);
-  if (!result.success) {
-    throw new Error('Failed to update issue');
+  for (const relationInput of relationCreates) {
+    const relationResult = await client.createIssueRelation(relationInput);
+    if (!relationResult.success) {
+      throw new Error(`Failed to create issue relation (${relationInput.type})`);
+    }
   }
 
   // Prefer official data path: refetch the issue after successful mutation.
@@ -763,9 +843,16 @@ export async function updateIssue(client, issueRef, patch = {}) {
 
   const updatedIssue = await transformIssue(updatedSdkIssue);
 
+  const changed = [...Object.keys(updateInput)];
+  if (parentOfRefs.length > 0) changed.push('parentOf');
+  if (blockedByRefs.length > 0) changed.push('blockedBy');
+  if (blockingRefs.length > 0) changed.push('blocking');
+  if (relatedToRefs.length > 0) changed.push('relatedTo');
+  if (duplicateOfRef) changed.push('duplicateOf');
+
   return {
     issue: updatedIssue || targetIssue,
-    changed: Object.keys(updateInput),
+    changed,
   };
 }
 

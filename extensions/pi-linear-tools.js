@@ -8,6 +8,7 @@ import {
   updateIssue,
   createIssue,
   fetchProjects,
+  fetchTeams,
   resolveProjectRef,
   resolveTeamRef,
   getTeamWorkflowStates,
@@ -209,6 +210,34 @@ function registerLinearTools(pi) {
           type: 'string',
           description: 'Optional explicit milestone ID alias for update.',
         },
+        subIssueOf: {
+          type: 'string',
+          description: 'For update: set this issue as sub-issue of the given issue key/ID, or "none" to clear parent.',
+        },
+        parentOf: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'For update: set listed issues as children of this issue.',
+        },
+        blockedBy: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'For update: add "blocked by" dependencies (issues that block this issue).',
+        },
+        blocking: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'For update: add "blocking" dependencies (issues this issue blocks).',
+        },
+        relatedTo: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'For update: add related issue links.',
+        },
+        duplicateOf: {
+          type: 'string',
+          description: 'For update: mark this issue as duplicate of the given issue key/ID.',
+        },
         team: {
           type: 'string',
           description: 'Team key (e.g. ENG) or name (optional if default team configured)',
@@ -290,6 +319,35 @@ function registerLinearTools(pi) {
       switch (params.action) {
         case 'list':
           return executeProjectList(client);
+        default:
+          throw new Error(`Unknown action: ${params.action}`);
+      }
+    },
+  });
+
+  pi.registerTool({
+    name: 'linear_team',
+    label: 'Linear Team',
+    description: 'Interact with Linear teams. Actions: list',
+    parameters: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['list'],
+          description: 'Action to perform on team(s)',
+        },
+      },
+      required: ['action'],
+      additionalProperties: false,
+    },
+    async execute(_toolCallId, params) {
+      const apiKey = await getLinearApiKey();
+      const client = createLinearClient(apiKey);
+
+      switch (params.action) {
+        case 'list':
+          return executeTeamList(client);
         default:
           throw new Error(`Unknown action: ${params.action}`);
       }
@@ -540,6 +598,12 @@ async function executeIssueUpdate(client, params) {
     assigneeId: params.assigneeId,
     milestone: params.milestone,
     projectMilestoneId: params.projectMilestoneId,
+    subIssueOf: params.subIssueOf,
+    parentOfCount: Array.isArray(params.parentOf) ? params.parentOf.length : 0,
+    blockedByCount: Array.isArray(params.blockedBy) ? params.blockedBy.length : 0,
+    blockingCount: Array.isArray(params.blocking) ? params.blocking.length : 0,
+    relatedToCount: Array.isArray(params.relatedTo) ? params.relatedTo.length : 0,
+    duplicateOf: params.duplicateOf,
   });
 
   const updatePatch = {
@@ -549,6 +613,12 @@ async function executeIssueUpdate(client, params) {
     state: params.state,
     milestone: params.milestone,
     projectMilestoneId: params.projectMilestoneId,
+    subIssueOf: params.subIssueOf,
+    parentOf: params.parentOf,
+    blockedBy: params.blockedBy,
+    blocking: params.blocking,
+    relatedTo: params.relatedTo,
+    duplicateOf: params.duplicateOf,
   };
 
   if (params.assignee !== undefined && params.assigneeId !== undefined) {
@@ -583,6 +653,7 @@ async function executeIssueUpdate(client, params) {
     if (field === 'stateId') return 'state';
     if (field === 'assigneeId') return 'assignee';
     if (field === 'projectMilestoneId') return 'milestone';
+    if (field === 'parentId') return 'subIssueOf';
     return field;
   });
   const changeSummaryParts = [];
@@ -601,8 +672,14 @@ async function executeIssueUpdate(client, params) {
     changeSummaryParts.push(`milestone: ${milestoneLabel}`);
   }
 
+  if (friendlyChanges.includes('subIssueOf')) {
+    changeSummaryParts.push('subIssueOf');
+  }
+
   for (const field of friendlyChanges) {
-    if (field !== 'state' && field !== 'assignee' && field !== 'milestone') changeSummaryParts.push(field);
+    if (field !== 'state' && field !== 'assignee' && field !== 'milestone' && field !== 'subIssueOf') {
+      changeSummaryParts.push(field);
+    }
   }
 
   const suffix = changeSummaryParts.length > 0
@@ -701,6 +778,25 @@ async function executeProjectList(client) {
   return toTextResult(lines.join('\n'), {
     projectCount: projects.length,
     projects: projects.map((p) => ({ id: p.id, name: p.name })),
+  });
+}
+
+async function executeTeamList(client) {
+  const teams = await fetchTeams(client);
+
+  if (teams.length === 0) {
+    return toTextResult('No teams found', { teamCount: 0 });
+  }
+
+  const lines = [`## Teams (${teams.length})\n`];
+
+  for (const team of teams) {
+    lines.push(`- **${team.key}**: ${team.name} \`${team.id}\``);
+  }
+
+  return toTextResult(lines.join('\n'), {
+    teamCount: teams.length,
+    teams: teams.map((t) => ({ id: t.id, key: t.key, name: t.name })),
   });
 }
 
@@ -1021,6 +1117,7 @@ export default function piLinearToolsExtension(pi) {
           'LLM-callable tools:',
           '  linear_issue (list/view/create/update/comment/start/delete)',
           '  linear_project (list)',
+          '  linear_team (list)',
           '  linear_milestone (list/view/create/update/delete)',
         ].join('\n'),
         display: true,

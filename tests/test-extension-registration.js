@@ -54,6 +54,7 @@ async function testRegistration() {
 
   assert.ok(pi.tools.has('linear_issue'));
   assert.ok(pi.tools.has('linear_project'));
+  assert.ok(pi.tools.has('linear_team'));
   assert.ok(pi.tools.has('linear_milestone'));
 }
 

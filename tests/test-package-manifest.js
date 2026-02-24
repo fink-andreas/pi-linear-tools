@@ -28,6 +28,7 @@ async function main() {
   assert.match(extensionSource, /registerCommand\('linear-tools-help'/, 'extension must register help command');
   assert.match(extensionSource, /name: 'linear_issue'/, 'extension must register linear_issue tool');
   assert.match(extensionSource, /name: 'linear_project'/, 'extension must register linear_project tool');
+  assert.match(extensionSource, /name: 'linear_team'/, 'extension must register linear_team tool');
   assert.match(extensionSource, /name: 'linear_milestone'/, 'extension must register linear_milestone tool');
 
   console.log('✓ tests/test-package-manifest.js passed');
