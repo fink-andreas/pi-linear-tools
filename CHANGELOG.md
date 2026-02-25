@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.1.0 (planned)
+## v0.1.0 (2026-02-25)
 
 Initial public release of `@fink-andreas/pi-linear-tools`.
 
