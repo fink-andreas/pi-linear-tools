@@ -40,6 +40,13 @@ function readFlag(args, flag) {
   return undefined;
 }
 
+function parseBooleanFlag(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'true') return true;
+  if (normalized === 'false') return false;
+  throw new Error('Invalid value for --debug-reload. Use true or false.');
+}
+
 let cachedApiKey = null;
 
 async function getLinearApiKey() {
@@ -467,10 +474,50 @@ function registerLinearTools(pi) {
       }
     },
   });
+
+}
+
+function registerReloadRuntimeTool(pi) {
+  if (typeof pi.registerTool !== 'function') return;
+
+  pi.registerTool({
+    name: 'linear_reload_runtime',
+    label: 'Linear Reload Runtime',
+    description: 'Queue /linear-tools-reload as a follow-up command',
+    parameters: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false,
+    },
+    async execute() {
+      if (typeof pi.sendUserMessage === 'function') {
+        pi.sendUserMessage('/linear-tools-reload', { deliverAs: 'followUp' });
+        return {
+          content: [{ type: 'text', text: 'Queued /linear-tools-reload as a follow-up command.' }],
+          details: { queued: true, command: '/linear-tools-reload' },
+        };
+      }
+
+      return {
+        content: [{ type: 'text', text: 'sendUserMessage unavailable. Run /linear-tools-reload manually.' }],
+        details: { queued: false, command: '/linear-tools-reload' },
+      };
+    },
+  });
 }
 
 export default function piLinearToolsExtension(pi) {
   registerLinearTools(pi);
+
+  loadSettings()
+    .then((settings) => {
+      if (settings?.debug_reload === true) {
+        registerReloadRuntimeTool(pi);
+      }
+    })
+    .catch(() => {
+      // ignore settings load errors for optional debug tool registration
+    });
 
   pi.registerCommand('linear-tools-config', {
     description: 'Configure pi-linear-tools settings (API key and default team mappings)',
@@ -478,6 +525,7 @@ export default function piLinearToolsExtension(pi) {
       const args = parseArgs(argsText);
       const apiKey = readFlag(args, '--api-key');
       const defaultTeam = readFlag(args, '--default-team');
+      const debugReloadRaw = readFlag(args, '--debug-reload');
       const projectTeam = readFlag(args, '--team');
       const projectName = readFlag(args, '--project');
 
@@ -498,6 +546,17 @@ export default function piLinearToolsExtension(pi) {
         await saveSettings(settings);
         if (ctx?.hasUI) {
           ctx.ui.notify(`Default team set to: ${defaultTeam}`, 'info');
+        }
+        return;
+      }
+
+      if (debugReloadRaw !== undefined) {
+        const settings = await loadSettings();
+        const debugReload = parseBooleanFlag(debugReloadRaw);
+        settings.debug_reload = debugReload;
+        await saveSettings(settings);
+        if (ctx?.hasUI) {
+          ctx.ui.notify(`debug_reload set to: ${debugReload}`, 'info');
         }
         return;
       }
@@ -536,7 +595,7 @@ export default function piLinearToolsExtension(pi) {
         return;
       }
 
-      if (!apiKey && !defaultTeam && !projectTeam && !projectName && ctx?.hasUI && ctx?.ui) {
+      if (!apiKey && !defaultTeam && debugReloadRaw === undefined && !projectTeam && !projectName && ctx?.hasUI && ctx?.ui) {
         await runInteractiveConfigFlow(ctx);
         return;
       }
@@ -547,9 +606,19 @@ export default function piLinearToolsExtension(pi) {
 
       pi.sendMessage({
         customType: 'pi-linear-tools',
-        content: `Configuration:\n  LINEAR_API_KEY: ${hasKey ? 'configured' : 'not set'} (source: ${keySource})\n  Default workspace: ${settings.defaultWorkspace?.name || 'not set'}\n  Default team: ${settings.defaultTeam || 'not set'}\n  Project team mappings: ${Object.keys(settings.projects || {}).length}\n\nCommands:\n  /linear-tools-config --api-key lin_xxx\n  /linear-tools-config --default-team ENG\n  /linear-tools-config --team ENG --project MyProject\n\nNote: environment LINEAR_API_KEY takes precedence over settings file.`,
+        content: `Configuration:\n  LINEAR_API_KEY: ${hasKey ? 'configured' : 'not set'} (source: ${keySource})\n  Default workspace: ${settings.defaultWorkspace?.name || 'not set'}\n  Default team: ${settings.defaultTeam || 'not set'}\n  Debug reload: ${settings.debug_reload === true ? 'enabled' : 'disabled'}\n  Project team mappings: ${Object.keys(settings.projects || {}).length}\n\nCommands:\n  /linear-tools-config --api-key lin_xxx\n  /linear-tools-config --default-team ENG\n  /linear-tools-config --debug-reload true|false\n  /linear-tools-config --team ENG --project MyProject\n\nNote: environment LINEAR_API_KEY takes precedence over settings file.`,
         display: true,
       });
+    },
+  });
+
+  pi.registerCommand('linear-tools-reload', {
+    description: 'Reload extension runtime (extensions, skills, prompts, themes)',
+    handler: async (_args, ctx) => {
+      if (ctx?.hasUI) {
+        ctx.ui.notify('Reloading runtime...', 'info');
+      }
+      await ctx.reload();
     },
   });
 
@@ -566,14 +635,17 @@ export default function piLinearToolsExtension(pi) {
           'Commands:',
           '  /linear-tools-config --api-key <key>',
           '  /linear-tools-config --default-team <team-key>',
+          '  /linear-tools-config --debug-reload true|false',
           '  /linear-tools-config --team <team-key> --project <project-name-or-id>',
           '  /linear-tools-help',
+          '  /linear-tools-reload',
           '',
           'LLM-callable tools:',
           '  linear_issue (list/view/create/update/comment/start/delete)',
           '  linear_project (list)',
           '  linear_team (list)',
           '  linear_milestone (list/view/create/update/delete)',
+          '  linear_reload_runtime (queues /linear-tools-reload; requires debug_reload=true)',
         ].join('\n'),
         display: true,
       });

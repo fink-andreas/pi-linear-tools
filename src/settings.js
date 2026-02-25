@@ -14,6 +14,7 @@ export function getDefaultSettings() {
     linearApiKey: null,
     defaultTeam: null,
     defaultWorkspace: null,
+    debug_reload: false,
     projects: {},
   };
 }
@@ -35,6 +36,10 @@ function migrateSettings(settings) {
 
   if (migrated.defaultWorkspace === undefined) {
     migrated.defaultWorkspace = null;
+  }
+
+  if (migrated.debug_reload === undefined) {
+    migrated.debug_reload = false;
   }
 
   if (!migrated.projects || typeof migrated.projects !== 'object' || Array.isArray(migrated.projects)) {
@@ -90,6 +95,10 @@ export function validateSettings(settings) {
         errors.push('settings.defaultWorkspace.name must be a non-empty string');
       }
     }
+  }
+
+  if (settings.debug_reload !== undefined && typeof settings.debug_reload !== 'boolean') {
+    errors.push('settings.debug_reload must be a boolean');
   }
 
   if (settings.projects !== undefined) {

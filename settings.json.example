@@ -2,6 +2,7 @@
   "schemaVersion": 1,
   "linearApiKey": "lin_xxx",
   "defaultTeam": "ENG",
+  "debug_reload": false,
   "projects": {
     "97ec7cae-e252-493d-94d3-6910aa28cacf": {
       "scope": {
