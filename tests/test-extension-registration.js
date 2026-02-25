@@ -147,6 +147,85 @@ async function testIssueToolListUsesSdkWrapper() {
   }
 }
 
+async function testMilestoneListIncludesIds() {
+  const prev = process.env.LINEAR_API_KEY;
+  process.env.LINEAR_API_KEY = 'lin_test';
+
+  try {
+    const mockProject = { id: 'p1', name: 'demo' };
+    const mockClient = {
+      projects: async () => ({
+        nodes: [mockProject],
+      }),
+      project: async (projectId) => {
+        if (projectId !== 'p1') return null;
+        return {
+          id: 'p1',
+          name: 'demo',
+          projectMilestones: async () => ({
+            nodes: [
+              {
+                id: 'm1',
+                name: 'Release v0.2.0',
+                description: 'Prepare and ship release',
+                progress: 25,
+                order: 1,
+                targetDate: '2026-06-30',
+                status: 'planned',
+                project: Promise.resolve(mockProject),
+              },
+            ],
+          }),
+        };
+      },
+    };
+
+    setTestClientFactory(() => mockClient);
+
+    const pi = createMockPi();
+    extension(pi);
+
+    const milestoneTool = pi.tools.get('linear_milestone');
+    const result = await milestoneTool.execute('call-m1', { action: 'list', project: 'demo' });
+
+    assert.match(result.content[0].text, /Release v0\.2\.0/);
+    assert.match(result.content[0].text, /`m1`/);
+  } finally {
+    resetTestClientFactory();
+    process.env.LINEAR_API_KEY = prev;
+  }
+}
+
+async function testMilestoneDeleteIncludesName() {
+  const prev = process.env.LINEAR_API_KEY;
+  process.env.LINEAR_API_KEY = 'lin_test';
+
+  try {
+    const mockClient = {
+      projectMilestone: async (milestoneId) => {
+        if (milestoneId !== 'm1') return null;
+        return { id: 'm1', name: 'Release v0.2.0' };
+      },
+      deleteProjectMilestone: async (milestoneId) => ({ success: milestoneId === 'm1' }),
+    };
+
+    setTestClientFactory(() => mockClient);
+
+    const pi = createMockPi();
+    extension(pi);
+
+    const milestoneTool = pi.tools.get('linear_milestone');
+    const result = await milestoneTool.execute('call-m2', { action: 'delete', milestone: 'm1' });
+
+    assert.match(result.content[0].text, /Deleted milestone \*\*Release v0\.2\.0\*\*/);
+    assert.match(result.content[0].text, /`m1`/);
+    assert.equal(result.details.name, 'Release v0.2.0');
+  } finally {
+    resetTestClientFactory();
+    process.env.LINEAR_API_KEY = prev;
+  }
+}
+
 async function testInteractiveConfigWizard() {
   const prev = process.env.LINEAR_API_KEY;
   delete process.env.LINEAR_API_KEY;
@@ -208,6 +287,8 @@ async function main() {
   await testConfigSavesDefaultTeam();
   await testIssueToolRequiresApiKey();
   await testIssueToolListUsesSdkWrapper();
+  await testMilestoneListIncludesIds();
+  await testMilestoneDeleteIncludesName();
   await testInteractiveConfigWizard();
   console.log('✓ tests/test-extension-registration.js passed');
 }

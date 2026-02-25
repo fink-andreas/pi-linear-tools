@@ -589,7 +589,7 @@ export async function executeMilestoneList(client, params) {
       ? ` → ${milestone.targetDate.split('T')[0]}`
       : '';
 
-    lines.push(`- ${statusEmoji} **${milestone.name}** _[${milestone.status}]_ (${progressLabel})${dateLabel}`);
+    lines.push(`- ${statusEmoji} **${milestone.name}** _[${milestone.status}]_ (${progressLabel})${dateLabel} \`${milestone.id}\``);
     if (milestone.description) {
       lines.push(`  ${milestone.description.split('\n')[0].slice(0, 100)}${milestone.description.length > 100 ? '...' : ''}`);
     }
@@ -771,10 +771,15 @@ export async function executeMilestoneDelete(client, params) {
   const milestoneId = ensureNonEmpty(params.milestone, 'milestone');
   const result = await deleteProjectMilestone(client, milestoneId);
 
+  const label = result.name
+    ? `**${result.name}** (\`${milestoneId}\`)`
+    : `\`${milestoneId}\``;
+
   return toTextResult(
-    `Deleted milestone \`${milestoneId}\``,
+    `Deleted milestone ${label}`,
     {
       milestoneId: result.milestoneId,
+      name: result.name,
       success: result.success,
     }
   );

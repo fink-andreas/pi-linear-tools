@@ -1166,14 +1166,26 @@ export async function updateProjectMilestone(client, milestoneId, patch = {}) {
  * Delete a project milestone
  * @param {LinearClient} client - Linear SDK client
  * @param {string} milestoneId - Milestone ID
- * @returns {Promise<{success: boolean, milestoneId: string}>}
+ * @returns {Promise<{success: boolean, milestoneId: string, name: string|null}>}
  */
 export async function deleteProjectMilestone(client, milestoneId) {
+  let milestoneName = null;
+
+  try {
+    const existing = await client.projectMilestone(milestoneId);
+    if (existing?.name) {
+      milestoneName = existing.name;
+    }
+  } catch {
+    milestoneName = null;
+  }
+
   const result = await client.deleteProjectMilestone(milestoneId);
 
   return {
     success: result.success,
     milestoneId,
+    name: milestoneName,
   };
 }
 
