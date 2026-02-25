@@ -14,7 +14,6 @@ export function getDefaultSettings() {
     linearApiKey: null,
     defaultTeam: null,
     defaultWorkspace: null,
-    debug_reload: false,
     projects: {},
   };
 }
@@ -38,8 +37,8 @@ function migrateSettings(settings) {
     migrated.defaultWorkspace = null;
   }
 
-  if (migrated.debug_reload === undefined) {
-    migrated.debug_reload = false;
+  if (Object.prototype.hasOwnProperty.call(migrated, 'debug_reload')) {
+    delete migrated.debug_reload;
   }
 
   if (!migrated.projects || typeof migrated.projects !== 'object' || Array.isArray(migrated.projects)) {
@@ -95,10 +94,6 @@ export function validateSettings(settings) {
         errors.push('settings.defaultWorkspace.name must be a non-empty string');
       }
     }
-  }
-
-  if (settings.debug_reload !== undefined && typeof settings.debug_reload !== 'boolean') {
-    errors.push('settings.debug_reload must be a boolean');
   }
 
   if (settings.projects !== undefined) {

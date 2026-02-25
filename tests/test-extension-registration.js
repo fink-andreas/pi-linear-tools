@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import extension from '../extensions/pi-linear-tools.js';
-import { getSettingsPath, saveSettings } from '../src/settings.js';
+import { getSettingsPath } from '../src/settings.js';
 import { setTestClientFactory, resetTestClientFactory } from '../src/linear-client.js';
 
 function createMockPi(execImpl = null) {
@@ -91,23 +91,6 @@ async function testConfigSavesDefaultTeam() {
   });
 }
 
-async function testConfigSavesDebugReload() {
-  await withTempHome(async () => {
-    const pi = createMockPi();
-    extension(pi);
-
-    const config = pi.commands.get('linear-tools-config').handler;
-    await config('--debug-reload true', { hasUI: false });
-
-    const settings = JSON.parse(await readFile(getSettingsPath(), 'utf-8'));
-    assert.equal(settings.debug_reload, true);
-
-    await config('--debug-reload false', { hasUI: false });
-    const updated = JSON.parse(await readFile(getSettingsPath(), 'utf-8'));
-    assert.equal(updated.debug_reload, false);
-  });
-}
-
 async function testIssueToolRequiresApiKey() {
   const prev = process.env.LINEAR_API_KEY;
   delete process.env.LINEAR_API_KEY;
@@ -169,35 +152,6 @@ async function testIssueToolListUsesSdkWrapper() {
     resetTestClientFactory();
     process.env.LINEAR_API_KEY = prev;
   }
-}
-
-async function testReloadToolQueuesFollowUpCommand() {
-  await withTempHome(async () => {
-    await saveSettings({
-      schemaVersion: 1,
-      linearApiKey: null,
-      defaultTeam: null,
-      defaultWorkspace: null,
-      debug_reload: true,
-      projects: {},
-    });
-
-    const pi = createMockPi();
-    extension(pi);
-
-    // wait briefly for async settings-based tool registration
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
-    const reloadTool = pi.tools.get('linear_reload_runtime');
-    assert.ok(reloadTool);
-
-    const result = await reloadTool.execute('call-reload', {});
-
-    assert.equal(pi.sentUserMessages.length, 1);
-    assert.equal(pi.sentUserMessages[0].message, '/linear-tools-reload');
-    assert.equal(pi.sentUserMessages[0].options?.deliverAs, 'followUp');
-    assert.match(result.content[0].text, /Queued \/linear-tools-reload/);
-  });
 }
 
 async function testMilestoneListIncludesIds() {
@@ -338,10 +292,8 @@ async function main() {
   await testRegistration();
   await testConfigSavesApiKey();
   await testConfigSavesDefaultTeam();
-  await testConfigSavesDebugReload();
   await testIssueToolRequiresApiKey();
   await testIssueToolListUsesSdkWrapper();
-  await testReloadToolQueuesFollowUpCommand();
   await testMilestoneListIncludesIds();
   await testMilestoneDeleteIncludesName();
   await testInteractiveConfigWizard();

@@ -29,7 +29,6 @@ async function testDefaults() {
   assert.equal(defaults.linearApiKey, null);
   assert.equal(defaults.defaultTeam, null);
   assert.equal(defaults.defaultWorkspace, null);
-  assert.equal(defaults.debug_reload, false);
   assert.deepEqual(defaults.projects, {});
 }
 
@@ -39,7 +38,6 @@ async function testSaveAndLoad() {
       schemaVersion: 1,
       linearApiKey: 'lin_test',
       defaultTeam: 'ENG',
-      debug_reload: true,
       projects: {
         'project-1': {
           scope: {
@@ -54,7 +52,7 @@ async function testSaveAndLoad() {
 
     assert.equal(loaded.linearApiKey, 'lin_test');
     assert.equal(loaded.defaultTeam, 'ENG');
-    assert.equal(loaded.debug_reload, true);
+    assert.equal(loaded.debug_reload, undefined);
     assert.equal(loaded.projects['project-1'].scope.team, 'ENG');
   });
 }
