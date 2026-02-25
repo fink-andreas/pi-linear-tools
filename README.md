@@ -6,7 +6,7 @@
 
 ### As a pi package (recommended)
 ```bash
-pi install git:github.com/fink-andreas/pi-linear-tools
+pi install npm:@fink-andreas/pi-linear-tools
 pi config
 ```
 Enable the `pi-linear-tools` extension resource.
