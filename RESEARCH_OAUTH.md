@@ -5,6 +5,8 @@ This document summarizes the required implementation details for OAuth in `pi-li
 ## Objective
 Implement secure OAuth 2.0 authentication for a distributed CLI tool that connects to Linear on behalf of a user.
 
+use the repo https://github.com/cline/linear-mcp as a reference - it implements the oauth flow already (clone into temp dir and find the oauth implementation to use it as reference ).
+
 ## Key findings (from `OAUTH.md`)
 
 1. **Use OAuth 2.0 Authorization Code + PKCE (S256)**
@@ -16,6 +18,7 @@ Implement secure OAuth 2.0 authentication for a distributed CLI tool that connec
    - Linear flow is browser-based.
    - CLI should spin up temporary localhost HTTP callback server and open the auth URL in the default browser.
    - Register fixed callback URIs in Linear app settings and try multiple fallback ports.
+   - For the CLI users via SSH, that have no browser on the host running the extension, print an URL for the handoff to the other host with a browser. Await a localhost URL as response that will be pasted by the user into an input field.
 
 3. **Token lifecycle is short-lived + refresh required**
    - Modern Linear OAuth apps return access tokens with ~24h expiry.
@@ -55,10 +58,10 @@ Implement secure OAuth 2.0 authentication for a distributed CLI tool that connec
 ## High-level implementation plan
 
 ### Phase 1 — Auth Flow Foundation
-- Add OAuth config fields (client ID, redirect URI list, scopes).
+- Add OAuth config fields (client ID, redirect URI list, scopes). USe client ID: a3e177176c6697611367f1a2405d4a34
 - Implement PKCE helpers (`code_verifier`, `code_challenge`).
 - Build authorization URL generator (with `state`, `prompt=consent`, scopes).
-- Add localhost callback server utility with graceful teardown and port fallback.
+- Add localhost callback server utility with graceful teardown and port fallback. Use this URL: http://localhost:34711/callback
 
 ### Phase 2 — Token Exchange + Storage
 - Implement token exchange service (`authorization_code` grant).

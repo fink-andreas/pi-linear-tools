@@ -1,6 +1,7 @@
 import { loadSettings, saveSettings } from './settings.js';
 import { createLinearClient } from './linear-client.js';
 import { resolveProjectRef } from './linear.js';
+import { authenticate, logout, getAuthStatus, isAuthenticated } from './auth/index.js';
 import {
   executeIssueList,
   executeIssueView,
@@ -76,8 +77,10 @@ async function getLinearApiKey() {
 
   try {
     const settings = await loadSettings();
-    if (settings.linearApiKey && settings.linearApiKey.trim()) {
-      cachedApiKey = settings.linearApiKey.trim();
+    // Support both new apiKey and legacy linearApiKey (for migration)
+    const apiKey = settings.apiKey || settings.linearApiKey;
+    if (apiKey && apiKey.trim()) {
+      cachedApiKey = apiKey.trim();
       return cachedApiKey;
     }
   } catch {
@@ -107,13 +110,19 @@ Usage:
 
 Commands:
   help                          Show this help message
+  auth <action>                 Manage authentication (OAuth 2.0)
   config                        Show current configuration
-  config --api-key <key>        Set Linear API key
+  config --api-key <key>        Set Linear API key (legacy)
   config --default-team <key>   Set default team
   issue <action> [options]      Manage issues
   project <action> [options]    Manage projects
   team <action> [options]       Manage teams
   milestone <action> [options]  Manage milestones
+
+Auth Actions:
+  login    Authenticate with Linear via OAuth 2.0
+  logout   Clear stored authentication tokens
+  status   Show current authentication status
 
 Issue Actions:
   list [--project X] [--states X,Y] [--assignee me|all] [--limit N]
@@ -147,6 +156,8 @@ Common Flags:
   --limit       Max results (default: 50)
 
 Examples:
+  pi-linear-tools auth login
+  pi-linear-tools auth status
   pi-linear-tools issue list --project MyProject --states "In Progress,Backlog"
   pi-linear-tools issue view ENG-123
   pi-linear-tools issue create --title "Fix bug" --team ENG --priority 2
@@ -154,6 +165,12 @@ Examples:
   pi-linear-tools issue start ENG-123
   pi-linear-tools milestone list --project MyProject
   pi-linear-tools config --api-key lin_xxx
+
+Authentication:
+  OAuth 2.0 is the recommended authentication method.
+  Run 'pi-linear-tools auth login' to authenticate.
+  For CI/headless environments, set environment variables:
+    LINEAR_ACCESS_TOKEN, LINEAR_REFRESH_TOKEN, LINEAR_EXPIRES_AT
 `);
 }
 
@@ -276,6 +293,128 @@ Delete Options:
 `);
 }
 
+function printAuthHelp() {
+  console.log(`pi-linear-tools auth - Manage Linear authentication
+
+Usage:
+  pi-linear-tools auth <action>
+
+Actions:
+  login    Authenticate with Linear via OAuth 2.0
+  logout   Clear stored authentication tokens
+  status   Show current authentication status
+
+Login:
+  Starts the OAuth 2.0 authentication flow:
+  1. Opens your browser to Linear's authorization page
+  2. You authorize the application
+  3. Tokens are stored securely in your OS keychain
+  4. Automatic token refresh keeps you authenticated
+
+Logout:
+  Clears stored OAuth tokens from your keychain.
+  You'll need to authenticate again to access Linear.
+
+Status:
+  Shows your current authentication status:
+  - Whether you're authenticated
+  - Token expiry time
+  - Granted OAuth scopes
+
+Examples:
+  pi-linear-tools auth login
+  pi-linear-tools auth status
+  pi-linear-tools auth logout
+
+Environment Variables (for CI/headless environments):
+  LINEAR_ACCESS_TOKEN     OAuth access token
+  LINEAR_REFRESH_TOKEN    OAuth refresh token
+  LINEAR_EXPIRES_AT       Token expiry timestamp (milliseconds)
+`);
+}
+
+// ===== AUTH HANDLERS =====
+
+async function handleAuthLogin(args) {
+  const port = readFlag(args, '--port');
+
+  try {
+    const tokens = await authenticate({
+      port: port ? parseInt(port, 10) : undefined,
+    });
+
+    console.log('\n✓ Authentication successful!');
+    console.log(`✓ Token expires at: ${new Date(tokens.expiresAt).toLocaleString()}`);
+    console.log(`✓ Granted scopes: ${tokens.scope.join(', ')}`);
+    console.log('\nYou can now use pi-linear-tools commands.');
+  } catch (error) {
+    console.error('\n✗ Authentication failed:', error.message);
+    process.exitCode = 1;
+  }
+}
+
+async function handleAuthLogout() {
+  try {
+    await logout();
+    console.log('\n✓ Logged out successfully');
+    console.log('\nYou will need to authenticate again to access Linear.');
+  } catch (error) {
+    console.error('\n✗ Logout failed:', error.message);
+    process.exitCode = 1;
+  }
+}
+
+async function handleAuthStatus() {
+  try {
+    const status = await getAuthStatus();
+
+    if (!status) {
+      console.log('\nAuthentication status: Not authenticated');
+      console.log('\nTo authenticate, run: pi-linear-tools auth login');
+      console.log('\nFor CI/headless environments, set these environment variables:');
+      console.log('  LINEAR_ACCESS_TOKEN');
+      console.log('  LINEAR_REFRESH_TOKEN');
+      console.log('  LINEAR_EXPIRES_AT');
+      return;
+    }
+
+    const isAuth = await isAuthenticated();
+
+    console.log('\nAuthentication status:', isAuth ? 'Authenticated' : 'Token expired');
+    console.log(`Token expires at: ${new Date(status.expiresAt).toLocaleString()}`);
+
+    if (status.expiresIn > 0) {
+      const minutes = Math.floor(status.expiresIn / 60000);
+      console.log(`Time until expiry: ${minutes} minute${minutes !== 1 ? 's' : ''}`);
+    }
+
+    console.log(`Granted scopes: ${status.scopes.join(', ')}`);
+  } catch (error) {
+    console.error('\n✗ Failed to get authentication status:', error.message);
+    process.exitCode = 1;
+  }
+}
+
+async function handleAuth(args) {
+  const [action] = args;
+
+  if (!action || action === '--help' || action === '-h') {
+    printAuthHelp();
+    return;
+  }
+
+  switch (action) {
+    case 'login':
+      return handleAuthLogin(args);
+    case 'logout':
+      return handleAuthLogout();
+    case 'status':
+      return handleAuthStatus();
+    default:
+      throw new Error(`Unknown auth action: ${action}`);
+  }
+}
+
 // ===== CONFIG HANDLER =====
 
 async function tryResolveProjectId(projectRef, explicitApiKey = null) {
@@ -303,7 +442,7 @@ async function handleConfig(args) {
 
   if (apiKey) {
     const settings = await loadSettings();
-    settings.linearApiKey = apiKey;
+    settings.apiKey = apiKey;
     await saveSettings(settings);
     cachedApiKey = null;
     console.log('LINEAR_API_KEY saved to settings');
@@ -341,8 +480,8 @@ async function handleConfig(args) {
   }
 
   const settings = await loadSettings();
-  const hasKey = !!(settings.linearApiKey || process.env.LINEAR_API_KEY);
-  const keySource = process.env.LINEAR_API_KEY ? 'environment' : (settings.linearApiKey ? 'settings' : 'not set');
+  const hasKey = !!(settings.apiKey || settings.linearApiKey || process.env.LINEAR_API_KEY);
+  const keySource = process.env.LINEAR_API_KEY ? 'environment' : (settings.apiKey || settings.linearApiKey ? 'settings' : 'not set');
 
   console.log(`Configuration:
   LINEAR_API_KEY: ${hasKey ? 'configured' : 'not set'} (source: ${keySource})
@@ -696,6 +835,11 @@ export async function runCli(argv = process.argv.slice(2)) {
 
   if (!command || command === '--help' || command === '-h' || command === 'help') {
     printHelp();
+    return;
+  }
+
+  if (command === 'auth') {
+    await handleAuth(rest);
     return;
   }
 

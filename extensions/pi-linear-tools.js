@@ -54,8 +54,10 @@ async function getLinearApiKey() {
 
   try {
     const settings = await loadSettings();
-    if (settings.linearApiKey && settings.linearApiKey.trim()) {
-      cachedApiKey = settings.linearApiKey.trim();
+    // Support both new apiKey and legacy linearApiKey (for migration)
+    const apiKey = settings.apiKey || settings.linearApiKey;
+    if (apiKey && apiKey.trim()) {
+      cachedApiKey = apiKey.trim();
       return cachedApiKey;
     }
   } catch {
@@ -124,7 +126,7 @@ async function runInteractiveConfigFlow(ctx) {
   const settings = await loadSettings();
   const envKey = process.env.LINEAR_API_KEY?.trim();
 
-  let apiKey = envKey || settings.linearApiKey?.trim() || null;
+  let apiKey = envKey || settings.apiKey?.trim() || settings.linearApiKey?.trim() || null;
 
   if (!apiKey) {
     const authMethod = await ctx.ui.select('Select authentication method', ['OAuth', 'API Key']);
@@ -147,7 +149,7 @@ async function runInteractiveConfigFlow(ctx) {
     }
 
     apiKey = normalized;
-    settings.linearApiKey = normalized;
+    settings.apiKey = normalized;
     cachedApiKey = normalized;
   }
 
@@ -484,7 +486,7 @@ export default function piLinearToolsExtension(pi) {
 
       if (apiKey) {
         const settings = await loadSettings();
-        settings.linearApiKey = apiKey;
+        settings.apiKey = apiKey;
         await saveSettings(settings);
         cachedApiKey = null;
         if (ctx?.hasUI) {
@@ -543,8 +545,8 @@ export default function piLinearToolsExtension(pi) {
       }
 
       const settings = await loadSettings();
-      const hasKey = !!(settings.linearApiKey || process.env.LINEAR_API_KEY);
-      const keySource = process.env.LINEAR_API_KEY ? 'environment' : (settings.linearApiKey ? 'settings' : 'not set');
+      const hasKey = !!(settings.apiKey || settings.linearApiKey || process.env.LINEAR_API_KEY);
+      const keySource = process.env.LINEAR_API_KEY ? 'environment' : (settings.apiKey || settings.linearApiKey ? 'settings' : 'not set');
 
       pi.sendMessage({
         customType: 'pi-linear-tools',

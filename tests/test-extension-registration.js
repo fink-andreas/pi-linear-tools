@@ -74,7 +74,8 @@ async function testConfigSavesApiKey() {
     await config('--api-key lin_test_123', { hasUI: false });
 
     const settings = JSON.parse(await readFile(getSettingsPath(), 'utf-8'));
-    assert.equal(settings.linearApiKey, 'lin_test_123');
+    // After migration, linearApiKey is migrated to apiKey
+    assert.equal(settings.apiKey, 'lin_test_123');
   });
 }
 
@@ -277,7 +278,7 @@ async function testInteractiveConfigWizard() {
       await config('', ctx);
 
       const settings = JSON.parse(await readFile(getSettingsPath(), 'utf-8'));
-      assert.equal(settings.linearApiKey, 'lin_interactive_key');
+      assert.equal(settings.apiKey, 'lin_interactive_key');
       assert.equal(settings.defaultTeam, 'ENG');
       assert.equal(settings.defaultWorkspace.id, 'w1');
       assert.equal(settings.defaultWorkspace.name, 'Workspace One');

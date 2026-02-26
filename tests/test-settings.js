@@ -25,8 +25,8 @@ async function withTempHome(fn) {
 
 async function testDefaults() {
   const defaults = getDefaultSettings();
-  assert.equal(defaults.schemaVersion, 1);
-  assert.equal(defaults.linearApiKey, null);
+  assert.equal(defaults.schemaVersion, 2);
+  assert.equal(defaults.apiKey, null);
   assert.equal(defaults.defaultTeam, null);
   assert.equal(defaults.defaultWorkspace, null);
   assert.deepEqual(defaults.projects, {});
@@ -35,8 +35,8 @@ async function testDefaults() {
 async function testSaveAndLoad() {
   await withTempHome(async () => {
     const settings = {
-      schemaVersion: 1,
-      linearApiKey: 'lin_test',
+      schemaVersion: 2,
+      apiKey: 'lin_test',
       defaultTeam: 'ENG',
       projects: {
         'project-1': {
@@ -50,7 +50,7 @@ async function testSaveAndLoad() {
     await saveSettings(settings);
     const loaded = await loadSettings();
 
-    assert.equal(loaded.linearApiKey, 'lin_test');
+    assert.equal(loaded.apiKey, 'lin_test');
     assert.equal(loaded.defaultTeam, 'ENG');
     assert.equal(loaded.debug_reload, undefined);
     assert.equal(loaded.projects['project-1'].scope.team, 'ENG');
@@ -61,7 +61,7 @@ async function testValidation() {
   const valid = validateSettings(getDefaultSettings());
   assert.equal(valid.valid, true);
 
-  const invalid = validateSettings({ schemaVersion: 1, projects: [] });
+  const invalid = validateSettings({ schemaVersion: 2, projects: [] });
   assert.equal(invalid.valid, false);
   assert.ok(invalid.errors.length > 0);
 }
