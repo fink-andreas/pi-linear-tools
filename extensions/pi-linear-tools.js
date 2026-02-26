@@ -1,6 +1,6 @@
 import { loadSettings, saveSettings } from '../src/settings.js';
 import { createLinearClient } from '../src/linear-client.js';
-import { debug } from '../src/logger.js';
+import { setQuietMode } from '../src/logger.js';
 import {
   resolveProjectRef,
   fetchTeams,
@@ -22,6 +22,7 @@ import {
   executeMilestoneUpdate,
   executeMilestoneDelete,
 } from '../src/handlers.js';
+import { authenticate, getAccessToken, logout } from '../src/auth/index.js';
 
 function parseArgs(argsString) {
   if (!argsString || !argsString.trim()) return [];
@@ -42,29 +43,44 @@ function readFlag(args, flag) {
 
 let cachedApiKey = null;
 
-async function getLinearApiKey() {
+async function getLinearAuth() {
   const envKey = process.env.LINEAR_API_KEY;
   if (envKey && envKey.trim()) {
-    return envKey.trim();
+    return { apiKey: envKey.trim() };
+  }
+
+  const settings = await loadSettings();
+  const authMethod = settings.authMethod || 'api-key';
+
+  if (authMethod === 'oauth') {
+    const accessToken = await getAccessToken();
+    if (accessToken) {
+      return { accessToken };
+    }
   }
 
   if (cachedApiKey) {
-    return cachedApiKey;
+    return { apiKey: cachedApiKey };
   }
 
-  try {
-    const settings = await loadSettings();
-    // Support both new apiKey and legacy linearApiKey (for migration)
-    const apiKey = settings.apiKey || settings.linearApiKey;
-    if (apiKey && apiKey.trim()) {
-      cachedApiKey = apiKey.trim();
-      return cachedApiKey;
-    }
-  } catch {
-    // ignore, error below
+  const apiKey = settings.apiKey || settings.linearApiKey;
+  if (apiKey && apiKey.trim()) {
+    cachedApiKey = apiKey.trim();
+    return { apiKey: cachedApiKey };
   }
 
-  throw new Error('LINEAR_API_KEY not set. Use /linear-tools-config --api-key <key> or set environment variable.');
+  const fallbackAccessToken = await getAccessToken();
+  if (fallbackAccessToken) {
+    return { accessToken: fallbackAccessToken };
+  }
+
+  throw new Error(
+    'No Linear authentication configured. Use /linear-tools-config --api-key <key> or run `pi-linear-tools auth login` in CLI.'
+  );
+}
+
+async function createAuthenticatedClient() {
+  return createLinearClient(await getLinearAuth());
 }
 
 async function resolveDefaultTeam(projectId) {
@@ -122,38 +138,158 @@ async function startGitBranchForIssue(pi, branchName, fromRef = 'HEAD', onBranch
   return { action: 'switched', branchName };
 }
 
-async function runInteractiveConfigFlow(ctx) {
+async function runInteractiveConfigFlow(ctx, pi) {
   const settings = await loadSettings();
   const envKey = process.env.LINEAR_API_KEY?.trim();
 
-  let apiKey = envKey || settings.apiKey?.trim() || settings.linearApiKey?.trim() || null;
+  let client;
+  let apiKey = settings.apiKey?.trim() || settings.linearApiKey?.trim() || null;
+  let accessToken = null;
 
-  if (!apiKey) {
-    const authMethod = await ctx.ui.select('Select authentication method', ['OAuth', 'API Key']);
+  setQuietMode(true);
+  try {
+    accessToken = await getAccessToken();
+  } finally {
+    setQuietMode(false);
+  }
 
-    if (!authMethod) {
+  const hasWorkingAuth = !!(envKey || apiKey || accessToken);
+
+  if (hasWorkingAuth) {
+    const source = envKey ? 'environment API key' : (accessToken ? 'OAuth token' : 'stored API key');
+    const logoutSelection = await ctx.ui.select(
+      `Existing authentication detected (${source}). Logout and re-authenticate?`,
+      ['No', 'Yes']
+    );
+
+    if (!logoutSelection) {
       ctx.ui.notify('Configuration cancelled', 'warning');
       return;
     }
 
-    if (authMethod === 'OAuth') {
-      ctx.ui.notify('OAuth setup is not implemented yet. Aborting.', 'warning');
-      return;
-    }
+    if (logoutSelection === 'Yes') {
+      setQuietMode(true);
+      try {
+        await logout();
+      } finally {
+        setQuietMode(false);
+      }
 
-    const promptedKey = await ctx.ui.input('Enter Linear API key', 'lin_xxx');
-    const normalized = String(promptedKey || '').trim();
-    if (!normalized) {
-      ctx.ui.notify('No API key provided. Aborting.', 'warning');
-      return;
-    }
+      settings.apiKey = null;
+      if (Object.prototype.hasOwnProperty.call(settings, 'linearApiKey')) {
+        delete settings.linearApiKey;
+      }
+      cachedApiKey = null;
+      accessToken = null;
+      apiKey = null;
 
-    apiKey = normalized;
-    settings.apiKey = normalized;
-    cachedApiKey = normalized;
+      await saveSettings(settings);
+      ctx.ui.notify('Stored authentication cleared.', 'info');
+
+      if (envKey) {
+        ctx.ui.notify('LINEAR_API_KEY is still set in environment and cannot be removed by this command.', 'warning');
+      }
+    } else {
+      if (envKey) {
+        client = createLinearClient(envKey);
+      } else if (accessToken) {
+        settings.authMethod = 'oauth';
+        client = createLinearClient({ accessToken });
+      } else if (apiKey) {
+        settings.authMethod = 'api-key';
+        cachedApiKey = apiKey;
+        client = createLinearClient(apiKey);
+      }
+    }
   }
 
-  const client = createLinearClient(apiKey);
+  if (!client) {
+    const selectedAuthMethod = await ctx.ui.select('Select authentication method', ['OAuth', 'API Key']);
+
+    if (!selectedAuthMethod) {
+      ctx.ui.notify('Configuration cancelled', 'warning');
+      return;
+    }
+
+    if (selectedAuthMethod === 'OAuth') {
+      settings.authMethod = 'oauth';
+      cachedApiKey = null;
+
+      setQuietMode(true);
+      try {
+        accessToken = await getAccessToken();
+
+        if (!accessToken) {
+          ctx.ui.notify('Starting OAuth login...', 'info');
+          try {
+            await authenticate({
+              onAuthorizationUrl: async (authUrl) => {
+                pi.sendMessage({
+                  customType: 'pi-linear-tools',
+                  content: [
+                    '### Linear OAuth login',
+                    '',
+                    `[Open authorization URL](${authUrl})`,
+                    '',
+                    'If browser did not open automatically, copy and open this URL:',
+                    `\`${authUrl}\``,
+                    '',
+                    'After authorizing, paste the callback URL in the next prompt.',
+                  ].join('\n'),
+                  display: true,
+                });
+                ctx.ui.notify('Complete OAuth in browser, then paste callback URL in the prompt.', 'info');
+              },
+              manualCodeInput: async () => {
+                const entered = await ctx.ui.input(
+                  'Paste callback URL from browser (or type "cancel")',
+                  'http://localhost:34711/callback?code=...&state=...'
+                );
+                const normalized = String(entered || '').trim();
+                if (!normalized || normalized.toLowerCase() === 'cancel') {
+                  return null;
+                }
+                return normalized;
+              },
+            });
+          } catch (error) {
+            if (String(error?.message || '').includes('cancelled by user')) {
+              ctx.ui.notify('OAuth authentication cancelled.', 'warning');
+              return;
+            }
+            throw error;
+          }
+          accessToken = await getAccessToken();
+        }
+
+        if (!accessToken) {
+          throw new Error('OAuth authentication failed: no access token available after login');
+        }
+
+        client = createLinearClient({ accessToken });
+      } finally {
+        setQuietMode(false);
+      }
+    } else {
+      if (!envKey && !apiKey) {
+        const promptedKey = await ctx.ui.input('Enter Linear API key', 'lin_xxx');
+        const normalized = String(promptedKey || '').trim();
+        if (!normalized) {
+          ctx.ui.notify('No API key provided. Aborting.', 'warning');
+          return;
+        }
+
+        apiKey = normalized;
+      }
+
+      const selectedApiKey = envKey || apiKey;
+      settings.apiKey = selectedApiKey;
+      settings.authMethod = 'api-key';
+      cachedApiKey = selectedApiKey;
+      client = createLinearClient(selectedApiKey);
+    }
+  }
+
   const workspaces = await fetchWorkspaces(client);
 
   if (workspaces.length === 0) {
@@ -322,8 +458,7 @@ function registerLinearTools(pi) {
       additionalProperties: false,
     },
     async execute(_toolCallId, params) {
-      const apiKey = await getLinearApiKey();
-      const client = createLinearClient(apiKey);
+      const client = await createAuthenticatedClient();
 
       switch (params.action) {
         case 'list':
@@ -367,8 +502,7 @@ function registerLinearTools(pi) {
       additionalProperties: false,
     },
     async execute(_toolCallId, params) {
-      const apiKey = await getLinearApiKey();
-      const client = createLinearClient(apiKey);
+      const client = await createAuthenticatedClient();
 
       switch (params.action) {
         case 'list':
@@ -396,8 +530,7 @@ function registerLinearTools(pi) {
       additionalProperties: false,
     },
     async execute(_toolCallId, params) {
-      const apiKey = await getLinearApiKey();
-      const client = createLinearClient(apiKey);
+      const client = await createAuthenticatedClient();
 
       switch (params.action) {
         case 'list':
@@ -450,8 +583,7 @@ function registerLinearTools(pi) {
       additionalProperties: false,
     },
     async execute(_toolCallId, params) {
-      const apiKey = await getLinearApiKey();
-      const client = createLinearClient(apiKey);
+      const client = await createAuthenticatedClient();
 
       switch (params.action) {
         case 'list':
@@ -487,6 +619,7 @@ export default function piLinearToolsExtension(pi) {
       if (apiKey) {
         const settings = await loadSettings();
         settings.apiKey = apiKey;
+        settings.authMethod = 'api-key';
         await saveSettings(settings);
         cachedApiKey = null;
         if (ctx?.hasUI) {
@@ -510,8 +643,7 @@ export default function piLinearToolsExtension(pi) {
 
         let projectId = projectName;
         try {
-          const resolvedKey = await getLinearApiKey();
-          const client = createLinearClient(resolvedKey);
+          const client = await createAuthenticatedClient();
           const resolved = await resolveProjectRef(client, projectName);
           projectId = resolved.id;
         } catch {
@@ -540,7 +672,7 @@ export default function piLinearToolsExtension(pi) {
       }
 
       if (!apiKey && !defaultTeam && !projectTeam && !projectName && ctx?.hasUI && ctx?.ui) {
-        await runInteractiveConfigFlow(ctx);
+        await runInteractiveConfigFlow(ctx, pi);
         return;
       }
 

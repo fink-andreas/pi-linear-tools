@@ -2,9 +2,12 @@
  * Secure token storage for OAuth 2.0 tokens
  *
  * Stores access and refresh tokens securely using OS keychain.
- * Falls back to environment variables for CI/headless environments.
+ * Falls back to local file storage when keychain is unavailable,
+ * and supports environment variables for CI/headless environments.
  */
 
+import { readFile, writeFile, mkdir, unlink } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import { debug, warn, error as logError } from '../logger.js';
 
 // Keytar service name for pi-linear-tools
@@ -18,6 +21,62 @@ let inMemoryTokens = null;
 
 // Lazy-loaded keytar module
 let keytarModule = null;
+
+function getTokenFilePath() {
+  const homeDir = process.env.HOME || process.env.USERPROFILE || '.';
+  return join(homeDir, '.pi', 'agent', 'extensions', 'pi-linear-tools', 'oauth-tokens.json');
+}
+
+function normalizeTokens(tokens, source = 'unknown') {
+  if (!tokens || !tokens.accessToken || !tokens.refreshToken || !tokens.expiresAt) {
+    logError(`Invalid token structure in ${source}`, { tokens });
+    return null;
+  }
+
+  return {
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken,
+    expiresAt: tokens.expiresAt,
+    scope: tokens.scope || [],
+    tokenType: tokens.tokenType || 'Bearer',
+  };
+}
+
+async function readTokensFromFile() {
+  const tokenFilePath = getTokenFilePath();
+
+  try {
+    const content = await readFile(tokenFilePath, 'utf-8');
+    const parsed = JSON.parse(content);
+    const tokens = normalizeTokens(parsed, 'fallback token file');
+
+    if (!tokens) {
+      await unlink(tokenFilePath).catch(() => {});
+      return null;
+    }
+
+    debug('Tokens retrieved from fallback token file', {
+      path: tokenFilePath,
+      expiresAt: new Date(tokens.expiresAt).toISOString(),
+    });
+
+    return tokens;
+  } catch {
+    return null;
+  }
+}
+
+async function writeTokensToFile(tokenData) {
+  const tokenFilePath = getTokenFilePath();
+  const parentDir = dirname(tokenFilePath);
+
+  await mkdir(parentDir, { recursive: true, mode: 0o700 });
+  await writeFile(tokenFilePath, tokenData, { encoding: 'utf-8', mode: 0o600 });
+
+  warn('Stored OAuth tokens in fallback file storage because keychain is unavailable', {
+    path: tokenFilePath,
+  });
+}
 
 /**
  * Check if keytar is available
@@ -74,21 +133,33 @@ export async function storeTokens(tokens) {
     tokenType: tokens.tokenType || 'Bearer',
   });
 
-  // Store in keychain or fallback to memory
-  if (useKeytar) {
-    const result = await keytarModule.setPassword(
-      KEYTAR_SERVICE,
-      KEYTAR_ACCOUNT,
-      tokenData
-    );
+  // Always keep the latest tokens in memory for this process.
+  // This ensures refreshed tokens immediately override env-sourced tokens.
+  inMemoryTokens = tokenData;
 
-    if (!result) {
-      throw new Error('keytar.setPassword returned false');
+  // Persist to keychain when available
+  if (useKeytar) {
+    try {
+      const result = await keytarModule.setPassword(
+        KEYTAR_SERVICE,
+        KEYTAR_ACCOUNT,
+        tokenData
+      );
+
+      if (!result) {
+        throw new Error('keytar.setPassword returned false');
+      }
+
+      // Clean up fallback file if keychain works again
+      await unlink(getTokenFilePath()).catch(() => {});
+    } catch (error) {
+      warn('Failed to store tokens in keychain, falling back to file storage', {
+        error: error.message,
+      });
+      await writeTokensToFile(tokenData);
     }
   } else {
-    // Fallback to in-memory storage
-    inMemoryTokens = tokenData;
-    warn('Using in-memory token storage (not persistent across sessions)');
+    await writeTokensToFile(tokenData);
   }
 
   debug('Tokens stored successfully', {
@@ -98,24 +169,44 @@ export async function storeTokens(tokens) {
 }
 
 /**
- * Retrieve tokens from OS keychain or environment variables
+ * Retrieve tokens from in-memory cache, environment variables, or keychain.
  *
- * Checks environment variables first (for CI/headless environments),
- * then falls back to keychain storage.
+ * Precedence is:
+ * 1) in-memory cache (latest tokens in this process, e.g. after refresh)
+ * 2) environment variables (CI/headless bootstrap)
+ * 3) keychain
  *
  * @returns {Promise<TokenRecord|null>} Token record or null if not found
  */
 export async function getTokens() {
   debug('Retrieving tokens');
 
-  // First, check environment variables (for CI/headless environments)
+  if (inMemoryTokens) {
+    try {
+      const parsed = JSON.parse(inMemoryTokens);
+      const tokens = normalizeTokens(parsed, 'memory');
+
+      if (!tokens) {
+        inMemoryTokens = null;
+      } else {
+        debug('Tokens retrieved from in-memory storage', {
+          expiresAt: new Date(tokens.expiresAt).toISOString(),
+        });
+
+        return tokens;
+      }
+    } catch (error) {
+      logError('Invalid token JSON in memory', { error: error.message });
+      inMemoryTokens = null;
+    }
+  }
+
   const envTokens = getTokensFromEnv();
   if (envTokens) {
     debug('Retrieved tokens from environment variables');
     return envTokens;
   }
 
-  // Fall back to keychain or in-memory storage
   const useKeytar = await isKeytarAvailable();
 
   if (useKeytar) {
@@ -125,65 +216,39 @@ export async function getTokens() {
         KEYTAR_ACCOUNT
       );
 
-      if (!tokenData) {
-        debug('No tokens found in keychain');
-        return null;
+      if (tokenData) {
+        const parsed = JSON.parse(tokenData);
+        const tokens = normalizeTokens(parsed, 'keychain');
+
+        if (!tokens) {
+          await clearTokens(); // Clear corrupted tokens
+          return null;
+        }
+
+        debug('Tokens retrieved successfully', {
+          expiresAt: new Date(tokens.expiresAt).toISOString(),
+          scope: tokens.scope,
+        });
+
+        return tokens;
       }
 
-      const tokens = JSON.parse(tokenData);
-
-      // Validate token structure
-      if (!tokens.accessToken || !tokens.refreshToken || !tokens.expiresAt) {
-        logError('Invalid token structure in keychain', { tokens });
-        await clearTokens(); // Clear corrupted tokens
-        return null;
-      }
-
-      debug('Tokens retrieved successfully', {
-        expiresAt: new Date(tokens.expiresAt).toISOString(),
-        scope: tokens.scope,
-      });
-
-      return {
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-        expiresAt: tokens.expiresAt,
-        scope: tokens.scope,
-        tokenType: tokens.tokenType || 'Bearer',
-      };
+      debug('No tokens found in keychain');
     } catch (error) {
-      logError('Failed to retrieve tokens', {
+      warn('Failed to retrieve tokens from keychain, trying fallback storage', {
         error: error.message,
-        stack: error.stack,
       });
-      return null;
     }
-  } else if (inMemoryTokens) {
-    // Use in-memory fallback
-    const tokens = JSON.parse(inMemoryTokens);
-
-    // Validate token structure
-    if (!tokens.accessToken || !tokens.refreshToken || !tokens.expiresAt) {
-      logError('Invalid token structure in memory', { tokens });
-      inMemoryTokens = null;
-      return null;
-    }
-
-    debug('Tokens retrieved from in-memory storage', {
-      expiresAt: new Date(tokens.expiresAt).toISOString(),
-    });
-
-    return {
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-      expiresAt: tokens.expiresAt,
-      scope: tokens.scope,
-      tokenType: tokens.tokenType || 'Bearer',
-    };
-  } else {
-    debug('No tokens found');
-    return null;
   }
+
+  const fileTokens = await readTokensFromFile();
+  if (fileTokens) {
+    inMemoryTokens = JSON.stringify(fileTokens);
+    return fileTokens;
+  }
+
+  debug('No tokens found');
+  return null;
 }
 
 /**
@@ -216,6 +281,9 @@ export async function clearTokens() {
       // Don't throw - clearing is best-effort
     }
   }
+
+  // Clear fallback file storage
+  await unlink(getTokenFilePath()).catch(() => {});
 
   // Clear in-memory tokens
   inMemoryTokens = null;

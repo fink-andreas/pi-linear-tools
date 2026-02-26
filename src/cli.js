@@ -1,7 +1,13 @@
 import { loadSettings, saveSettings } from './settings.js';
 import { createLinearClient } from './linear-client.js';
 import { resolveProjectRef } from './linear.js';
-import { authenticate, logout, getAuthStatus, isAuthenticated } from './auth/index.js';
+import {
+  authenticate,
+  logout,
+  getAuthStatus,
+  isAuthenticated,
+  getAccessToken,
+} from './auth/index.js';
 import {
   executeIssueList,
   executeIssueView,
@@ -61,33 +67,48 @@ function parseBoolean(value) {
   return undefined;
 }
 
-// ===== API KEY RESOLUTION =====
+// ===== AUTH RESOLUTION =====
 
 let cachedApiKey = null;
 
-async function getLinearApiKey() {
+async function getLinearAuth() {
   const envKey = process.env.LINEAR_API_KEY;
   if (envKey && envKey.trim()) {
-    return envKey.trim();
+    return { apiKey: envKey.trim() };
+  }
+
+  const settings = await loadSettings();
+  const authMethod = settings.authMethod || 'api-key';
+
+  if (authMethod === 'oauth') {
+    const accessToken = await getAccessToken();
+    if (accessToken) {
+      return { accessToken };
+    }
   }
 
   if (cachedApiKey) {
-    return cachedApiKey;
+    return { apiKey: cachedApiKey };
   }
 
-  try {
-    const settings = await loadSettings();
-    // Support both new apiKey and legacy linearApiKey (for migration)
-    const apiKey = settings.apiKey || settings.linearApiKey;
-    if (apiKey && apiKey.trim()) {
-      cachedApiKey = apiKey.trim();
-      return cachedApiKey;
-    }
-  } catch {
-    // ignore, error below
+  const apiKey = settings.apiKey || settings.linearApiKey;
+  if (apiKey && apiKey.trim()) {
+    cachedApiKey = apiKey.trim();
+    return { apiKey: cachedApiKey };
   }
 
-  throw new Error('LINEAR_API_KEY not set. Run: pi-linear-tools config --api-key <key>');
+  const fallbackAccessToken = await getAccessToken();
+  if (fallbackAccessToken) {
+    return { accessToken: fallbackAccessToken };
+  }
+
+  throw new Error(
+    'No Linear authentication configured. Run: pi-linear-tools auth login or pi-linear-tools config --api-key <key>'
+  );
+}
+
+async function createAuthenticatedClient() {
+  return createLinearClient(await getLinearAuth());
 }
 
 async function resolveDefaultTeam(projectId) {
@@ -343,6 +364,10 @@ async function handleAuthLogin(args) {
       port: port ? parseInt(port, 10) : undefined,
     });
 
+    const settings = await loadSettings();
+    settings.authMethod = 'oauth';
+    await saveSettings(settings);
+
     console.log('\n✓ Authentication successful!');
     console.log(`✓ Token expires at: ${new Date(tokens.expiresAt).toLocaleString()}`);
     console.log(`✓ Granted scopes: ${tokens.scope.join(', ')}`);
@@ -443,6 +468,7 @@ async function handleConfig(args) {
   if (apiKey) {
     const settings = await loadSettings();
     settings.apiKey = apiKey;
+    settings.authMethod = 'api-key';
     await saveSettings(settings);
     cachedApiKey = null;
     console.log('LINEAR_API_KEY saved to settings');
@@ -463,7 +489,7 @@ async function handleConfig(args) {
     }
 
     const settings = await loadSettings();
-    const projectId = await tryResolveProjectId(projectName, settings.linearApiKey);
+    const projectId = await tryResolveProjectId(projectName, settings.apiKey || settings.linearApiKey);
 
     if (!settings.projects[projectId]) {
       settings.projects[projectId] = { scope: { team: null } };
@@ -497,8 +523,7 @@ Commands:
 // ===== ISSUE HANDLERS =====
 
 async function handleIssueList(args) {
-  const apiKey = await getLinearApiKey();
-  const client = createLinearClient(apiKey);
+  const client = await createAuthenticatedClient();
 
   const params = {
     project: readFlag(args, '--project'),
@@ -512,8 +537,7 @@ async function handleIssueList(args) {
 }
 
 async function handleIssueView(args) {
-  const apiKey = await getLinearApiKey();
-  const client = createLinearClient(apiKey);
+  const client = await createAuthenticatedClient();
 
   const positional = args.filter((a) => !a.startsWith('-'));
   if (positional.length === 0) {
@@ -530,8 +554,7 @@ async function handleIssueView(args) {
 }
 
 async function handleIssueCreate(args) {
-  const apiKey = await getLinearApiKey();
-  const client = createLinearClient(apiKey);
+  const client = await createAuthenticatedClient();
 
   const params = {
     title: readFlag(args, '--title'),
@@ -553,8 +576,7 @@ async function handleIssueCreate(args) {
 }
 
 async function handleIssueUpdate(args) {
-  const apiKey = await getLinearApiKey();
-  const client = createLinearClient(apiKey);
+  const client = await createAuthenticatedClient();
 
   const positional = args.filter((a) => !a.startsWith('-'));
   if (positional.length === 0) {
@@ -577,8 +599,7 @@ async function handleIssueUpdate(args) {
 }
 
 async function handleIssueComment(args) {
-  const apiKey = await getLinearApiKey();
-  const client = createLinearClient(apiKey);
+  const client = await createAuthenticatedClient();
 
   const positional = args.filter((a) => !a.startsWith('-'));
   if (positional.length === 0) {
@@ -599,8 +620,7 @@ async function handleIssueComment(args) {
 }
 
 async function handleIssueStart(args) {
-  const apiKey = await getLinearApiKey();
-  const client = createLinearClient(apiKey);
+  const client = await createAuthenticatedClient();
 
   const positional = args.filter((a) => !a.startsWith('-'));
   if (positional.length === 0) {
@@ -619,8 +639,7 @@ async function handleIssueStart(args) {
 }
 
 async function handleIssueDelete(args) {
-  const apiKey = await getLinearApiKey();
-  const client = createLinearClient(apiKey);
+  const client = await createAuthenticatedClient();
 
   const positional = args.filter((a) => !a.startsWith('-'));
   if (positional.length === 0) {
@@ -666,8 +685,7 @@ async function handleIssue(args) {
 // ===== PROJECT HANDLERS =====
 
 async function handleProjectList() {
-  const apiKey = await getLinearApiKey();
-  const client = createLinearClient(apiKey);
+  const client = await createAuthenticatedClient();
 
   const result = await executeProjectList(client);
   console.log(result.content[0].text);
@@ -692,8 +710,7 @@ async function handleProject(args) {
 // ===== TEAM HANDLERS =====
 
 async function handleTeamList() {
-  const apiKey = await getLinearApiKey();
-  const client = createLinearClient(apiKey);
+  const client = await createAuthenticatedClient();
 
   const result = await executeTeamList(client);
   console.log(result.content[0].text);
@@ -718,8 +735,7 @@ async function handleTeam(args) {
 // ===== MILESTONE HANDLERS =====
 
 async function handleMilestoneList(args) {
-  const apiKey = await getLinearApiKey();
-  const client = createLinearClient(apiKey);
+  const client = await createAuthenticatedClient();
 
   const params = {
     project: readFlag(args, '--project'),
@@ -730,8 +746,7 @@ async function handleMilestoneList(args) {
 }
 
 async function handleMilestoneView(args) {
-  const apiKey = await getLinearApiKey();
-  const client = createLinearClient(apiKey);
+  const client = await createAuthenticatedClient();
 
   const positional = args.filter((a) => !a.startsWith('-'));
   if (positional.length === 0) {
@@ -747,8 +762,7 @@ async function handleMilestoneView(args) {
 }
 
 async function handleMilestoneCreate(args) {
-  const apiKey = await getLinearApiKey();
-  const client = createLinearClient(apiKey);
+  const client = await createAuthenticatedClient();
 
   const params = {
     project: readFlag(args, '--project'),
@@ -767,8 +781,7 @@ async function handleMilestoneCreate(args) {
 }
 
 async function handleMilestoneUpdate(args) {
-  const apiKey = await getLinearApiKey();
-  const client = createLinearClient(apiKey);
+  const client = await createAuthenticatedClient();
 
   const positional = args.filter((a) => !a.startsWith('-'));
   if (positional.length === 0) {
@@ -788,8 +801,7 @@ async function handleMilestoneUpdate(args) {
 }
 
 async function handleMilestoneDelete(args) {
-  const apiKey = await getLinearApiKey();
-  const client = createLinearClient(apiKey);
+  const client = await createAuthenticatedClient();
 
   const positional = args.filter((a) => !a.startsWith('-'));
   if (positional.length === 0) {

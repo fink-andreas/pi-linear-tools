@@ -141,19 +141,43 @@ const ERROR_HTML = (errorMessage) => `
  * @param {string} options.expectedState - Expected state parameter (for CSRF validation)
  * @param {number} [options.port] - Port to listen on (default: 34711)
  * @param {number} [options.timeout] - Timeout in milliseconds (default: 5 minutes)
+ * @param {AbortSignal} [options.signal] - Optional abort signal to cancel waiting
  * @returns {Promise<object>} Callback result with code and state
- * @throws {Error} If callback fails, times out, or state validation fails
+ * @throws {Error} If callback fails, times out, state validation fails, or is aborted
  */
 export async function waitForCallback({
   expectedState,
   port = SERVER_CONFIG.port,
   timeout = SERVER_CONFIG.timeout,
+  signal,
 }) {
   debug('Starting callback server', { port, expectedState });
 
   return new Promise((resolve, reject) => {
     let server;
     let timeoutId;
+    let settled = false;
+
+    const cleanup = () => {
+      clearTimeout(timeoutId);
+      if (signal) {
+        signal.removeEventListener('abort', abortHandler);
+      }
+    };
+
+    const fail = (err) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(err);
+    };
+
+    const succeed = (value) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(value);
+    };
 
     // Create timeout handler
     const timeoutHandler = () => {
@@ -161,8 +185,25 @@ export async function waitForCallback({
       if (server) {
         server.close();
       }
-      reject(new Error('OAuth callback timed out. Please try again.'));
+      fail(new Error('OAuth callback timed out. Please try again.'));
     };
+
+    const abortHandler = () => {
+      debug('Callback server aborted by caller');
+      if (server) {
+        server.close();
+      }
+      fail(new Error('OAuth authentication was cancelled.'));
+    };
+
+    if (signal?.aborted) {
+      abortHandler();
+      return;
+    }
+
+    if (signal) {
+      signal.addEventListener('abort', abortHandler, { once: true });
+    }
 
     // Start timeout
     timeoutId = setTimeout(timeoutHandler, timeout);
@@ -196,9 +237,8 @@ export async function waitForCallback({
             )
           );
 
-          clearTimeout(timeoutId);
           server.close();
-          reject(new Error(`OAuth error: ${errorDescription || error}`));
+          fail(new Error(`OAuth error: ${errorDescription || error}`));
           return;
         }
 
@@ -209,9 +249,8 @@ export async function waitForCallback({
           res.writeHead(400, { 'Content-Type': 'text/html' });
           res.end(ERROR_HTML('Missing authorization code in callback'));
 
-          clearTimeout(timeoutId);
           server.close();
-          reject(new Error('Missing authorization code in callback'));
+          fail(new Error('Missing authorization code in callback'));
           return;
         }
 
@@ -227,9 +266,8 @@ export async function waitForCallback({
             ERROR_HTML('Security error: State mismatch. Possible CSRF attack.')
           );
 
-          clearTimeout(timeoutId);
           server.close();
-          reject(
+          fail(
             new Error('State validation failed. Possible CSRF attack.')
           );
           return;
@@ -241,14 +279,12 @@ export async function waitForCallback({
         res.writeHead(200, { 'Content-Type': 'text/html' });
         res.end(SUCCESS_HTML);
 
-        clearTimeout(timeoutId);
-
         // Close server after a short delay to ensure response is sent
         setTimeout(() => {
           server.close();
         }, 100);
 
-        resolve({ code, state });
+        succeed({ code, state });
       } else {
         // Return 404 for other paths
         res.writeHead(404, { 'Content-Type': 'text/plain' });
@@ -263,22 +299,20 @@ export async function waitForCallback({
         code: err.code,
       });
 
-      clearTimeout(timeoutId);
-
       if (err.code === 'EADDRINUSE') {
-        reject(
+        fail(
           new Error(
             `Port ${port} is already in use. Please check if another process is using it.`
           )
         );
       } else if (err.code === 'EACCES') {
-        reject(
+        fail(
           new Error(
             `Permission denied to bind to port ${port}. Try a different port.`
           )
         );
       } else {
-        reject(new Error(`Failed to start callback server: ${err.message}`));
+        fail(new Error(`Failed to start callback server: ${err.message}`));
       }
     });
 

@@ -104,7 +104,7 @@ async function testIssueToolRequiresApiKey() {
       const issueTool = pi.tools.get('linear_issue');
       await assert.rejects(
         () => issueTool.execute('call-1', { action: 'list', project: 'demo' }),
-        /LINEAR_API_KEY not set/
+        /No Linear authentication configured|LINEAR_API_KEY not set/
       );
     });
   } finally {
@@ -289,6 +289,72 @@ async function testInteractiveConfigWizard() {
   }
 }
 
+async function testInteractiveConfigWizardOAuth() {
+  const prevApi = process.env.LINEAR_API_KEY;
+  const prevAccess = process.env.LINEAR_ACCESS_TOKEN;
+  const prevRefresh = process.env.LINEAR_REFRESH_TOKEN;
+  const prevExpires = process.env.LINEAR_EXPIRES_AT;
+
+  delete process.env.LINEAR_API_KEY;
+  process.env.LINEAR_ACCESS_TOKEN = 'oauth_access_test';
+  process.env.LINEAR_REFRESH_TOKEN = 'oauth_refresh_test';
+  process.env.LINEAR_EXPIRES_AT = String(Date.now() + 60 * 60 * 1000);
+
+  try {
+    await withTempHome(async () => {
+      const mockClient = {
+        viewer: Promise.resolve({
+          id: 'u1',
+          name: 'Tester',
+          displayName: 'Tester',
+          organization: Promise.resolve({ id: 'w1', name: 'Workspace One', urlKey: 'workspace-one' }),
+        }),
+        teams: async () => ({
+          nodes: [{ id: 't1', key: 'ENG', name: 'Engineering' }],
+        }),
+      };
+
+      setTestClientFactory(() => mockClient);
+
+      const pi = createMockPi();
+      extension(pi);
+
+      const config = pi.commands.get('linear-tools-config').handler;
+
+      const ctx = {
+        hasUI: true,
+        ui: {
+          async select(_title, options) {
+            if (options.includes('No') && options.includes('Yes')) return 'No';
+            if (options.includes('OAuth')) return 'OAuth';
+            if (options[0].includes('Workspace One')) return options[0];
+            if (options[0].includes('ENG')) return options[0];
+            return undefined;
+          },
+          async input() {
+            throw new Error('API key prompt should not be shown for OAuth flow');
+          },
+          notify() {},
+        },
+      };
+
+      await config('', ctx);
+
+      const settings = JSON.parse(await readFile(getSettingsPath(), 'utf-8'));
+      assert.equal(settings.authMethod, 'oauth');
+      assert.equal(settings.defaultTeam, 'ENG');
+      assert.equal(settings.defaultWorkspace.id, 'w1');
+      assert.equal(settings.defaultWorkspace.name, 'Workspace One');
+    });
+  } finally {
+    resetTestClientFactory();
+    process.env.LINEAR_API_KEY = prevApi;
+    process.env.LINEAR_ACCESS_TOKEN = prevAccess;
+    process.env.LINEAR_REFRESH_TOKEN = prevRefresh;
+    process.env.LINEAR_EXPIRES_AT = prevExpires;
+  }
+}
+
 async function main() {
   await testRegistration();
   await testConfigSavesApiKey();
@@ -298,6 +364,7 @@ async function main() {
   await testMilestoneListIncludesIds();
   await testMilestoneDeleteIncludesName();
   await testInteractiveConfigWizard();
+  await testInteractiveConfigWizardOAuth();
   console.log('✓ tests/test-extension-registration.js passed');
 }
 
