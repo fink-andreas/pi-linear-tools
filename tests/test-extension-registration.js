@@ -234,6 +234,36 @@ async function testMilestoneDeleteIncludesName() {
   }
 }
 
+async function testMilestoneScopeErrorHint() {
+  const prev = process.env.LINEAR_API_KEY;
+  process.env.LINEAR_API_KEY = 'lin_test';
+
+  try {
+    const mockClient = {
+      projects: async () => ({
+        nodes: [{ id: 'p1', name: 'demo' }],
+      }),
+      createProjectMilestone: async () => {
+        throw new Error('Invalid scope: `write` required');
+      },
+    };
+
+    setTestClientFactory(() => mockClient);
+
+    const pi = createMockPi();
+    extension(pi);
+
+    const milestoneTool = pi.tools.get('linear_milestone');
+    await assert.rejects(
+      () => milestoneTool.execute('call-m3', { action: 'create', project: 'demo', name: 'Test' }),
+      /Use API key auth for milestone management/
+    );
+  } finally {
+    resetTestClientFactory();
+    process.env.LINEAR_API_KEY = prev;
+  }
+}
+
 async function testInteractiveConfigWizard() {
   const prev = process.env.LINEAR_API_KEY;
   delete process.env.LINEAR_API_KEY;
@@ -363,6 +393,7 @@ async function main() {
   await testIssueToolListUsesSdkWrapper();
   await testMilestoneListIncludesIds();
   await testMilestoneDeleteIncludesName();
+  await testMilestoneScopeErrorHint();
   await testInteractiveConfigWizard();
   await testInteractiveConfigWizardOAuth();
   console.log('✓ tests/test-extension-registration.js passed');

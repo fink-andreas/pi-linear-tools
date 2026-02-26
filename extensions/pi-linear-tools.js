@@ -83,6 +83,19 @@ async function createAuthenticatedClient() {
   return createLinearClient(await getLinearAuth());
 }
 
+function withMilestoneScopeHint(error) {
+  const message = String(error?.message || error || 'Unknown error');
+
+  if (/invalid scope/i.test(message) && /write/i.test(message)) {
+    return new Error(
+      `${message}\nHint: Milestone create/update/delete require Linear write scope. ` +
+      `Use API key auth for milestone management: /linear-tools-config --api-key <key>`
+    );
+  }
+
+  return error;
+}
+
 async function resolveDefaultTeam(projectId) {
   const settings = await loadSettings();
 
@@ -585,19 +598,23 @@ function registerLinearTools(pi) {
     async execute(_toolCallId, params) {
       const client = await createAuthenticatedClient();
 
-      switch (params.action) {
-        case 'list':
-          return executeMilestoneList(client, params);
-        case 'view':
-          return executeMilestoneView(client, params);
-        case 'create':
-          return executeMilestoneCreate(client, params);
-        case 'update':
-          return executeMilestoneUpdate(client, params);
-        case 'delete':
-          return executeMilestoneDelete(client, params);
-        default:
-          throw new Error(`Unknown action: ${params.action}`);
+      try {
+        switch (params.action) {
+          case 'list':
+            return await executeMilestoneList(client, params);
+          case 'view':
+            return await executeMilestoneView(client, params);
+          case 'create':
+            return await executeMilestoneCreate(client, params);
+          case 'update':
+            return await executeMilestoneUpdate(client, params);
+          case 'delete':
+            return await executeMilestoneDelete(client, params);
+          default:
+            throw new Error(`Unknown action: ${params.action}`);
+        }
+      } catch (error) {
+        throw withMilestoneScopeHint(error);
       }
     },
   });

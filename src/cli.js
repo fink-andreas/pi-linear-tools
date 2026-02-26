@@ -67,6 +67,19 @@ function parseBoolean(value) {
   return undefined;
 }
 
+function withMilestoneScopeHint(error) {
+  const message = String(error?.message || error || 'Unknown error');
+
+  if (/invalid scope/i.test(message) && /write/i.test(message)) {
+    return new Error(
+      `${message}\nHint: Milestone create/update/delete require Linear write scope. ` +
+      `Use API key auth: pi-linear-tools config --api-key <key>`
+    );
+  }
+
+  return error;
+}
+
 // ===== AUTH RESOLUTION =====
 
 let cachedApiKey = null;
@@ -824,19 +837,23 @@ async function handleMilestone(args) {
     return;
   }
 
-  switch (action) {
-    case 'list':
-      return handleMilestoneList(rest);
-    case 'view':
-      return handleMilestoneView(rest);
-    case 'create':
-      return handleMilestoneCreate(rest);
-    case 'update':
-      return handleMilestoneUpdate(rest);
-    case 'delete':
-      return handleMilestoneDelete(rest);
-    default:
-      throw new Error(`Unknown milestone action: ${action}`);
+  try {
+    switch (action) {
+      case 'list':
+        return await handleMilestoneList(rest);
+      case 'view':
+        return await handleMilestoneView(rest);
+      case 'create':
+        return await handleMilestoneCreate(rest);
+      case 'update':
+        return await handleMilestoneUpdate(rest);
+      case 'delete':
+        return await handleMilestoneDelete(rest);
+      default:
+        throw new Error(`Unknown milestone action: ${action}`);
+    }
+  } catch (error) {
+    throw withMilestoneScopeHint(error);
   }
 }
 
