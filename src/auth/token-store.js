@@ -5,7 +5,6 @@
  * Falls back to environment variables for CI/headless environments.
  */
 
-import keytar from 'keytar';
 import { debug, warn, error as logError } from '../logger.js';
 
 // Keytar service name for pi-linear-tools
@@ -14,52 +13,70 @@ const KEYTAR_SERVICE = 'pi-linear-tools';
 // Keytar account name
 const KEYTAR_ACCOUNT = 'linear-oauth-tokens';
 
-/**
- * Token record structure
- *
- * @typedef {object} TokenRecord
- * @property {string} accessToken - OAuth access token
- * @property {string} refreshToken - OAuth refresh token
- * @property {number} expiresAt - Token expiry timestamp (Unix milliseconds)
- * @property {string[]} scope - Granted OAuth scopes
- * @property {string} [tokenType] - Token type (usually "Bearer")
- */
+// In-memory fallback for environments without keychain
+let inMemoryTokens = null;
+
+// Lazy-loaded keytar module
+let keytarModule = null;
 
 /**
- * Store tokens securely in OS keychain
+ * Check if keytar is available
+ *
+ * @returns {boolean} True if keytar is available
+ */
+async function isKeytarAvailable() {
+  if (keytarModule !== null) {
+    return keytarModule !== false;
+  }
+
+  try {
+    const module = await import('keytar');
+    keytarModule = module.default;
+    debug('keytar module loaded successfully');
+    return true;
+  } catch (error) {
+    warn('keytar module not available, using fallback storage', { error: error.message });
+    keytarModule = false;
+    return false;
+  }
+}
+
+/**
+ * Store tokens securely in OS keychain or in-memory fallback
  *
  * @param {TokenRecord} tokens - Token record to store
  * @returns {Promise<void>}
  * @throws {Error} If storage fails
  */
 export async function storeTokens(tokens) {
-  debug('Storing tokens in keychain');
+  const useKeytar = await isKeytarAvailable();
+  debug('Storing tokens', { method: useKeytar ? 'keychain' : 'in-memory' });
 
-  try {
-    // Validate token structure
-    if (!tokens.accessToken) {
-      throw new Error('Missing accessToken in token record');
-    }
+  // Validate token structure
+  if (!tokens.accessToken) {
+    throw new Error('Missing accessToken in token record');
+  }
 
-    if (!tokens.refreshToken) {
-      throw new Error('Missing refreshToken in token record');
-    }
+  if (!tokens.refreshToken) {
+    throw new Error('Missing refreshToken in token record');
+  }
 
-    if (!tokens.expiresAt || typeof tokens.expiresAt !== 'number') {
-      throw new Error('Missing or invalid expiresAt in token record');
-    }
+  if (!tokens.expiresAt || typeof tokens.expiresAt !== 'number') {
+    throw new Error('Missing or invalid expiresAt in token record');
+  }
 
-    // Serialize tokens to JSON
-    const tokenData = JSON.stringify({
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-      expiresAt: tokens.expiresAt,
-      scope: tokens.scope || [],
-      tokenType: tokens.tokenType || 'Bearer',
-    });
+  // Serialize tokens to JSON
+  const tokenData = JSON.stringify({
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken,
+    expiresAt: tokens.expiresAt,
+    scope: tokens.scope || [],
+    tokenType: tokens.tokenType || 'Bearer',
+  });
 
-    // Store in keychain
-    const result = await keytar.setPassword(
+  // Store in keychain or fallback to memory
+  if (useKeytar) {
+    const result = await keytarModule.setPassword(
       KEYTAR_SERVICE,
       KEYTAR_ACCOUNT,
       tokenData
@@ -68,18 +85,16 @@ export async function storeTokens(tokens) {
     if (!result) {
       throw new Error('keytar.setPassword returned false');
     }
-
-    debug('Tokens stored successfully', {
-      expiresAt: new Date(tokens.expiresAt).toISOString(),
-      scope: tokens.scope,
-    });
-  } catch (error) {
-    logError('Failed to store tokens', {
-      error: error.message,
-      stack: error.stack,
-    });
-    throw new Error(`Failed to store tokens: ${error.message}`);
+  } else {
+    // Fallback to in-memory storage
+    inMemoryTokens = tokenData;
+    warn('Using in-memory token storage (not persistent across sessions)');
   }
+
+  debug('Tokens stored successfully', {
+    expiresAt: new Date(tokens.expiresAt).toISOString(),
+    scope: tokens.scope,
+  });
 }
 
 /**
@@ -100,30 +115,62 @@ export async function getTokens() {
     return envTokens;
   }
 
-  // Fall back to keychain
-  try {
-    const tokenData = await keytar.getPassword(
-      KEYTAR_SERVICE,
-      KEYTAR_ACCOUNT
-    );
+  // Fall back to keychain or in-memory storage
+  const useKeytar = await isKeytarAvailable();
 
-    if (!tokenData) {
-      debug('No tokens found in keychain');
+  if (useKeytar) {
+    try {
+      const tokenData = await keytarModule.getPassword(
+        KEYTAR_SERVICE,
+        KEYTAR_ACCOUNT
+      );
+
+      if (!tokenData) {
+        debug('No tokens found in keychain');
+        return null;
+      }
+
+      const tokens = JSON.parse(tokenData);
+
+      // Validate token structure
+      if (!tokens.accessToken || !tokens.refreshToken || !tokens.expiresAt) {
+        logError('Invalid token structure in keychain', { tokens });
+        await clearTokens(); // Clear corrupted tokens
+        return null;
+      }
+
+      debug('Tokens retrieved successfully', {
+        expiresAt: new Date(tokens.expiresAt).toISOString(),
+        scope: tokens.scope,
+      });
+
+      return {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresAt: tokens.expiresAt,
+        scope: tokens.scope,
+        tokenType: tokens.tokenType || 'Bearer',
+      };
+    } catch (error) {
+      logError('Failed to retrieve tokens', {
+        error: error.message,
+        stack: error.stack,
+      });
       return null;
     }
-
-    const tokens = JSON.parse(tokenData);
+  } else if (inMemoryTokens) {
+    // Use in-memory fallback
+    const tokens = JSON.parse(inMemoryTokens);
 
     // Validate token structure
     if (!tokens.accessToken || !tokens.refreshToken || !tokens.expiresAt) {
-      logError('Invalid token structure in keychain', { tokens });
-      await clearTokens(); // Clear corrupted tokens
+      logError('Invalid token structure in memory', { tokens });
+      inMemoryTokens = null;
       return null;
     }
 
-    debug('Tokens retrieved successfully', {
+    debug('Tokens retrieved from in-memory storage', {
       expiresAt: new Date(tokens.expiresAt).toISOString(),
-      scope: tokens.scope,
     });
 
     return {
@@ -133,41 +180,46 @@ export async function getTokens() {
       scope: tokens.scope,
       tokenType: tokens.tokenType || 'Bearer',
     };
-  } catch (error) {
-    logError('Failed to retrieve tokens', {
-      error: error.message,
-      stack: error.stack,
-    });
+  } else {
+    debug('No tokens found');
     return null;
   }
 }
 
 /**
- * Clear tokens from OS keychain
+ * Clear tokens from OS keychain or in-memory storage
  *
  * @returns {Promise<void>}
  */
 export async function clearTokens() {
-  debug('Clearing tokens from keychain');
+  debug('Clearing tokens');
 
-  try {
-    const result = await keytar.deletePassword(
-      KEYTAR_SERVICE,
-      KEYTAR_ACCOUNT
-    );
+  const useKeytar = await isKeytarAvailable();
 
-    if (result) {
-      debug('Tokens cleared successfully');
-    } else {
-      debug('No tokens to clear');
+  if (useKeytar) {
+    try {
+      const result = await keytarModule.deletePassword(
+        KEYTAR_SERVICE,
+        KEYTAR_ACCOUNT
+      );
+
+      if (result) {
+        debug('Tokens cleared successfully from keychain');
+      } else {
+        debug('No tokens to clear from keychain');
+      }
+    } catch (error) {
+      logError('Failed to clear tokens', {
+        error: error.message,
+        stack: error.stack,
+      });
+      // Don't throw - clearing is best-effort
     }
-  } catch (error) {
-    logError('Failed to clear tokens', {
-      error: error.message,
-      stack: error.stack,
-    });
-    // Don't throw - clearing is best-effort
   }
+
+  // Clear in-memory tokens
+  inMemoryTokens = null;
+  debug('In-memory tokens cleared');
 }
 
 /**
