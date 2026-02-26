@@ -274,11 +274,15 @@ export async function clearTokens() {
         debug('No tokens to clear from keychain');
       }
     } catch (error) {
-      logError('Failed to clear tokens', {
-        error: error.message,
-        stack: error.stack,
+      const message = String(error?.message || 'Unknown error');
+      // Keychain providers (e.g. DBus Secret Service) may be unavailable at runtime.
+      // Clearing is best-effort and we still clear fallback file/in-memory tokens below.
+      warn('Skipping keychain token clear; keychain backend unavailable', {
+        error: message,
       });
-      // Don't throw - clearing is best-effort
+      if (/org\.freedesktop\.secrets/i.test(message)) {
+        debug('Keychain secret service unavailable during clearTokens');
+      }
     }
   }
 

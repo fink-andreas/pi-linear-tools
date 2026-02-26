@@ -153,6 +153,7 @@ async function startGitBranchForIssue(pi, branchName, fromRef = 'HEAD', onBranch
 
 async function runInteractiveConfigFlow(ctx, pi) {
   const settings = await loadSettings();
+  const previousAuthMethod = settings.authMethod || 'api-key';
   const envKey = process.env.LINEAR_API_KEY?.trim();
 
   let client;
@@ -284,6 +285,13 @@ async function runInteractiveConfigFlow(ctx, pi) {
         setQuietMode(false);
       }
     } else {
+      setQuietMode(true);
+      try {
+        await logout();
+      } finally {
+        setQuietMode(false);
+      }
+
       if (!envKey && !apiKey) {
         const promptedKey = await ctx.ui.input('Enter Linear API key', 'lin_xxx');
         const normalized = String(promptedKey || '').trim();
@@ -339,9 +347,26 @@ async function runInteractiveConfigFlow(ctx, pi) {
 
   await saveSettings(settings);
   ctx.ui.notify(`Configuration saved: workspace ${selectedWorkspace.name}, team ${selectedTeam.key}`, 'info');
+
+  if (previousAuthMethod !== settings.authMethod) {
+    ctx.ui.notify(
+      'Authentication method changed. Please restart pi to refresh and make the correct tools available.',
+      'warning'
+    );
+  }
 }
 
-function registerLinearTools(pi) {
+async function shouldExposeMilestoneTool() {
+  const settings = await loadSettings();
+  const authMethod = settings.authMethod || 'api-key';
+  const apiKeyFromSettings = (settings.apiKey || settings.linearApiKey || '').trim();
+  const apiKeyFromEnv = (process.env.LINEAR_API_KEY || '').trim();
+  const hasApiKey = !!(apiKeyFromEnv || apiKeyFromSettings);
+
+  return authMethod === 'api-key' || hasApiKey;
+}
+
+async function registerLinearTools(pi) {
   if (typeof pi.registerTool !== 'function') return;
 
   pi.registerTool({
@@ -554,76 +579,75 @@ function registerLinearTools(pi) {
     },
   });
 
-  pi.registerTool({
-    name: 'linear_milestone',
-    label: 'Linear Milestone',
-    description: 'Interact with Linear project milestones. Actions: list, view, create, update, delete',
-    parameters: {
-      type: 'object',
-      properties: {
-        action: {
-          type: 'string',
-          enum: ['list', 'view', 'create', 'update', 'delete'],
-          description: 'Action to perform on milestone(s)',
+  if (await shouldExposeMilestoneTool()) {
+    pi.registerTool({
+      name: 'linear_milestone',
+      label: 'Linear Milestone',
+      description: 'Interact with Linear project milestones. Actions: list, view, create, update, delete',
+      parameters: {
+        type: 'object',
+        properties: {
+          action: {
+            type: 'string',
+            enum: ['list', 'view', 'create', 'update', 'delete'],
+            description: 'Action to perform on milestone(s)',
+          },
+          milestone: {
+            type: 'string',
+            description: 'Milestone ID (for view, update, delete)',
+          },
+          project: {
+            type: 'string',
+            description: 'Project name or ID (for list, create)',
+          },
+          name: {
+            type: 'string',
+            description: 'Milestone name (required for create, optional for update)',
+          },
+          description: {
+            type: 'string',
+            description: 'Milestone description in markdown',
+          },
+          targetDate: {
+            type: 'string',
+            description: 'Target completion date (ISO 8601 date)',
+          },
+          status: {
+            type: 'string',
+            enum: ['backlogged', 'planned', 'inProgress', 'paused', 'completed', 'done', 'cancelled'],
+            description: 'Milestone status',
+          },
         },
-        milestone: {
-          type: 'string',
-          description: 'Milestone ID (for view, update, delete)',
-        },
-        project: {
-          type: 'string',
-          description: 'Project name or ID (for list, create)',
-        },
-        name: {
-          type: 'string',
-          description: 'Milestone name (required for create, optional for update)',
-        },
-        description: {
-          type: 'string',
-          description: 'Milestone description in markdown',
-        },
-        targetDate: {
-          type: 'string',
-          description: 'Target completion date (ISO 8601 date)',
-        },
-        status: {
-          type: 'string',
-          enum: ['backlogged', 'planned', 'inProgress', 'paused', 'completed', 'done', 'cancelled'],
-          description: 'Milestone status',
-        },
+        required: ['action'],
+        additionalProperties: false,
       },
-      required: ['action'],
-      additionalProperties: false,
-    },
-    async execute(_toolCallId, params) {
-      const client = await createAuthenticatedClient();
+      async execute(_toolCallId, params) {
+        const client = await createAuthenticatedClient();
 
-      try {
-        switch (params.action) {
-          case 'list':
-            return await executeMilestoneList(client, params);
-          case 'view':
-            return await executeMilestoneView(client, params);
-          case 'create':
-            return await executeMilestoneCreate(client, params);
-          case 'update':
-            return await executeMilestoneUpdate(client, params);
-          case 'delete':
-            return await executeMilestoneDelete(client, params);
-          default:
-            throw new Error(`Unknown action: ${params.action}`);
+        try {
+          switch (params.action) {
+            case 'list':
+              return await executeMilestoneList(client, params);
+            case 'view':
+              return await executeMilestoneView(client, params);
+            case 'create':
+              return await executeMilestoneCreate(client, params);
+            case 'update':
+              return await executeMilestoneUpdate(client, params);
+            case 'delete':
+              return await executeMilestoneDelete(client, params);
+            default:
+              throw new Error(`Unknown action: ${params.action}`);
+          }
+        } catch (error) {
+          throw withMilestoneScopeHint(error);
         }
-      } catch (error) {
-        throw withMilestoneScopeHint(error);
-      }
-    },
-  });
-
+      },
+    });
+  }
 }
 
-export default function piLinearToolsExtension(pi) {
-  registerLinearTools(pi);
-
+export default async function piLinearToolsExtension(pi) {
   pi.registerCommand('linear-tools-config', {
     description: 'Configure pi-linear-tools settings (API key and default team mappings)',
     handler: async (argsText, ctx) => {
@@ -635,12 +659,19 @@ export default function piLinearToolsExtension(pi) {
 
       if (apiKey) {
         const settings = await loadSettings();
+        const previousAuthMethod = settings.authMethod || 'api-key';
         settings.apiKey = apiKey;
         settings.authMethod = 'api-key';
         await saveSettings(settings);
         cachedApiKey = null;
         if (ctx?.hasUI) {
           ctx.ui.notify('LINEAR_API_KEY saved to settings', 'info');
+          if (previousAuthMethod !== settings.authMethod) {
+            ctx.ui.notify(
+              'Authentication method changed. Please restart pi to refresh and make the correct tools available.',
+              'warning'
+            );
+          }
         }
         return;
       }
@@ -722,6 +753,20 @@ export default function piLinearToolsExtension(pi) {
         ctx.ui.notify('pi-linear-tools extension commands available', 'info');
       }
 
+      const showMilestoneTool = await shouldExposeMilestoneTool();
+      const toolLines = [
+        'LLM-callable tools:',
+        '  linear_issue (list/view/create/update/comment/start/delete)',
+        '  linear_project (list)',
+        '  linear_team (list)',
+      ];
+
+      if (showMilestoneTool) {
+        toolLines.push('  linear_milestone (list/view/create/update/delete)');
+      } else {
+        toolLines.push('  linear_milestone hidden: requires API key auth');
+      }
+
       pi.sendMessage({
         customType: 'pi-linear-tools',
         content: [
@@ -732,14 +777,12 @@ export default function piLinearToolsExtension(pi) {
           '  /linear-tools-help',
           '  /linear-tools-reload',
           '',
-          'LLM-callable tools:',
-          '  linear_issue (list/view/create/update/comment/start/delete)',
-          '  linear_project (list)',
-          '  linear_team (list)',
-          '  linear_milestone (list/view/create/update/delete)',
+          ...toolLines,
         ].join('\n'),
         display: true,
       });
     },
   });
+
+  await registerLinearTools(pi);
 }

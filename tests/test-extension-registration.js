@@ -6,8 +6,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import extension from '../extensions/pi-linear-tools.js';
-import { getSettingsPath } from '../src/settings.js';
+import { getSettingsPath, loadSettings, saveSettings } from '../src/settings.js';
 import { setTestClientFactory, resetTestClientFactory } from '../src/linear-client.js';
+import { storeTokens, getTokens } from '../src/auth/token-store.js';
 
 function createMockPi(execImpl = null) {
   const commands = new Map();
@@ -50,25 +51,71 @@ async function withTempHome(fn) {
   }
 }
 
-async function testRegistration() {
-  const pi = createMockPi();
-  extension(pi);
+async function setAuthSettings(overrides = {}) {
+  const current = await loadSettings();
+  await saveSettings({ ...current, ...overrides });
+}
 
-  assert.ok(pi.commands.has('linear-tools-config'));
-  assert.ok(pi.commands.has('linear-tools-help'));
-  assert.ok(pi.commands.has('linear-tools-reload'));
+async function testRegistrationIncludesMilestoneWithDefaultApiKeyMode() {
+  await withTempHome(async () => {
+    const pi = createMockPi();
+    await extension(pi);
 
-  assert.ok(pi.tools.has('linear_issue'));
-  assert.ok(pi.tools.has('linear_project'));
-  assert.ok(pi.tools.has('linear_team'));
-  assert.ok(pi.tools.has('linear_milestone'));
-  assert.ok(!pi.tools.has('linear_reload_runtime'));
+    assert.ok(pi.commands.has('linear-tools-config'));
+    assert.ok(pi.commands.has('linear-tools-help'));
+    assert.ok(pi.commands.has('linear-tools-reload'));
+
+    assert.ok(pi.tools.has('linear_issue'));
+    assert.ok(pi.tools.has('linear_project'));
+    assert.ok(pi.tools.has('linear_team'));
+    assert.ok(pi.tools.has('linear_milestone'));
+    assert.ok(!pi.tools.has('linear_reload_runtime'));
+  });
+}
+
+async function testRegistrationHidesMilestoneForOAuthWithoutApiKey() {
+  const prevApi = process.env.LINEAR_API_KEY;
+  delete process.env.LINEAR_API_KEY;
+
+  try {
+    await withTempHome(async () => {
+      await setAuthSettings({ authMethod: 'oauth', apiKey: null });
+
+      const pi = createMockPi();
+      await extension(pi);
+
+      assert.ok(pi.tools.has('linear_issue'));
+      assert.ok(pi.tools.has('linear_project'));
+      assert.ok(pi.tools.has('linear_team'));
+      assert.ok(!pi.tools.has('linear_milestone'));
+    });
+  } finally {
+    process.env.LINEAR_API_KEY = prevApi;
+  }
+}
+
+async function testRegistrationShowsMilestoneWhenOAuthHasApiKeyOverride() {
+  const prevApi = process.env.LINEAR_API_KEY;
+  process.env.LINEAR_API_KEY = 'lin_env_override';
+
+  try {
+    await withTempHome(async () => {
+      await setAuthSettings({ authMethod: 'oauth', apiKey: null });
+
+      const pi = createMockPi();
+      await extension(pi);
+
+      assert.ok(pi.tools.has('linear_milestone'));
+    });
+  } finally {
+    process.env.LINEAR_API_KEY = prevApi;
+  }
 }
 
 async function testConfigSavesApiKey() {
   await withTempHome(async () => {
     const pi = createMockPi();
-    extension(pi);
+    await extension(pi);
 
     const config = pi.commands.get('linear-tools-config').handler;
     await config('--api-key lin_test_123', { hasUI: false });
@@ -82,7 +129,7 @@ async function testConfigSavesApiKey() {
 async function testConfigSavesDefaultTeam() {
   await withTempHome(async () => {
     const pi = createMockPi();
-    extension(pi);
+    await extension(pi);
 
     const config = pi.commands.get('linear-tools-config').handler;
     await config('--default-team ENG', { hasUI: false });
@@ -99,7 +146,7 @@ async function testIssueToolRequiresApiKey() {
   try {
     await withTempHome(async () => {
       const pi = createMockPi();
-      extension(pi);
+      await extension(pi);
 
       const issueTool = pi.tools.get('linear_issue');
       await assert.rejects(
@@ -142,7 +189,7 @@ async function testIssueToolListUsesSdkWrapper() {
     setTestClientFactory(() => mockClient);
 
     const pi = createMockPi();
-    extension(pi);
+    await extension(pi);
 
     const issueTool = pi.tools.get('linear_issue');
     const result = await issueTool.execute('call-2', { action: 'list', project: 'demo' });
@@ -191,7 +238,7 @@ async function testMilestoneListIncludesIds() {
     setTestClientFactory(() => mockClient);
 
     const pi = createMockPi();
-    extension(pi);
+    await extension(pi);
 
     const milestoneTool = pi.tools.get('linear_milestone');
     const result = await milestoneTool.execute('call-m1', { action: 'list', project: 'demo' });
@@ -220,7 +267,7 @@ async function testMilestoneDeleteIncludesName() {
     setTestClientFactory(() => mockClient);
 
     const pi = createMockPi();
-    extension(pi);
+    await extension(pi);
 
     const milestoneTool = pi.tools.get('linear_milestone');
     const result = await milestoneTool.execute('call-m2', { action: 'delete', milestone: 'm1' });
@@ -251,7 +298,7 @@ async function testMilestoneScopeErrorHint() {
     setTestClientFactory(() => mockClient);
 
     const pi = createMockPi();
-    extension(pi);
+    await extension(pi);
 
     const milestoneTool = pi.tools.get('linear_milestone');
     await assert.rejects(
@@ -285,7 +332,7 @@ async function testInteractiveConfigWizard() {
       setTestClientFactory(() => mockClient);
 
       const pi = createMockPi();
-      extension(pi);
+      await extension(pi);
 
       const config = pi.commands.get('linear-tools-config').handler;
 
@@ -347,7 +394,7 @@ async function testInteractiveConfigWizardOAuth() {
       setTestClientFactory(() => mockClient);
 
       const pi = createMockPi();
-      extension(pi);
+      await extension(pi);
 
       const config = pi.commands.get('linear-tools-config').handler;
 
@@ -385,8 +432,99 @@ async function testInteractiveConfigWizardOAuth() {
   }
 }
 
+async function testInteractiveConfigSwitchToApiKeyClearsOAuthTokensAndShowsRestartMessage() {
+  const prevApi = process.env.LINEAR_API_KEY;
+  const prevAccess = process.env.LINEAR_ACCESS_TOKEN;
+  const prevRefresh = process.env.LINEAR_REFRESH_TOKEN;
+  const prevExpires = process.env.LINEAR_EXPIRES_AT;
+
+  delete process.env.LINEAR_API_KEY;
+  delete process.env.LINEAR_ACCESS_TOKEN;
+  delete process.env.LINEAR_REFRESH_TOKEN;
+  delete process.env.LINEAR_EXPIRES_AT;
+
+  try {
+    await withTempHome(async () => {
+      await setAuthSettings({ authMethod: 'oauth', apiKey: null });
+
+      await storeTokens({
+        accessToken: 'oauth_access_existing',
+        refreshToken: 'oauth_refresh_existing',
+        expiresAt: Date.now() + 60 * 60 * 1000,
+        scope: ['read'],
+        tokenType: 'Bearer',
+      });
+
+      const mockClient = {
+        viewer: Promise.resolve({
+          id: 'u1',
+          name: 'Tester',
+          displayName: 'Tester',
+          organization: Promise.resolve({ id: 'w1', name: 'Workspace One', urlKey: 'workspace-one' }),
+        }),
+        teams: async () => ({
+          nodes: [{ id: 't1', key: 'ENG', name: 'Engineering' }],
+        }),
+      };
+
+      setTestClientFactory(() => mockClient);
+
+      const pi = createMockPi();
+      await extension(pi);
+
+      const config = pi.commands.get('linear-tools-config').handler;
+      let reloadCalled = false;
+      const notifications = [];
+
+      const ctx = {
+        hasUI: true,
+        async reload() {
+          reloadCalled = true;
+        },
+        ui: {
+          async select(_title, options) {
+            if (options.includes('No') && options.includes('Yes')) return 'Yes';
+            if (options.includes('OAuth') && options.includes('API Key')) return 'API Key';
+            if (options[0].includes('Workspace One')) return options[0];
+            if (options[0].includes('ENG')) return options[0];
+            return undefined;
+          },
+          async input(title) {
+            if (title.includes('Enter Linear API key')) return 'lin_api_switched';
+            throw new Error(`Unexpected input prompt: ${title}`);
+          },
+          notify(message, level) {
+            notifications.push({ message, level });
+          },
+        },
+      };
+
+      await config('', ctx);
+
+      const settings = JSON.parse(await readFile(getSettingsPath(), 'utf-8'));
+      assert.equal(settings.authMethod, 'api-key');
+      assert.equal(settings.apiKey, 'lin_api_switched');
+      assert.equal(await getTokens(), null);
+      assert.equal(reloadCalled, false);
+      assert.ok(
+        notifications.some((entry) =>
+          String(entry.message).includes('Please restart pi to refresh and make the correct tools available.')
+        )
+      );
+    });
+  } finally {
+    resetTestClientFactory();
+    process.env.LINEAR_API_KEY = prevApi;
+    process.env.LINEAR_ACCESS_TOKEN = prevAccess;
+    process.env.LINEAR_REFRESH_TOKEN = prevRefresh;
+    process.env.LINEAR_EXPIRES_AT = prevExpires;
+  }
+}
+
 async function main() {
-  await testRegistration();
+  await testRegistrationIncludesMilestoneWithDefaultApiKeyMode();
+  await testRegistrationHidesMilestoneForOAuthWithoutApiKey();
+  await testRegistrationShowsMilestoneWhenOAuthHasApiKeyOverride();
   await testConfigSavesApiKey();
   await testConfigSavesDefaultTeam();
   await testIssueToolRequiresApiKey();
@@ -396,6 +534,7 @@ async function main() {
   await testMilestoneScopeErrorHint();
   await testInteractiveConfigWizard();
   await testInteractiveConfigWizardOAuth();
+  await testInteractiveConfigSwitchToApiKeyClearsOAuthTokensAndShowsRestartMessage();
   console.log('✓ tests/test-extension-registration.js passed');
 }
 
