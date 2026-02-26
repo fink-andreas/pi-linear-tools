@@ -153,5 +153,21 @@ npm run release:check
 node index.js --help
 ```
 
+### Local extension debug flow (unpublished code)
+
+Use project-local extension loading with a generated wrapper file:
+
+```bash
+npm run dev:sync-local-extension
+```
+
+Then in pi:
+
+```text
+/reload
+```
+
+If install/remove sources changed, restart pi before validating.
+
 Release checklist: see `RELEASE.md`.
 Post-release verification checklist: see `POST_RELEASE_CHECKLIST.md`.

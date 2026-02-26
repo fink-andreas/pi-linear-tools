@@ -142,3 +142,6 @@ vite.config.ts.timestamp-*
 PLAN.md
 TODO.md
 finished/
+
+# Local pi runtime state
+.pi/
