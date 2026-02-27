@@ -340,7 +340,7 @@ async function testInteractiveConfigWizard() {
         hasUI: true,
         ui: {
           async select(_title, options) {
-            if (options.includes('OAuth')) return 'API Key';
+            if (options.some((option) => option.startsWith('API Key'))) return options.find((option) => option.startsWith('API Key'));
             if (options[0].includes('Workspace One')) return options[0];
             if (options[0].includes('ENG')) return options[0];
             return undefined;
@@ -484,7 +484,9 @@ async function testInteractiveConfigSwitchToApiKeyClearsOAuthTokensAndShowsResta
         ui: {
           async select(_title, options) {
             if (options.includes('No') && options.includes('Yes')) return 'Yes';
-            if (options.includes('OAuth') && options.includes('API Key')) return 'API Key';
+            if (options.includes('OAuth') && options.some((option) => option.startsWith('API Key'))) {
+              return options.find((option) => option.startsWith('API Key'));
+            }
             if (options[0].includes('Workspace One')) return options[0];
             if (options[0].includes('ENG')) return options[0];
             return undefined;
