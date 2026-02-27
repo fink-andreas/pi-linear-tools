@@ -10,10 +10,12 @@ import {
 // Optional imports for markdown rendering (provided by pi runtime)
 let Markdown = null;
 let getMarkdownTheme = null;
+let truncateToWidth = null;
 
 try {
   const piTui = await import('@mariozechner/pi-tui');
   Markdown = piTui.Markdown;
+  truncateToWidth = piTui.truncateToWidth;
   const piCodingAgent = await import('@mariozechner/pi-coding-agent');
   getMarkdownTheme = piCodingAgent.getMarkdownTheme;
 } catch {
@@ -391,7 +393,19 @@ function renderMarkdownResult(result) {
   }
 
   const mdTheme = getMarkdownTheme();
-  return new Markdown(text, 0, 0, mdTheme);
+  const md = new Markdown(text, 0, 0, mdTheme);
+
+  // Wrap Markdown to ensure lines are truncated to terminal width
+  return {
+    render(width) {
+      const lines = md.render(width);
+      // Ensure each line doesn't exceed width (handles edge cases with long URLs/code)
+      return lines.map((line) => truncateToWidth(line, width, ''));
+    },
+    invalidate() {
+      md.invalidate();
+    },
+  };
 }
 
 async function registerLinearTools(pi) {
