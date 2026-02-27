@@ -10,14 +10,22 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+let markdownDebugInfo = {
+  argv1: process.argv?.[1] || null,
+  piCodingAgentRoot: null,
+  piTuiImport: null,
+  piCodingAgentImport: null,
+  markdownAvailable: false,
+};
+
 function findPiCodingAgentRoot() {
-  // When running inside pi, argv[1] points to pi's CLI entrypoint,
-  // e.g. .../@mariozechner/pi-coding-agent/dist/cli.js
+  // When running inside pi, argv[1] should point to pi's CLI entrypoint,
+  // e.g. .../@mariozechner/pi-coding-agent/dist/cli.js (or similar).
   const entry = process.argv?.[1];
   if (!entry) return null;
 
   let dir = path.dirname(entry);
-  for (let i = 0; i < 12; i += 1) {
+  for (let i = 0; i < 16; i += 1) {
     const pkgPath = path.join(dir, 'package.json');
     if (fs.existsSync(pkgPath)) {
       try {
@@ -38,6 +46,8 @@ function findPiCodingAgentRoot() {
 
 async function importFromPiRoot(relativePathFromPiRoot) {
   const piRoot = findPiCodingAgentRoot();
+  markdownDebugInfo.piCodingAgentRoot = piRoot;
+
   if (!piRoot) throw new Error('Unable to locate @mariozechner/pi-coding-agent installation');
 
   const absPath = path.join(piRoot, relativePathFromPiRoot);
@@ -46,28 +56,36 @@ async function importFromPiRoot(relativePathFromPiRoot) {
 
 async function importPiCodingAgent() {
   try {
-    return await import('@mariozechner/pi-coding-agent');
+    const mod = await import('@mariozechner/pi-coding-agent');
+    markdownDebugInfo.piCodingAgentImport = 'package:@mariozechner/pi-coding-agent';
+    return mod;
   } catch {
+    markdownDebugInfo.piCodingAgentImport = 'file:dist/index.js';
     return importFromPiRoot('dist/index.js');
   }
 }
 
 async function importPiTui() {
   try {
-    return await import('@mariozechner/pi-tui');
+    const mod = await import('@mariozechner/pi-tui');
+    markdownDebugInfo.piTuiImport = 'package:@mariozechner/pi-tui';
+    return mod;
   } catch {
     // pi-tui is a dependency of pi-coding-agent and may be nested under it
+    markdownDebugInfo.piTuiImport = 'file:pi-coding-agent/node_modules/@mariozechner/pi-tui/dist/index.js';
     return importFromPiRoot('node_modules/@mariozechner/pi-tui/dist/index.js');
   }
 }
 
 // Optional imports for markdown rendering (provided by pi runtime)
 let Markdown = null;
+let Text = null;
 let getMarkdownTheme = null;
 
 try {
   const piTui = await importPiTui();
   Markdown = piTui?.Markdown || null;
+  Text = piTui?.Text || null;
 } catch {
   // ignore
 }
@@ -78,6 +96,8 @@ try {
 } catch {
   // ignore
 }
+
+markdownDebugInfo.markdownAvailable = !!(Markdown && getMarkdownTheme);
 
 import {
   executeIssueList,
@@ -455,8 +475,21 @@ function renderMarkdownResult(result, _options, _theme) {
   }
 
   // Return Markdown component directly - the TUI will call its render() method
-  const mdTheme = getMarkdownTheme();
-  return new Markdown(text, 0, 0, mdTheme, _theme ? { color: (t) => _theme.fg('toolOutput', t) } : undefined);
+  try {
+    const mdTheme = getMarkdownTheme();
+    return new Markdown(text, 0, 0, mdTheme, _theme ? { color: (t) => _theme.fg('toolOutput', t) } : undefined);
+  } catch (error) {
+    // If markdown rendering fails for any reason, show a visible error so we can diagnose.
+    const msg = `[pi-linear-tools] Markdown render failed: ${String(error?.message || error)}`;
+    if (Text) {
+      return new Text((_theme ? _theme.fg('error', msg) : msg) + `\n\n` + text, 0, 0);
+    }
+    const lines = (msg + '\n\n' + text).split('\n');
+    return {
+      render: (width) => lines.map((line) => (width && line.length > width ? line.slice(0, width) : line)),
+      invalidate: () => {},
+    };
+  }
 }
 
 async function registerLinearTools(pi) {
@@ -873,11 +906,41 @@ export default async function piLinearToolsExtension(pi) {
           '  /linear-tools-config --team <team-key> --project <project-name-or-id>',
           '  /linear-tools-help',
           '  /linear-tools-reload',
+          '  /linear-tools-md-debug',
           '',
           ...toolLines,
         ].join('\n'),
         display: true,
       });
+    },
+  });
+
+  pi.registerCommand('linear-tools-md-debug', {
+    description: 'Show markdown renderer debug info (imports, availability, sample markdown)',
+    handler: async (_args, ctx) => {
+      const debug = JSON.stringify(markdownDebugInfo, null, 2);
+      const sample = [
+        '# Markdown renderer debug',
+        '',
+        'If you see **bold** rendered bold and the list rendered as bullets here, Markdown rendering works in general.',
+        '',
+        '- item 1',
+        '- item 2',
+        '',
+        '```json',
+        debug,
+        '```',
+      ].join('\n');
+
+      pi.sendMessage({
+        customType: 'pi-linear-tools',
+        content: sample,
+        display: true,
+      });
+
+      if (ctx?.hasUI) {
+        ctx.ui.notify('Posted markdown debug info as a custom message.', 'info');
+      }
     },
   });
 
