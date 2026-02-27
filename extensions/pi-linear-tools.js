@@ -12,33 +12,67 @@ import { pathToFileURL } from 'node:url';
 
 let markdownDebugInfo = {
   argv1: process.argv?.[1] || null,
+  argv0: process.argv?.[0] || null,
+  execPath: process.execPath || null,
   piCodingAgentRoot: null,
+  piCodingAgentRootMethod: null,
   piTuiImport: null,
   piCodingAgentImport: null,
+  piTuiImportError: null,
+  piCodingAgentImportError: null,
   markdownAvailable: false,
 };
 
+function isPiCodingAgentRoot(dir) {
+  const pkgPath = path.join(dir, 'package.json');
+  if (!fs.existsSync(pkgPath)) return false;
+  try {
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+    return pkg?.name === '@mariozechner/pi-coding-agent';
+  } catch {
+    return false;
+  }
+}
+
 function findPiCodingAgentRoot() {
-  // When running inside pi, argv[1] should point to pi's CLI entrypoint,
-  // e.g. .../@mariozechner/pi-coding-agent/dist/cli.js (or similar).
   const entry = process.argv?.[1];
   if (!entry) return null;
 
-  let dir = path.dirname(entry);
-  for (let i = 0; i < 16; i += 1) {
-    const pkgPath = path.join(dir, 'package.json');
-    if (fs.existsSync(pkgPath)) {
-      try {
-        const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-        if (pkg?.name === '@mariozechner/pi-coding-agent') return dir;
-      } catch {
-        // ignore parse errors
+  // Method 1: walk up from argv1 (works when argv1 is .../pi-coding-agent/dist/cli.js)
+  {
+    let dir = path.dirname(entry);
+    for (let i = 0; i < 20; i += 1) {
+      if (isPiCodingAgentRoot(dir)) {
+        markdownDebugInfo.piCodingAgentRootMethod = 'walk-up-from-argv1';
+        return dir;
       }
+      const parent = path.dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
     }
+  }
 
-    const parent = path.dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
+  // Method 2: npm global layout guess (works when argv1 is .../<prefix>/bin/pi)
+  // <prefix>/bin/pi  ->  <prefix>/lib/node_modules/@mariozechner/pi-coding-agent
+  {
+    const binDir = path.dirname(entry);
+    const prefix = path.resolve(binDir, '..');
+    const candidate = path.join(prefix, 'lib', 'node_modules', '@mariozechner', 'pi-coding-agent');
+    if (isPiCodingAgentRoot(candidate)) {
+      markdownDebugInfo.piCodingAgentRootMethod = 'npm-prefix-from-argv1';
+      return candidate;
+    }
+  }
+
+  // Method 3: common global node_modules locations
+  for (const candidate of [
+    '/usr/local/lib/node_modules/@mariozechner/pi-coding-agent',
+    '/usr/lib/node_modules/@mariozechner/pi-coding-agent',
+  ]) {
+    if (isPiCodingAgentRoot(candidate)) {
+      markdownDebugInfo.piCodingAgentRootMethod = 'common-global-path';
+      return candidate;
+    }
   }
 
   return null;
@@ -59,9 +93,15 @@ async function importPiCodingAgent() {
     const mod = await import('@mariozechner/pi-coding-agent');
     markdownDebugInfo.piCodingAgentImport = 'package:@mariozechner/pi-coding-agent';
     return mod;
-  } catch {
-    markdownDebugInfo.piCodingAgentImport = 'file:dist/index.js';
-    return importFromPiRoot('dist/index.js');
+  } catch (e) {
+    try {
+      const mod = await importFromPiRoot('dist/index.js');
+      markdownDebugInfo.piCodingAgentImport = 'file:pi-coding-agent/dist/index.js';
+      return mod;
+    } catch (e2) {
+      markdownDebugInfo.piCodingAgentImportError = String(e2?.message || e2 || e?.message || e);
+      throw e2;
+    }
   }
 }
 
@@ -70,10 +110,16 @@ async function importPiTui() {
     const mod = await import('@mariozechner/pi-tui');
     markdownDebugInfo.piTuiImport = 'package:@mariozechner/pi-tui';
     return mod;
-  } catch {
+  } catch (e) {
     // pi-tui is a dependency of pi-coding-agent and may be nested under it
-    markdownDebugInfo.piTuiImport = 'file:pi-coding-agent/node_modules/@mariozechner/pi-tui/dist/index.js';
-    return importFromPiRoot('node_modules/@mariozechner/pi-tui/dist/index.js');
+    try {
+      const mod = await importFromPiRoot('node_modules/@mariozechner/pi-tui/dist/index.js');
+      markdownDebugInfo.piTuiImport = 'file:pi-coding-agent/node_modules/@mariozechner/pi-tui/dist/index.js';
+      return mod;
+    } catch (e2) {
+      markdownDebugInfo.piTuiImportError = String(e2?.message || e2 || e?.message || e);
+      throw e2;
+    }
   }
 }
 
