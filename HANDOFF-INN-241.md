@@ -1,173 +1,68 @@
 # Handoff: INN-241 - Add Markdown Rendering for Tool Outputs
 
 ## Status
-**Partially implemented** - Not crashing, but Markdown not rendering (shows as plain text)
+**COMPLETED** - Markdown rendering now works correctly
 
-## What Was Implemented
+## Solution
 
-### Changes to `extensions/pi-linear-tools.js`
+The issue was that `renderResult` was returning a custom object with `{ render, invalidate }` methods, but it should return a **Component instance** directly (like `Markdown` or `Text`).
 
-1. **Added optional imports** for Markdown rendering (lines 8-22):
-   ```javascript
-   let Markdown = null;
-   let getMarkdownTheme = null;
-   let visibleWidth = null;
-   let truncateToWidth = null;
+### Fixed Implementation
 
-   try {
-     const piTui = await import('@mariozechner/pi-tui');
-     Markdown = piTui.Markdown;
-     visibleWidth = piTui.visibleWidth;
-     truncateToWidth = piTui.truncateToWidth;
-     const piCodingAgent = await import('@mariozechner/pi-coding-agent');
-     getMarkdownTheme = piCodingAgent.getMarkdownTheme;
-   } catch {
-     // Packages not available in test environment
-   }
-   ```
-
-2. **Created `renderMarkdownResult` helper function** (lines 385-420):
-   ```javascript
-   function renderMarkdownResult(result) {
-     const text = result.content?.[0]?.text || '';
-
-     if (!Markdown || !getMarkdownTheme || !visibleWidth || !truncateToWidth) {
-       return { render: () => text.split('\n'), invalidate: () => {} };
-     }
-
-     const mdTheme = getMarkdownTheme();
-     const md = new Markdown(text, 0, 0, mdTheme);
-
-     return {
-       render(width) {
-         const rawLines = md.render(width);
-         const result = [];
-         for (const line of rawLines) {
-           const subLines = line.split('\n');
-           for (const subLine of subLines) {
-             if (visibleWidth(subLine) > width) {
-               result.push(truncateToWidth(subLine, width, ''));
-             } else {
-               result.push(subLine);
-             }
-           }
-         }
-         return result;
-       },
-       invalidate() {
-         md.invalidate();
-       },
-     };
-   }
-   ```
-
-3. **Added `renderResult: renderMarkdownResult`** to all 4 tool registrations:
-   - `linear_issue` (line 526)
-   - `linear_project` (line 571)
-   - `linear_team` (line 600)
-   - `linear_milestone` (line 655)
-
-## Current Behavior
-
-- **No crash** - The width truncation fix resolved the crash
-- **No Markdown rendering** - Output appears as plain text with raw Markdown syntax (e.g., `**bold**`, `# headers`)
-
-## Problem Analysis
-
-The `renderResult` function returns a custom object with `{ render, invalidate }` methods. However, this may not be the correct interface expected by pi's tool rendering system.
-
-### Possible Issues
-
-1. **Wrong return type**: The `renderResult` callback might expect a `Component` instance (like `Text` or `Markdown`), not a custom object with render/invalidate methods.
-
-2. **Component vs wrapper**: Looking at the pi docs (tui.md):
-   > renderResult(result, { expanded, isPartial }, theme) { ... }
-   > return new Text(text, 0, 0);  // 0,0 padding - Box handles it
-
-   The docs show returning a `Text` component directly, not a wrapper object.
-
-3. **The Markdown component might need different usage**: The Markdown component from `@mariozechner/pi-tui` may have different requirements when used inside `renderResult`.
-
-## Recommended Next Steps
-
-### Option 1: Return Markdown Component Directly
-
-Try returning the Markdown component directly without wrapping:
+The corrected `renderMarkdownResult` function in `extensions/pi-linear-tools.js`:
 
 ```javascript
-function renderMarkdownResult(result, options, theme) {
+/**
+ * Render tool result as markdown
+ */
+function renderMarkdownResult(result, _options, _theme) {
   const text = result.content?.[0]?.text || '';
 
+  // Fall back to plain text split if markdown packages not available (e.g., in tests)
   if (!Markdown || !getMarkdownTheme) {
-    // Import Text as fallback
-    return new Text(text, 0, 0);
+    // Return a simple component-like object for test environments
+    const lines = text.split('\n');
+    return {
+      render: () => lines,
+      invalidate: () => {},
+    };
   }
 
+  // Return Markdown component directly - the TUI will call its render() method
   const mdTheme = getMarkdownTheme();
   return new Markdown(text, 0, 0, mdTheme);
 }
 ```
 
-### Option 2: Check if Text Component Works
+### Key Changes
 
-First verify the rendering system works by returning a simple `Text` component:
+1. **Correct signature**: `(result, _options, _theme)` - accepts the options and theme parameters
+2. **Return Component directly**: Returns `new Markdown(text, 0, 0, mdTheme)` instead of a wrapper object
+3. **Simplified imports**: Removed unused `visibleWidth` and `truncateToWidth` imports
 
-```javascript
-import { Text } from "@mariozechner/pi-tui";
+### How It Works
 
-function renderMarkdownResult(result, options, theme) {
-  const text = result.content?.[0]?.text || '';
-  return new Text(text, 0, 0);
-}
-```
+- The `renderResult` callback receives `(result, options, theme)` parameters
+- It should return a Component instance (like `Markdown`, `Text`, etc.)
+- The TUI framework calls the component's `render(width)` method automatically
+- The `Markdown` component handles line width, truncation, and styling internally
 
-If this works (text appears styled), the issue is specific to Markdown. If it doesn't work, the issue is with how `renderResult` is being called/used.
+## Files Modified
 
-### Option 3: Check pi Source Code
-
-Look at how built-in tools use `renderResult`:
-- `packages/coding-agent/src/core/tools/read.ts`
-- `packages/coding-agent/src/core/tools/bash.ts`
-
-These might show the correct pattern for custom rendering.
-
-### Option 4: Use Text with Styled Output
-
-Instead of Markdown component, manually style with theme:
-
-```javascript
-function renderMarkdownResult(result, options, theme) {
-  const text = result.content?.[0]?.text || '';
-  // Use theme.fg() to apply colors/styles
-  return new Text(theme.fg("toolOutput", text), 0, 0);
-}
-```
-
-## Key Files to Reference
-
-1. **pi-tui Markdown component**:
-   - `pi-mono/packages/tui/src/components/markdown.ts`
-
-2. **Built-in tool rendering**:
-   - `pi-mono/packages/coding-agent/src/core/tools/*.ts`
-
-3. **Tool execution rendering**:
-   - `pi-mono/packages/coding-agent/src/modes/interactive/components/tool-execution.ts`
-
-4. **Extension docs**:
-   - `pi-mono/docs/extensions.md` (Custom Tools → Custom Rendering section)
-   - `pi-mono/docs/tui.md` (Markdown component section)
+- `extensions/pi-linear-tools.js`:
+  - Simplified imports (removed `visibleWidth`, `truncateToWidth`)
+  - Fixed `renderMarkdownResult` function signature and return type
 
 ## Testing
 
-After making changes:
-1. Run `npm test` to ensure tests pass
-2. Reinstall extension: `pi remove pi-linear-tools && pi install .`
-3. Restart pi completely (not just `/reload`)
-4. Test with `list issues` command
+1. Run `npm test` - all tests pass
+2. Reinstall extension: `pi remove /home/afi/dvl/pi-linear-tools && pi install /home/afi/dvl/pi-linear-tools`
+3. **Restart pi completely** (not just `/reload`) - required for extension source changes
+4. Test with Linear tool commands like `list issues`
 
 ## Git Commits
 
 - `c344dab` - feat: add Markdown rendering for tool outputs (INN-241)
 - `6223090` - fix: truncate Markdown lines to terminal width (INN-241)
 - `a8b1417` - fix: split and truncate Markdown lines properly (INN-241)
+- (new commit pending) - fix: return Markdown component directly in renderResult

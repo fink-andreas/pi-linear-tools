@@ -10,14 +10,10 @@ import {
 // Optional imports for markdown rendering (provided by pi runtime)
 let Markdown = null;
 let getMarkdownTheme = null;
-let visibleWidth = null;
-let truncateToWidth = null;
 
 try {
   const piTui = await import('@mariozechner/pi-tui');
   Markdown = piTui.Markdown;
-  visibleWidth = piTui.visibleWidth;
-  truncateToWidth = piTui.truncateToWidth;
   const piCodingAgent = await import('@mariozechner/pi-coding-agent');
   getMarkdownTheme = piCodingAgent.getMarkdownTheme;
 } catch {
@@ -386,41 +382,22 @@ async function shouldExposeMilestoneTool() {
 /**
  * Render tool result as markdown
  */
-function renderMarkdownResult(result) {
+function renderMarkdownResult(result, _options, _theme) {
   const text = result.content?.[0]?.text || '';
 
-  // Fall back to text if markdown packages not available (e.g., in tests)
-  if (!Markdown || !getMarkdownTheme || !visibleWidth || !truncateToWidth) {
-    return { render: () => text.split('\n'), invalidate: () => {} };
+  // Fall back to plain text split if markdown packages not available (e.g., in tests)
+  if (!Markdown || !getMarkdownTheme) {
+    // Return a simple component-like object for test environments
+    const lines = text.split('\n');
+    return {
+      render: () => lines,
+      invalidate: () => {},
+    };
   }
 
+  // Return Markdown component directly - the TUI will call its render() method
   const mdTheme = getMarkdownTheme();
-  const md = new Markdown(text, 0, 0, mdTheme);
-
-  // Wrap Markdown component to ensure proper line handling
-  return {
-    render(width) {
-      const rawLines = md.render(width);
-      // Flatten any lines that contain embedded newlines and truncate each
-      const result = [];
-      for (const line of rawLines) {
-        // Split by actual newlines in case Markdown returned embedded newlines
-        const subLines = line.split('\n');
-        for (const subLine of subLines) {
-          // Truncate each line to terminal width
-          if (visibleWidth(subLine) > width) {
-            result.push(truncateToWidth(subLine, width, ''));
-          } else {
-            result.push(subLine);
-          }
-        }
-      }
-      return result;
-    },
-    invalidate() {
-      md.invalidate();
-    },
-  };
+  return new Markdown(text, 0, 0, mdTheme);
 }
 
 async function registerLinearTools(pi) {
