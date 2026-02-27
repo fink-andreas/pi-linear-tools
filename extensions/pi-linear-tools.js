@@ -6,32 +6,59 @@ import {
   fetchTeams,
   fetchWorkspaces,
 } from '../src/linear.js';
-import Module, { createRequire } from 'node:module';
+import fs from 'node:fs';
+import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-async function importFromLocalOrGlobal(specifier) {
-  try {
-    return await import(specifier);
-  } catch {
-    // When this extension is run from a local source dir (pi install .),
-    // Node resolution won't find pi's own deps (pi-tui / pi-coding-agent)
-    // in our package's node_modules. As a fallback, try Node's globalPaths.
-    try {
-      const require = createRequire(import.meta.url);
-      for (const basePath of Module.globalPaths || []) {
-        try {
-          const resolved = require.resolve(specifier, { paths: [basePath] });
-          return await import(pathToFileURL(resolved).href);
-        } catch {
-          // keep trying
-        }
+function findPiCodingAgentRoot() {
+  // When running inside pi, argv[1] points to pi's CLI entrypoint,
+  // e.g. .../@mariozechner/pi-coding-agent/dist/cli.js
+  const entry = process.argv?.[1];
+  if (!entry) return null;
+
+  let dir = path.dirname(entry);
+  for (let i = 0; i < 12; i += 1) {
+    const pkgPath = path.join(dir, 'package.json');
+    if (fs.existsSync(pkgPath)) {
+      try {
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+        if (pkg?.name === '@mariozechner/pi-coding-agent') return dir;
+      } catch {
+        // ignore parse errors
       }
-    } catch {
-      // ignore
     }
+
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
   }
 
-  throw new Error(`Unable to import ${specifier}`);
+  return null;
+}
+
+async function importFromPiRoot(relativePathFromPiRoot) {
+  const piRoot = findPiCodingAgentRoot();
+  if (!piRoot) throw new Error('Unable to locate @mariozechner/pi-coding-agent installation');
+
+  const absPath = path.join(piRoot, relativePathFromPiRoot);
+  return import(pathToFileURL(absPath).href);
+}
+
+async function importPiCodingAgent() {
+  try {
+    return await import('@mariozechner/pi-coding-agent');
+  } catch {
+    return importFromPiRoot('dist/index.js');
+  }
+}
+
+async function importPiTui() {
+  try {
+    return await import('@mariozechner/pi-tui');
+  } catch {
+    // pi-tui is a dependency of pi-coding-agent and may be nested under it
+    return importFromPiRoot('node_modules/@mariozechner/pi-tui/dist/index.js');
+  }
 }
 
 // Optional imports for markdown rendering (provided by pi runtime)
@@ -39,15 +66,15 @@ let Markdown = null;
 let getMarkdownTheme = null;
 
 try {
-  const piTui = await importFromLocalOrGlobal('@mariozechner/pi-tui');
-  Markdown = piTui.Markdown;
+  const piTui = await importPiTui();
+  Markdown = piTui?.Markdown || null;
 } catch {
   // ignore
 }
 
 try {
-  const piCodingAgent = await importFromLocalOrGlobal('@mariozechner/pi-coding-agent');
-  getMarkdownTheme = piCodingAgent.getMarkdownTheme;
+  const piCodingAgent = await importPiCodingAgent();
+  getMarkdownTheme = piCodingAgent?.getMarkdownTheme || null;
 } catch {
   // ignore
 }
