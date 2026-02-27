@@ -6,6 +6,19 @@ import {
   fetchTeams,
   fetchWorkspaces,
 } from '../src/linear.js';
+
+// Optional imports for markdown rendering (provided by pi runtime)
+let Markdown = null;
+let getMarkdownTheme = null;
+
+try {
+  const piTui = await import('@mariozechner/pi-tui');
+  Markdown = piTui.Markdown;
+  const piCodingAgent = await import('@mariozechner/pi-coding-agent');
+  getMarkdownTheme = piCodingAgent.getMarkdownTheme;
+} catch {
+  // Packages not available in test environment - renderResult will fall back to text
+}
 import {
   executeIssueList,
   executeIssueView,
@@ -366,6 +379,21 @@ async function shouldExposeMilestoneTool() {
   return authMethod === 'api-key' || hasApiKey;
 }
 
+/**
+ * Render tool result as markdown
+ */
+function renderMarkdownResult(result) {
+  const text = result.content?.[0]?.text || '';
+
+  // Fall back to text if markdown packages not available (e.g., in tests)
+  if (!Markdown || !getMarkdownTheme) {
+    return { render: () => [text], invalidate: () => {} };
+  }
+
+  const mdTheme = getMarkdownTheme();
+  return new Markdown(text, 0, 0, mdTheme);
+}
+
 async function registerLinearTools(pi) {
   if (typeof pi.registerTool !== 'function') return;
 
@@ -495,6 +523,7 @@ async function registerLinearTools(pi) {
       required: ['action'],
       additionalProperties: false,
     },
+    renderResult: renderMarkdownResult,
     async execute(_toolCallId, params) {
       const client = await createAuthenticatedClient();
 
@@ -539,6 +568,7 @@ async function registerLinearTools(pi) {
       required: ['action'],
       additionalProperties: false,
     },
+    renderResult: renderMarkdownResult,
     async execute(_toolCallId, params) {
       const client = await createAuthenticatedClient();
 
@@ -567,6 +597,7 @@ async function registerLinearTools(pi) {
       required: ['action'],
       additionalProperties: false,
     },
+    renderResult: renderMarkdownResult,
     async execute(_toolCallId, params) {
       const client = await createAuthenticatedClient();
 
@@ -621,6 +652,7 @@ async function registerLinearTools(pi) {
         required: ['action'],
         additionalProperties: false,
       },
+      renderResult: renderMarkdownResult,
       async execute(_toolCallId, params) {
         const client = await createAuthenticatedClient();
 
