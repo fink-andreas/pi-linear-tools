@@ -6,19 +6,52 @@ import {
   fetchTeams,
   fetchWorkspaces,
 } from '../src/linear.js';
+import Module, { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
+
+async function importFromLocalOrGlobal(specifier) {
+  try {
+    return await import(specifier);
+  } catch {
+    // When this extension is run from a local source dir (pi install .),
+    // Node resolution won't find pi's own deps (pi-tui / pi-coding-agent)
+    // in our package's node_modules. As a fallback, try Node's globalPaths.
+    try {
+      const require = createRequire(import.meta.url);
+      for (const basePath of Module.globalPaths || []) {
+        try {
+          const resolved = require.resolve(specifier, { paths: [basePath] });
+          return await import(pathToFileURL(resolved).href);
+        } catch {
+          // keep trying
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  throw new Error(`Unable to import ${specifier}`);
+}
 
 // Optional imports for markdown rendering (provided by pi runtime)
 let Markdown = null;
 let getMarkdownTheme = null;
 
 try {
-  const piTui = await import('@mariozechner/pi-tui');
+  const piTui = await importFromLocalOrGlobal('@mariozechner/pi-tui');
   Markdown = piTui.Markdown;
-  const piCodingAgent = await import('@mariozechner/pi-coding-agent');
+} catch {
+  // ignore
+}
+
+try {
+  const piCodingAgent = await importFromLocalOrGlobal('@mariozechner/pi-coding-agent');
   getMarkdownTheme = piCodingAgent.getMarkdownTheme;
 } catch {
-  // Packages not available in test environment - renderResult will fall back to text
+  // ignore
 }
+
 import {
   executeIssueList,
   executeIssueView,
@@ -385,19 +418,18 @@ async function shouldExposeMilestoneTool() {
 function renderMarkdownResult(result, _options, _theme) {
   const text = result.content?.[0]?.text || '';
 
-  // Fall back to plain text split if markdown packages not available (e.g., in tests)
+  // Fall back to plain text if markdown packages not available
   if (!Markdown || !getMarkdownTheme) {
-    // Return a simple component-like object for test environments
     const lines = text.split('\n');
     return {
-      render: () => lines,
+      render: (width) => lines.map((line) => (width && line.length > width ? line.slice(0, width) : line)),
       invalidate: () => {},
     };
   }
 
   // Return Markdown component directly - the TUI will call its render() method
   const mdTheme = getMarkdownTheme();
-  return new Markdown(text, 0, 0, mdTheme);
+  return new Markdown(text, 0, 0, mdTheme, _theme ? { color: (t) => _theme.fg('toolOutput', t) } : undefined);
 }
 
 async function registerLinearTools(pi) {
