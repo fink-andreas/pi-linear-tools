@@ -1136,14 +1136,9 @@ export async function updateProjectMilestone(client, milestoneId, patch = {}) {
     updateInput.targetDate = patch.targetDate;
   }
 
-  if (patch.status !== undefined) {
-    const validStatuses = ['backlogged', 'planned', 'inProgress', 'paused', 'completed', 'done', 'cancelled'];
-    const status = String(patch.status);
-    if (!validStatuses.includes(status)) {
-      throw new Error(`Invalid status: ${status}. Valid values: ${validStatuses.join(', ')}`);
-    }
-    updateInput.status = status;
-  }
+  // Note: status is a computed/read-only field in Linear's API (ProjectMilestoneStatus enum)
+  // It cannot be set via ProjectMilestoneUpdateInput. The status values (done, next, overdue, unstarted)
+  // are automatically determined by Linear based on milestone progress and dates.
 
   if (Object.keys(updateInput).length === 0) {
     throw new Error('No update fields provided');

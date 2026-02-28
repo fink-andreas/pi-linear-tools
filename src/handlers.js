@@ -732,11 +732,11 @@ export async function executeMilestoneCreate(client, params) {
 export async function executeMilestoneUpdate(client, params) {
   const milestoneId = ensureNonEmpty(params.milestone, 'milestone');
 
+  // Note: status is not included as it's a computed/read-only field in Linear's API
   const result = await updateProjectMilestone(client, milestoneId, {
     name: params.name,
     description: params.description,
     targetDate: params.targetDate,
-    status: params.status,
   });
 
   const friendlyChanges = result.changed;

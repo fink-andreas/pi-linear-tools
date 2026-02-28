@@ -750,11 +750,6 @@ async function registerLinearTools(pi) {
             type: 'string',
             description: 'Target completion date (ISO 8601 date)',
           },
-          status: {
-            type: 'string',
-            enum: ['backlogged', 'planned', 'inProgress', 'paused', 'completed', 'done', 'cancelled'],
-            description: 'Milestone status',
-          },
         },
         required: ['action'],
         additionalProperties: false,
