@@ -10,19 +10,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-let markdownDebugInfo = {
-  argv1: process.argv?.[1] || null,
-  argv0: process.argv?.[0] || null,
-  execPath: process.execPath || null,
-  piCodingAgentRoot: null,
-  piCodingAgentRootMethod: null,
-  piTuiImport: null,
-  piCodingAgentImport: null,
-  piTuiImportError: null,
-  piCodingAgentImportError: null,
-  markdownAvailable: false,
-};
-
 function isPiCodingAgentRoot(dir) {
   const pkgPath = path.join(dir, 'package.json');
   if (!fs.existsSync(pkgPath)) return false;
@@ -43,7 +30,6 @@ function findPiCodingAgentRoot() {
     let dir = path.dirname(entry);
     for (let i = 0; i < 20; i += 1) {
       if (isPiCodingAgentRoot(dir)) {
-        markdownDebugInfo.piCodingAgentRootMethod = 'walk-up-from-argv1';
         return dir;
       }
       const parent = path.dirname(dir);
@@ -59,7 +45,6 @@ function findPiCodingAgentRoot() {
     const prefix = path.resolve(binDir, '..');
     const candidate = path.join(prefix, 'lib', 'node_modules', '@mariozechner', 'pi-coding-agent');
     if (isPiCodingAgentRoot(candidate)) {
-      markdownDebugInfo.piCodingAgentRootMethod = 'npm-prefix-from-argv1';
       return candidate;
     }
   }
@@ -70,7 +55,6 @@ function findPiCodingAgentRoot() {
     '/usr/lib/node_modules/@mariozechner/pi-coding-agent',
   ]) {
     if (isPiCodingAgentRoot(candidate)) {
-      markdownDebugInfo.piCodingAgentRootMethod = 'common-global-path';
       return candidate;
     }
   }
@@ -80,7 +64,6 @@ function findPiCodingAgentRoot() {
 
 async function importFromPiRoot(relativePathFromPiRoot) {
   const piRoot = findPiCodingAgentRoot();
-  markdownDebugInfo.piCodingAgentRoot = piRoot;
 
   if (!piRoot) throw new Error('Unable to locate @mariozechner/pi-coding-agent installation');
 
@@ -90,36 +73,18 @@ async function importFromPiRoot(relativePathFromPiRoot) {
 
 async function importPiCodingAgent() {
   try {
-    const mod = await import('@mariozechner/pi-coding-agent');
-    markdownDebugInfo.piCodingAgentImport = 'package:@mariozechner/pi-coding-agent';
-    return mod;
-  } catch (e) {
-    try {
-      const mod = await importFromPiRoot('dist/index.js');
-      markdownDebugInfo.piCodingAgentImport = 'file:pi-coding-agent/dist/index.js';
-      return mod;
-    } catch (e2) {
-      markdownDebugInfo.piCodingAgentImportError = String(e2?.message || e2 || e?.message || e);
-      throw e2;
-    }
+    return await import('@mariozechner/pi-coding-agent');
+  } catch {
+    return importFromPiRoot('dist/index.js');
   }
 }
 
 async function importPiTui() {
   try {
-    const mod = await import('@mariozechner/pi-tui');
-    markdownDebugInfo.piTuiImport = 'package:@mariozechner/pi-tui';
-    return mod;
-  } catch (e) {
+    return await import('@mariozechner/pi-tui');
+  } catch {
     // pi-tui is a dependency of pi-coding-agent and may be nested under it
-    try {
-      const mod = await importFromPiRoot('node_modules/@mariozechner/pi-tui/dist/index.js');
-      markdownDebugInfo.piTuiImport = 'file:pi-coding-agent/node_modules/@mariozechner/pi-tui/dist/index.js';
-      return mod;
-    } catch (e2) {
-      markdownDebugInfo.piTuiImportError = String(e2?.message || e2 || e?.message || e);
-      throw e2;
-    }
+    return importFromPiRoot('node_modules/@mariozechner/pi-tui/dist/index.js');
   }
 }
 
@@ -142,8 +107,6 @@ try {
 } catch {
   // ignore
 }
-
-markdownDebugInfo.markdownAvailable = !!(Markdown && getMarkdownTheme);
 
 import {
   executeIssueList,
@@ -952,41 +915,11 @@ export default async function piLinearToolsExtension(pi) {
           '  /linear-tools-config --team <team-key> --project <project-name-or-id>',
           '  /linear-tools-help',
           '  /linear-tools-reload',
-          '  /linear-tools-md-debug',
           '',
           ...toolLines,
         ].join('\n'),
         display: true,
       });
-    },
-  });
-
-  pi.registerCommand('linear-tools-md-debug', {
-    description: 'Show markdown renderer debug info (imports, availability, sample markdown)',
-    handler: async (_args, ctx) => {
-      const debug = JSON.stringify(markdownDebugInfo, null, 2);
-      const sample = [
-        '# Markdown renderer debug',
-        '',
-        'If you see **bold** rendered bold and the list rendered as bullets here, Markdown rendering works in general.',
-        '',
-        '- item 1',
-        '- item 2',
-        '',
-        '```json',
-        debug,
-        '```',
-      ].join('\n');
-
-      pi.sendMessage({
-        customType: 'pi-linear-tools',
-        content: sample,
-        display: true,
-      });
-
-      if (ctx?.hasUI) {
-        ctx.ui.notify('Posted markdown debug info as a custom message.', 'info');
-      }
     },
   });
 
