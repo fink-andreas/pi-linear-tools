@@ -73,7 +73,7 @@ async function writeTokensToFile(tokenData) {
   await mkdir(parentDir, { recursive: true, mode: 0o700 });
   await writeFile(tokenFilePath, tokenData, { encoding: 'utf-8', mode: 0o600 });
 
-  warn('Stored OAuth tokens in fallback file storage because keychain is unavailable', {
+  debug('Stored OAuth tokens in fallback file storage because keychain is unavailable', {
     path: tokenFilePath,
   });
 }
@@ -94,7 +94,7 @@ async function isKeytarAvailable() {
     debug('keytar module loaded successfully');
     return true;
   } catch (error) {
-    warn('keytar module not available, using fallback storage', { error: error.message });
+    debug('keytar module not available, using fallback storage', { error: error.message });
     keytarModule = false;
     return false;
   }
@@ -153,7 +153,7 @@ export async function storeTokens(tokens) {
       // Clean up fallback file if keychain works again
       await unlink(getTokenFilePath()).catch(() => {});
     } catch (error) {
-      warn('Failed to store tokens in keychain, falling back to file storage', {
+      debug('Failed to store tokens in keychain, falling back to file storage', {
         error: error.message,
       });
       await writeTokensToFile(tokenData);
@@ -235,7 +235,7 @@ export async function getTokens() {
 
       debug('No tokens found in keychain');
     } catch (error) {
-      warn('Failed to retrieve tokens from keychain, trying fallback storage', {
+      debug('Failed to retrieve tokens from keychain, trying fallback storage', {
         error: error.message,
       });
     }
@@ -277,7 +277,7 @@ export async function clearTokens() {
       const message = String(error?.message || 'Unknown error');
       // Keychain providers (e.g. DBus Secret Service) may be unavailable at runtime.
       // Clearing is best-effort and we still clear fallback file/in-memory tokens below.
-      warn('Skipping keychain token clear; keychain backend unavailable', {
+      debug('Skipping keychain token clear; keychain backend unavailable', {
         error: message,
       });
       if (/org\.freedesktop\.secrets/i.test(message)) {
