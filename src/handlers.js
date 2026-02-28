@@ -465,10 +465,11 @@ export async function executeIssueStart(client, params, options = {}) {
 
   const updatedIssue = await setIssueState(client, prepared.issue.id, prepared.startedState.id);
 
+  const identifier = updatedIssue.identifier || prepared.issue.identifier;
   const compactTitle = String(updatedIssue.title || prepared.issue?.title || '').trim().toLowerCase();
   const summary = compactTitle
-    ? `Started issue ${updatedIssue.identifier} (${compactTitle})`
-    : `Started issue ${updatedIssue.identifier}`;
+    ? `Started issue ${identifier} (${compactTitle})`
+    : `Started issue ${identifier}`;
 
   return toTextResult(summary, {
     issueId: updatedIssue.id,
