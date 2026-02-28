@@ -1,6 +1,6 @@
 {
   "name": "@fink-andreas/pi-linear-tools",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Pi extension with Linear SDK tools and configuration commands",
   "type": "module",
   "engines": {
