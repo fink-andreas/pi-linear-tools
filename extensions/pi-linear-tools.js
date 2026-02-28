@@ -613,10 +613,6 @@ async function registerLinearTools(pi) {
           type: 'string',
           description: 'Parent comment ID for reply (for comment)',
         },
-        branch: {
-          type: 'string',
-          description: 'Custom branch name override (for start)',
-        },
         fromRef: {
           type: 'string',
           description: 'Git ref to branch from (default: HEAD, for start)',

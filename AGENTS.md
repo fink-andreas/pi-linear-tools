@@ -2,6 +2,12 @@
 
 - Run `npm test` with `tail` to keep output shorter (for example: `npm test | tail -n 15`).
 
+## Linear GraphQL API Schema
+
+Use the official GraphQL schema as reference when working with Linear SDK/API:
+- **Local copy:** `docs/linear-schema.graphql`
+- **Source:** https://raw.githubusercontent.com/linear/linear/refs/heads/main/packages/sdk/src/schema.graphql
+
 ## Live extension testing (install/remove + restart)
 
 Important behavior observed in practice:

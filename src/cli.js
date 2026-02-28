@@ -165,7 +165,7 @@ Issue Actions:
   update <issue> [--title X] [--description X] [--state X] [--priority 0-4]
          [--assignee me|ID] [--milestone X] [--sub-issue-of X]
   comment <issue> --body X
-  start <issue> [--branch X] [--from-ref X] [--on-branch-exists switch|suffix]
+  start <issue> [--from-ref X] [--on-branch-exists switch|suffix]
   delete <issue>
 
 Project Actions:
@@ -201,10 +201,10 @@ Examples:
   pi-linear-tools config --api-key lin_xxx
 
 Authentication:
-  OAuth 2.0 is the recommended authentication method.
-  Run 'pi-linear-tools auth login' to authenticate.
-  For CI/headless environments, set environment variables:
-    LINEAR_ACCESS_TOKEN, LINEAR_REFRESH_TOKEN, LINEAR_EXPIRES_AT
+  API key is the recommended authentication method (supports milestones).
+  Run 'pi-linear-tools config --api-key <key>' to authenticate.
+  For CI/headless environments, set the LINEAR_API_KEY environment variable.
+  OAuth 2.0 is also available via 'pi-linear-tools auth login'.
 `);
 }
 
@@ -258,7 +258,6 @@ Comment Options:
 
 Start Options:
   <issue>          Issue key or ID
-  --branch X       Custom branch name (default: issue's branch name)
   --from-ref X     Git ref to branch from (default: HEAD)
   --on-branch-exists X  "switch" or "suffix" (default: switch)
 
@@ -642,7 +641,6 @@ async function handleIssueStart(args) {
 
   const params = {
     issue: positional[0],
-    branch: readFlag(args, '--branch'),
     fromRef: readFlag(args, '--from-ref'),
     onBranchExists: readFlag(args, '--on-branch-exists'),
   };

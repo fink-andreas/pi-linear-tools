@@ -447,20 +447,22 @@ export async function executeIssueStart(client, params, options = {}) {
   const issue = ensureNonEmpty(params.issue, 'issue');
   const prepared = await prepareIssueStart(client, issue);
 
-  const desiredBranch = params.branch || prepared.branchName;
-  if (!desiredBranch) {
+  // Always use Linear's suggested branchName - it cannot be changed via API
+  // and using a custom branch would break Linear's branch-to-issue linking
+  const branchName = prepared.branchName;
+  if (!branchName) {
     throw new Error(
-      `No branch name resolved for issue ${prepared.issue.identifier}. Provide the 'branch' parameter explicitly.`
+      `No branch name available for issue ${prepared.issue.identifier}. The issue may not have a team assigned.`
     );
   }
 
   let gitResult;
   if (gitExecutor) {
     // Use provided git executor (e.g., pi.exec)
-    gitResult = await gitExecutor(desiredBranch, params.fromRef || 'HEAD', params.onBranchExists || 'switch');
+    gitResult = await gitExecutor(branchName, params.fromRef || 'HEAD', params.onBranchExists || 'switch');
   } else {
     // Use built-in child_process git operations
-    gitResult = await startGitBranch(desiredBranch, params.fromRef || 'HEAD', params.onBranchExists || 'switch');
+    gitResult = await startGitBranch(branchName, params.fromRef || 'HEAD', params.onBranchExists || 'switch');
   }
 
   const updatedIssue = await setIssueState(client, prepared.issue.id, prepared.startedState.id);

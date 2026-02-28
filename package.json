@@ -27,7 +27,7 @@
   },
   "scripts": {
     "start": "node index.js",
-    "test": "node tests/test-package-manifest.js && node tests/test-extension-registration.js && node tests/test-settings.js && node tests/test-assignee-update.js && node tests/test-full-assignee-flow.js",
+    "test": "node tests/test-package-manifest.js && node tests/test-extension-registration.js && node tests/test-settings.js && node tests/test-assignee-update.js && node tests/test-full-assignee-flow.js && node tests/test-branch-param.js",
     "dev:sync-local-extension": "node scripts/dev-sync-local-extension.mjs",
     "release:check": "npm test && npm pack --dry-run"
   },
