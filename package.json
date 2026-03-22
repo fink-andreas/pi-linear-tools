@@ -46,6 +46,6 @@
   "license": "MIT",
   "dependencies": {
     "@linear/sdk": "^75.0.0",
-    "keytar": "^7.9.0"
+    "@github/keytar": "^7.10.6"
   }
 }
