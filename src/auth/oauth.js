@@ -6,6 +6,7 @@
  */
 
 import { debug, warn, error as logError } from '../logger.js';
+import { OAUTH_CLIENT_ID, OAUTH_SCOPES } from './constants.js';
 
 // OAuth configuration
 const OAUTH_CONFIG = {
@@ -15,11 +16,11 @@ const OAUTH_CONFIG = {
   revokeUrl: 'https://api.linear.app/oauth/revoke',
 
   // Client configuration
-  clientId: 'a3e177176c6697611367f1a2405d4a34',
+  clientId: OAUTH_CLIENT_ID,
   redirectUri: 'http://localhost:34711/callback',
 
-  // OAuth scopes - minimal required scopes
-  scopes: ['read', 'issues:create', 'comments:create'],
+  // OAuth scopes
+  scopes: OAUTH_SCOPES,
 
   // Prompt consent to allow workspace reselection
   prompt: 'consent',

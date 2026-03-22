@@ -24,6 +24,7 @@ import {
   executeMilestoneUpdate,
   executeMilestoneDelete,
 } from './handlers.js';
+import { withMilestoneScopeHint } from './error-hints.js';
 
 // ===== ARGUMENT PARSING =====
 
@@ -65,19 +66,6 @@ function parseBoolean(value) {
   if (value === 'true' || value === '1') return true;
   if (value === 'false' || value === '0') return false;
   return undefined;
-}
-
-function withMilestoneScopeHint(error) {
-  const message = String(error?.message || error || 'Unknown error');
-
-  if (/invalid scope/i.test(message) && /write/i.test(message)) {
-    return new Error(
-      `${message}\nHint: Milestone create/update/delete require Linear write scope. ` +
-      `Use API key auth: pi-linear-tools config --api-key <key>`
-    );
-  }
-
-  return error;
 }
 
 // ===== AUTH RESOLUTION =====

@@ -224,15 +224,14 @@ function isLinearError(error) {
 /**
  * Format a Linear API error into a user-friendly message
  * @param {Error} error - The original error
- * @returns {Error} Formatted error with user-friendly message
+ * @returns {Error|unknown} Formatted error with user-friendly message, or original if unhandled
  */
 function formatLinearError(error) {
   const message = String(error?.message || error || 'Unknown error');
   const errorType = error?.type || 'Unknown';
 
-  // Rate limit error
+  // Rate limit: provide reset time and reduce-frequency hint
   if (errorType === 'Ratelimited' || message.toLowerCase().includes('rate limit')) {
-    const retryAfter = error?.retryAfter;
     const resetAt = error?.requestsResetAt
       ? new Date(error.requestsResetAt).toLocaleTimeString()
       : '1 hour';
@@ -244,7 +243,7 @@ function formatLinearError(error) {
     );
   }
 
-  // Authentication/Forbidden errors
+  // Auth/permission failures: prompt to check credentials
   if (errorType === 'Forbidden' || errorType === 'AuthenticationError' ||
     message.toLowerCase().includes('forbidden') || message.toLowerCase().includes('unauthorized')) {
     return new Error(
@@ -273,7 +272,8 @@ function formatLinearError(error) {
     );
   }
 
-  return error;
+  // Unknown error - wrap if not already an Error
+  return error instanceof Error ? error : new Error(String(error));
 }
 
 /**
@@ -889,14 +889,12 @@ export async function fetchIssueDetails(client, issueRef, options = {}) {
       };
     }
 
-    // Transform children
     const children = (childrenResult.nodes || []).map(c => ({
       identifier: c.identifier,
       title: c.title,
       state: c.state ? { name: c.state.name, color: c.state.color } : null,
     }));
 
-    // Transform comments
     const comments = (commentsResult.nodes || []).map(c => ({
       id: c.id,
       body: c.body,
@@ -907,7 +905,6 @@ export async function fetchIssueDetails(client, issueRef, options = {}) {
       parent: c.parent ? { id: c.parent.id } : null,
     }));
 
-    // Transform attachments
     const attachments = (attachmentsResult.nodes || []).map(a => ({
       id: a.id,
       title: a.title,
@@ -917,7 +914,6 @@ export async function fetchIssueDetails(client, issueRef, options = {}) {
       createdAt: a.createdAt,
     }));
 
-    // Transform labels
     const labels = (labelsResult.nodes || []).map(l => ({
       id: l.id,
       name: l.name,
@@ -1424,7 +1420,6 @@ export async function fetchMilestoneDetails(client, milestoneId) {
       milestone.issues?.()?.catch?.(() => ({ nodes: [] })) ?? milestone.issues?.() ?? { nodes: [] },
     ]);
 
-    // Transform issues
     const issues = await Promise.all(
       (issuesResult.nodes || []).map(async (issue) => {
         const [state, assignee] = await Promise.all([

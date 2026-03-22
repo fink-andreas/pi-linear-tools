@@ -6,70 +6,7 @@ import {
   fetchTeams,
   fetchWorkspaces,
 } from './src/linear.js';
-import fs from 'node:fs';
-import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-
-function isPiCodingAgentRoot(dir) {
-  const pkgPath = path.join(dir, 'package.json');
-  if (!fs.existsSync(pkgPath)) return false;
-  try {
-    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-    return pkg?.name === '@mariozechner/pi-coding-agent';
-  } catch {
-    return false;
-  }
-}
-
-function findPiCodingAgentRoot() {
-  const entry = process.argv?.[1];
-  if (!entry) return null;
-
-  // Method 1: walk up from argv1 (works when argv1 is .../pi-coding-agent/dist/cli.js)
-  {
-    let dir = path.dirname(entry);
-    for (let i = 0; i < 20; i += 1) {
-      if (isPiCodingAgentRoot(dir)) {
-        return dir;
-      }
-      const parent = path.dirname(dir);
-      if (parent === dir) break;
-      dir = parent;
-    }
-  }
-
-  // Method 2: npm global layout guess (works when argv1 is .../<prefix>/bin/pi)
-  // <prefix>/bin/pi  ->  <prefix>/lib/node_modules/@mariozechner/pi-coding-agent
-  {
-    const binDir = path.dirname(entry);
-    const prefix = path.resolve(binDir, '..');
-    const candidate = path.join(prefix, 'lib', 'node_modules', '@mariozechner', 'pi-coding-agent');
-    if (isPiCodingAgentRoot(candidate)) {
-      return candidate;
-    }
-  }
-
-  // Method 3: common global node_modules locations
-  for (const candidate of [
-    '/usr/local/lib/node_modules/@mariozechner/pi-coding-agent',
-    '/usr/lib/node_modules/@mariozechner/pi-coding-agent',
-  ]) {
-    if (isPiCodingAgentRoot(candidate)) {
-      return candidate;
-    }
-  }
-
-  return null;
-}
-
-async function importFromPiRoot(relativePathFromPiRoot) {
-  const piRoot = findPiCodingAgentRoot();
-
-  if (!piRoot) throw new Error('Unable to locate @mariozechner/pi-coding-agent installation');
-
-  const absPath = path.join(piRoot, relativePathFromPiRoot);
-  return import(pathToFileURL(absPath).href);
-}
+import { isPiCodingAgentRoot, findPiCodingAgentRoot, importFromPiRoot, parseArgs, readFlag } from './src/shared.js';
 
 async function importPiCodingAgent() {
   try {
@@ -125,23 +62,7 @@ import {
   executeMilestoneDelete,
 } from './src/handlers.js';
 import { authenticate, getAccessToken, logout } from './src/auth/index.js';
-
-function parseArgs(argsString) {
-  if (!argsString || !argsString.trim()) return [];
-  const tokens = argsString.match(/"[^"]*"|'[^']*'|\S+/g) || [];
-  return tokens.map((t) => {
-    if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) {
-      return t.slice(1, -1);
-    }
-    return t;
-  });
-}
-
-function readFlag(args, flag) {
-  const idx = args.indexOf(flag);
-  if (idx >= 0 && idx + 1 < args.length) return args[idx + 1];
-  return undefined;
-}
+import { withMilestoneScopeHint } from './src/error-hints.js';
 
 let cachedApiKey = null;
 
@@ -183,19 +104,6 @@ async function getLinearAuth() {
 
 async function createAuthenticatedClient() {
   return createLinearClient(await getLinearAuth());
-}
-
-function withMilestoneScopeHint(error) {
-  const message = String(error?.message || error || 'Unknown error');
-
-  if (/invalid scope/i.test(message) && /write/i.test(message)) {
-    return new Error(
-      `${message}\nHint: Milestone create/update/delete require Linear write scope. ` +
-      `Use API key auth for milestone management: /linear-tools-config --api-key <key>`
-    );
-  }
-
-  return error;
 }
 
 async function resolveDefaultTeam(projectId) {

@@ -74,8 +74,12 @@ async function runGitCommand(args) {
  * @returns {Promise<boolean>}
  */
 async function gitBranchExists(branchName) {
-  const result = await runGitCommand(['rev-parse', '--verify', branchName]);
-  return result.code === 0;
+  try {
+    const result = await runGitCommand(['rev-parse', '--verify', branchName]);
+    return result.code === 0;
+  } catch {
+    return false;
+  }
 }
 
 /**

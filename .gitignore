@@ -145,3 +145,6 @@ finished/
 
 # Local pi runtime state
 .pi/
+
+# Local desloppify state
+.desloppify/

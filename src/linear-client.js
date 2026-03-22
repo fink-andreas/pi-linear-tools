@@ -19,10 +19,10 @@ let globalRateLimited = false;
 let globalRateLimitResetAt = null;
 
 /**
- * Check if we know we're rate limited and should skip API calls
+ * Clear rate limit state if the window has expired
  * @returns {{isRateLimited: boolean, resetAt: Date|null}}
  */
-export function isGloballyRateLimited() {
+export function checkAndClearRateLimit() {
   if (!globalRateLimited || !globalRateLimitResetAt) {
     return { isRateLimited: false, resetAt: null };
   }
@@ -35,6 +35,14 @@ export function isGloballyRateLimited() {
   }
 
   return { isRateLimited: true, resetAt: new Date(globalRateLimitResetAt) };
+}
+
+/**
+ * @deprecated Use checkAndClearRateLimit() instead
+ * @returns {{isRateLimited: boolean, resetAt: Date|null}}
+ */
+export function isGloballyRateLimited() {
+  return checkAndClearRateLimit();
 }
 
 /**

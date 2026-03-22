@@ -7,6 +7,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { debug, warn, error as logError } from './logger.js';
+import { OAUTH_CLIENT_ID } from './auth/constants.js';
 
 export function getDefaultSettings() {
   return {
@@ -14,7 +15,7 @@ export function getDefaultSettings() {
     authMethod: 'api-key', // 'api-key' or 'oauth'
     apiKey: null, // Legacy API key (migrated from linearApiKey)
     oauth: {
-      clientId: 'a3e177176c6697611367f1a2405d4a34',
+      clientId: OAUTH_CLIENT_ID,
       redirectUri: 'http://localhost:34711/callback',
     },
     defaultTeam: null,
@@ -49,7 +50,7 @@ function migrateSettings(settings) {
     // Add OAuth config
     if (!migrated.oauth || typeof migrated.oauth !== 'object') {
       migrated.oauth = {
-        clientId: 'a3e177176c6697611367f1a2405d4a34',
+        clientId: OAUTH_CLIENT_ID,
         redirectUri: 'http://localhost:34711/callback',
       };
     }
@@ -73,14 +74,14 @@ function migrateSettings(settings) {
   // Ensure oauth config exists
   if (!migrated.oauth || typeof migrated.oauth !== 'object') {
     migrated.oauth = {
-      clientId: 'a3e177176c6697611367f1a2405d4a34',
+      clientId: OAUTH_CLIENT_ID,
       redirectUri: 'http://localhost:34711/callback',
     };
   }
 
   // Ensure oauth has clientId and redirectUri
   if (migrated.oauth.clientId === undefined) {
-    migrated.oauth.clientId = 'a3e177176c6697611367f1a2405d4a34';
+    migrated.oauth.clientId = OAUTH_CLIENT_ID;
   }
 
   if (migrated.oauth.redirectUri === undefined) {

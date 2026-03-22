@@ -6,10 +6,9 @@
  */
 
 import { generatePkceParams } from './pkce.js';
-import { buildAuthorizationUrl, exchangeCodeForToken } from './oauth.js';
+import { buildAuthorizationUrl, exchangeCodeForToken, refreshAccessToken } from './oauth.js';
 import { waitForCallback } from './callback-server.js';
-import { storeTokens, getTokens, clearTokens, hasValidTokens } from './token-store.js';
-import { getValidAccessToken } from './token-refresh.js';
+import { storeTokens, getTokens, clearTokens } from './token-store.js';
 import { debug, info, warn, error as logError } from '../logger.js';
 
 function parseManualCallbackInput(rawInput) {
@@ -184,10 +183,41 @@ export async function authenticate({
 /**
  * Get a valid access token, refreshing if necessary
  *
- * @returns {Promise<string|null>} Valid access token or null if not authenticated
+ * @returns {Promise<string|null>} Valid access token, or null if no auth configured or refresh failed
  */
 export async function getAccessToken() {
-  return getValidAccessToken(getTokens);
+  const tokens = await getTokens();
+
+  if (!tokens) {
+    return null;
+  }
+
+  const now = Date.now();
+  const bufferSeconds = 60;
+  const bufferMs = bufferSeconds * 1000;
+
+  // Check if token is still valid (with buffer)
+  if (now < tokens.expiresAt - bufferMs) {
+    return tokens.accessToken;
+  }
+
+  // Token needs refresh
+  try {
+    const tokenResponse = await refreshAccessToken(tokens.refreshToken);
+    const expiresAt = Date.now() + tokenResponse.expires_in * 1000;
+    const newTokens = {
+      accessToken: tokenResponse.access_token,
+      refreshToken: tokenResponse.refresh_token,
+      expiresAt: expiresAt,
+      scope: tokenResponse.scope ? tokenResponse.scope.split(' ') : [],
+      tokenType: tokenResponse.token_type || 'Bearer',
+    };
+    await storeTokens(newTokens);
+    return newTokens.accessToken;
+  } catch (error) {
+    debug('Failed to get valid access token', { error: error.message });
+    return null;
+  }
 }
 
 /**
@@ -196,7 +226,11 @@ export async function getAccessToken() {
  * @returns {Promise<boolean>} True if authenticated with valid tokens
  */
 export async function isAuthenticated() {
-  return hasValidTokens();
+  const tokens = await getTokens();
+  if (!tokens) {
+    return false;
+  }
+  return Date.now() < tokens.expiresAt;
 }
 
 /**
