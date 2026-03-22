@@ -143,15 +143,17 @@ Usage:
   pi-linear-tools <command> [options]
 
 Commands:
+  issue <action> [options]      Manage issues
+  project <action> [options]    Manage projects
+  team <action> [options]       Manage teams
+  milestone <action> [options]  Manage milestones
+
+Other commands:
   help                          Show this help message
   auth <action>                 Manage authentication (OAuth 2.0)
   config                        Show current configuration
   config --api-key <key>        Set Linear API key (legacy)
   config --default-team <key>   Set default team
-  issue <action> [options]      Manage issues
-  project <action> [options]    Manage projects
-  team <action> [options]       Manage teams
-  milestone <action> [options]  Manage milestones
 
 Auth Actions:
   login    Authenticate with Linear via OAuth 2.0
