@@ -6,7 +6,7 @@
  */
 
 import { generatePkceParams } from './pkce.js';
-import { buildAuthorizationUrl, exchangeCodeForToken, refreshAccessToken } from './oauth.js';
+import { buildAuthorizationUrl, exchangeCodeForToken, refreshAccessToken, revokeToken } from './oauth.js';
 import { waitForCallback } from './callback-server.js';
 import { storeTokens, getTokens, clearTokens } from './token-store.js';
 import { debug, info, warn, error as logError } from '../logger.js';
@@ -257,12 +257,21 @@ export async function getAuthStatus() {
 }
 
 /**
- * Logout (clear stored tokens)
+ * Logout (clear stored tokens and revoke OAuth tokens)
  *
  * @returns {Promise<void>}
  */
 export async function logout() {
   info('Logging out...');
+  const tokens = await getTokens();
+  if (tokens?.accessToken) {
+    try {
+      await revokeToken(tokens.accessToken);
+      debug('OAuth token revoked');
+    } catch {
+      // Ignore revocation errors - we still want to clear local tokens
+    }
+  }
   await clearTokens();
   info('Logged out successfully');
 }

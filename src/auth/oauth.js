@@ -273,10 +273,10 @@ export async function revokeToken(token, tokenTypeHint) {
 }
 
 /**
- * Get OAuth configuration
+ * Get OAuth configuration (internal)
  *
  * @returns {object} OAuth configuration object
  */
-export function getOAuthConfig() {
+function _getOAuthConfig() {
   return { ...OAUTH_CONFIG };
 }

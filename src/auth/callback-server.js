@@ -7,7 +7,7 @@
 
 import http from 'node:http';
 import { URL } from 'node:url';
-import { debug, warn, error as logError } from '../logger.js';
+import { debug, error as logError } from '../logger.js';
 
 // Default callback server configuration
 const SERVER_CONFIG = {

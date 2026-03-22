@@ -5,7 +5,6 @@
  * All handlers are pure functions that accept a LinearClient and parameters.
  */
 
-import { createLinearClient } from './linear-client.js';
 import {
   prepareIssueStart,
   setIssueState,
@@ -14,7 +13,6 @@ import {
   createIssue,
   fetchProjects,
   fetchTeams,
-  fetchWorkspaces,
   resolveProjectRef,
   resolveTeamRef,
   getTeamWorkflowStates,
@@ -29,7 +27,7 @@ import {
   deleteIssue,
   withHandlerErrorHandling,
 } from './linear.js';
-import { debug, warn } from './logger.js';
+import { debug } from './logger.js';
 
 function toTextResult(text, details = {}) {
   return {
