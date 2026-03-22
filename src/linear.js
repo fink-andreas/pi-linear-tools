@@ -15,7 +15,7 @@ import { warn, info, debug } from './logger.js';
  * This reduces API calls from ~251 (N+1) to 1 per query
  */
 const ISSUES_WITH_RELATIONS_QUERY = `
-  query IssuesWithRelations($first: Int, $filter: IssueFilterInput) {
+  query IssuesWithRelations($first: Int, $filter: IssueFilter) {
     issues(first: $first, filter: $filter) {
       nodes {
         id
