@@ -11,8 +11,53 @@ import { debug, warn, error as logError } from './logger.js';
 /** @type {Function|null} Test-only client factory override */
 let _testClientFactory = null;
 
+/** @type {Map<string, {remaining: number, resetAt: number}>} Per-client rate limit tracking */
+const rateLimitTracker = new Map();
+
 /**
- * Create a Linear SDK client
+ * Extract rate limit info from SDK client response
+ * The Linear SDK stores response metadata on the client after requests
+ * @param {LinearClient} client - Linear SDK client
+ * @returns {{remaining: number|null, resetAt: number|null, resetTime: string|null}}
+ */
+export function getClientRateLimit(client) {
+  // Try to get from tracker first
+  const trackerData = rateLimitTracker.get(client.apiKey || 'default');
+  if (trackerData) {
+    return {
+      remaining: trackerData.remaining,
+      resetAt: trackerData.resetAt,
+      resetTime: trackerData.resetAt ? new Date(trackerData.resetAt).toLocaleTimeString() : null,
+    };
+  }
+
+  return { remaining: null, resetAt: null, resetTime: null };
+}
+
+/**
+ * Check and warn about low rate limit for a client
+ * Call this after making API requests to check if limits are getting low
+ * @param {LinearClient} client - Linear SDK client
+ * @returns {boolean} True if warning was issued
+ */
+export function checkAndWarnRateLimit(client) {
+  const { remaining, resetTime } = getClientRateLimit(client);
+
+  if (remaining !== null && remaining <= 500) {
+    const usagePercent = Math.round(((5000 - remaining) / 5000) * 100);
+    warn(`Linear API rate limit running low: ${remaining} requests remaining (~${usagePercent}% used). Resets at ${resetTime}`, {
+      remaining,
+      resetTime,
+      usagePercent,
+    });
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Create a Linear SDK client with rate limit tracking
  *
  * Supports two authentication methods:
  * 1. API Key: Pass as string or { apiKey: '...' }
@@ -30,18 +75,22 @@ export function createLinearClient(auth) {
   }
 
   let clientConfig;
+  let apiKey = null;
 
   // Handle different input formats
   if (typeof auth === 'string') {
     // Legacy: API key passed as string
     clientConfig = { apiKey: auth };
+    apiKey = auth;
   } else if (typeof auth === 'object' && auth !== null) {
     // Object format: { apiKey: '...' } or { accessToken: '...' }
     if (auth.accessToken) {
       clientConfig = { apiKey: auth.accessToken };
+      apiKey = auth.accessToken;
       debug('Creating Linear client with OAuth access token');
     } else if (auth.apiKey) {
       clientConfig = { apiKey: auth.apiKey };
+      apiKey = auth.apiKey;
       debug('Creating Linear client with API key');
     } else {
       throw new Error(
@@ -54,7 +103,53 @@ export function createLinearClient(auth) {
     );
   }
 
-  return new LinearClient(clientConfig);
+  const client = new LinearClient(clientConfig);
+
+  // Initialize rate limit tracking for this client
+  const trackerKey = apiKey || 'default';
+  if (!rateLimitTracker.has(trackerKey)) {
+    rateLimitTracker.set(trackerKey, { remaining: 5000, resetAt: Date.now() + 3600000 });
+  }
+
+  // Wrap the rawRequest to capture rate limit headers
+  const originalRawRequest = client.rawRequest.bind(client);
+  client.rawRequest = async function wrappedRawRequest(query, variables, requestHeaders) {
+    const response = await originalRawRequest(query, variables, requestHeaders);
+
+    // Extract rate limit headers from response
+    if (response.headers) {
+      const remaining = response.headers.get('X-RateLimit-Requests-Remaining');
+      const resetAt = response.headers.get('X-RateLimit-Requests-Reset');
+
+      if (remaining !== null) {
+        const tracker = rateLimitTracker.get(trackerKey);
+        if (tracker) {
+          tracker.remaining = parseInt(remaining, 10);
+        }
+      }
+      if (resetAt !== null) {
+        const tracker = rateLimitTracker.get(trackerKey);
+        if (tracker) {
+          tracker.resetAt = parseInt(resetAt, 10);
+        }
+      }
+    }
+
+    // Check if we should warn about low rate limits
+    const tracker = rateLimitTracker.get(trackerKey);
+    if (tracker && tracker.remaining <= 500 && tracker.remaining > 0) {
+      const usagePercent = Math.round(((5000 - tracker.remaining) / 5000) * 100);
+      warn(`Linear API rate limit running low: ${tracker.remaining} requests remaining (~${usagePercent}% used). Resets at ${new Date(tracker.resetAt).toLocaleTimeString()}`, {
+        remaining: tracker.remaining,
+        resetTime: new Date(tracker.resetAt).toLocaleTimeString(),
+        usagePercent,
+      });
+    }
+
+    return response;
+  };
+
+  return client;
 }
 
 /**

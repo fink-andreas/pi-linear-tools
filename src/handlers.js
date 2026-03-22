@@ -145,7 +145,7 @@ export async function executeIssueList(client, params) {
 
     const { issues, truncated } = await fetchIssuesByProject(client, resolved.id, params.states || null, {
       assigneeId,
-      limit: params.limit || 50,
+      limit: params.limit || 20,
     });
 
     if (issues.length === 0) {

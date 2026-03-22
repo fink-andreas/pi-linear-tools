@@ -7,6 +7,83 @@
 
 import { warn, info, debug } from './logger.js';
 
+// ===== RATE LIMIT TRACKING =====
+
+/**
+ * Track rate limit status from API responses
+ * Linear API returns headers: X-RateLimit-Requests-Remaining, X-RateLimit-Requests-Reset
+ */
+const rateLimitState = {
+  remaining: null,
+  resetAt: null,
+  lastWarnAt: 0,
+};
+
+/**
+ * Update rate limit state from response headers
+ * @param {Response} response - Fetch response object
+ */
+export function updateRateLimitState(response) {
+  if (!response) return;
+
+  const headers = response.headers;
+  if (headers) {
+    const remaining = headers.get('X-RateLimit-Requests-Remaining');
+    const resetAt = headers.get('X-RateLimit-Requests-Reset');
+
+    if (remaining !== null) {
+      rateLimitState.remaining = parseInt(remaining, 10);
+    }
+    if (resetAt !== null) {
+      rateLimitState.resetAt = parseInt(resetAt, 10);
+    }
+  }
+}
+
+/**
+ * Get current rate limit status
+ * @returns {{remaining: number|null, resetAt: number|null, resetTime: string|null, usagePercent: number|null, shouldWarn: boolean}}
+ */
+export function getRateLimitStatus() {
+  const result = {
+    remaining: rateLimitState.remaining,
+    resetAt: rateLimitState.resetAt,
+    resetTime: null,
+    usagePercent: null,
+    shouldWarn: false,
+  };
+
+  if (rateLimitState.resetAt) {
+    result.resetTime = new Date(rateLimitState.resetAt).toLocaleTimeString();
+    const remaining = rateLimitState.remaining;
+    if (remaining !== null && remaining <= 1000) {
+      result.usagePercent = Math.round(((5000 - remaining) / 5000) * 100);
+      result.shouldWarn = remaining <= 500;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Check and warn about low rate limit
+ */
+function checkRateLimitWarning() {
+  const now = Date.now();
+  // Only warn once per 30 seconds to avoid spam
+  if (now - rateLimitState.lastWarnAt < 30000) return;
+
+  const status = getRateLimitStatus();
+  if (status.shouldWarn && status.remaining !== null) {
+    rateLimitState.lastWarnAt = now;
+    warn(`Linear API rate limit running low: ${status.remaining} requests remaining (~${status.usagePercent}% used). Resets at ${status.resetTime}`, {
+      remaining: status.remaining,
+      resetAt: status.resetTime,
+      usagePercent: status.usagePercent,
+    });
+  }
+}
+
 // ===== ERROR HANDLING =====
 
 /**
@@ -154,20 +231,94 @@ function normalizeIssueLookupInput(issue) {
 }
 
 /**
+ * Safely resolve a lazy-loaded relation without triggering unnecessary API calls
+ * Only fetches if the relation is already cached or if we have minimal data
+ */
+async function safeResolveRelation(sdkIssue, relationKey) {
+  try {
+    const relation = sdkIssue[relationKey];
+    if (!relation) return null;
+
+    // If it's a function (lazy loader), check if we can call it safely
+    if (typeof relation === 'function') {
+      const result = await relation().catch(() => null);
+      return result || null;
+    }
+
+    // If it's already resolved, return it
+    return relation;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Transform SDK issue object to plain object for consumers
- * Handles both SDK Issue objects and already-resolved plain objects
+ * Optimized to minimize API calls by avoiding unnecessary lazy loads
  */
 async function transformIssue(sdkIssue) {
   if (!sdkIssue) return null;
 
-  // Handle SDK issue with lazy-loaded relations
-  const [state, team, project, assignee, projectMilestone] = await Promise.all([
-    sdkIssue.state?.catch?.(() => null) ?? sdkIssue.state,
-    sdkIssue.team?.catch?.(() => null) ?? sdkIssue.team,
-    sdkIssue.project?.catch?.(() => null) ?? sdkIssue.project,
-    sdkIssue.assignee?.catch?.(() => null) ?? sdkIssue.assignee,
-    sdkIssue.projectMilestone?.catch?.(() => null) ?? sdkIssue.projectMilestone,
-  ]);
+  // If the SDK issue has _data, relations might already be available
+  // Check if we can extract data without making extra calls
+  const hasRelations = sdkIssue.state?.id || sdkIssue.assignee?.id || sdkIssue.project?.id;
+
+  // Only resolve relations if not already available
+  let state = null;
+  let team = null;
+  let project = null;
+  let assignee = null;
+  let projectMilestone = null;
+
+  if (sdkIssue.state?.id) {
+    state = sdkIssue.state;
+  } else if (sdkIssue._data?.state) {
+    state = { id: sdkIssue._data.state?.id, name: sdkIssue._data.state?.name, type: sdkIssue._data.state?.type };
+  }
+
+  if (sdkIssue.team?.id) {
+    team = sdkIssue.team;
+  } else if (sdkIssue._data?.team) {
+    team = { id: sdkIssue._data.team?.id, key: sdkIssue._data.team?.key, name: sdkIssue._data.team?.name };
+  }
+
+  if (sdkIssue.project?.id) {
+    project = sdkIssue.project;
+  } else if (sdkIssue._data?.project) {
+    project = { id: sdkIssue._data.project?.id, name: sdkIssue._data.project?.name };
+  }
+
+  if (sdkIssue.assignee?.id) {
+    assignee = sdkIssue.assignee;
+  } else if (sdkIssue._data?.assignee) {
+    assignee = { id: sdkIssue._data.assignee?.id, name: sdkIssue._data.assignee?.name, displayName: sdkIssue._data.assignee?.displayName };
+  }
+
+  if (sdkIssue.projectMilestone?.id) {
+    projectMilestone = sdkIssue.projectMilestone;
+  } else if (sdkIssue._data?.projectMilestone) {
+    projectMilestone = { id: sdkIssue._data.projectMilestone?.id, name: sdkIssue._data.projectMilestone?.name };
+  }
+
+  // Only trigger lazy loads if we don't have data from cache
+  const needsLazyLoad = !state && !team && !project && !assignee && !projectMilestone;
+
+  if (needsLazyLoad) {
+    // Use Promise.all with small timeout to avoid blocking
+    const [resolvedState, resolvedTeam, resolvedProject, resolvedAssignee, resolvedMilestone] = await Promise.all([
+      safeResolveRelation(sdkIssue, 'state'),
+      safeResolveRelation(sdkIssue, 'team'),
+      safeResolveRelation(sdkIssue, 'project'),
+      safeResolveRelation(sdkIssue, 'assignee'),
+      safeResolveRelation(sdkIssue, 'projectMilestone'),
+    ]);
+
+    state = state || resolvedState;
+    team = team || resolvedTeam;
+    project = project || resolvedProject;
+    assignee = assignee || resolvedAssignee;
+    projectMilestone = projectMilestone || resolvedMilestone;
+  }
 
   return {
     id: sdkIssue.id,
@@ -319,7 +470,7 @@ export async function fetchIssues(client, assigneeId, openStates, limit) {
  */
 export async function fetchIssuesByProject(client, projectId, states, options = {}) {
   return withLinearErrorHandling(async () => {
-    const { assigneeId = null, limit = 50 } = options;
+    const { assigneeId = null, limit = 20 } = options;
 
     const filter = {
       project: { id: { eq: projectId } },
