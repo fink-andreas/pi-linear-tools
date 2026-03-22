@@ -628,29 +628,44 @@ async function registerLinearTools(pi) {
     },
     renderResult: renderMarkdownResult,
     async execute(_toolCallId, params) {
-      const client = await createAuthenticatedClient();
+      try {
+        const client = await createAuthenticatedClient();
 
-      switch (params.action) {
-        case 'list':
-          return executeIssueList(client, params);
-        case 'view':
-          return executeIssueView(client, params);
-        case 'create':
-          return executeIssueCreate(client, params, { resolveDefaultTeam });
-        case 'update':
-          return executeIssueUpdate(client, params);
-        case 'comment':
-          return executeIssueComment(client, params);
-        case 'start':
-          return executeIssueStart(client, params, {
-            gitExecutor: async (branchName, fromRef, onBranchExists) => {
-              return startGitBranchForIssue(pi, branchName, fromRef, onBranchExists);
-            },
-          });
-        case 'delete':
-          return executeIssueDelete(client, params);
-        default:
-          throw new Error(`Unknown action: ${params.action}`);
+        switch (params.action) {
+          case 'list':
+            return await executeIssueList(client, params);
+          case 'view':
+            return await executeIssueView(client, params);
+          case 'create':
+            return await executeIssueCreate(client, params, { resolveDefaultTeam });
+          case 'update':
+            return await executeIssueUpdate(client, params);
+          case 'comment':
+            return await executeIssueComment(client, params);
+          case 'start':
+            return await executeIssueStart(client, params, {
+              gitExecutor: async (branchName, fromRef, onBranchExists) => {
+                return startGitBranchForIssue(pi, branchName, fromRef, onBranchExists);
+              },
+            });
+          case 'delete':
+            return await executeIssueDelete(client, params);
+          default:
+            throw new Error(`Unknown action: ${params.action}`);
+        }
+      } catch (error) {
+        // Re-throw user-friendly error messages, wrap unknown errors
+        const message = String(error?.message || error || 'Unknown error');
+        if (message.includes('Linear API error:') ||
+          message.includes('rate limit') ||
+          message.includes('forbidden') ||
+          message.includes('unauthorized') ||
+          message.includes('network') ||
+          message.includes('API server error')) {
+          throw error;
+        }
+        // Wrap unexpected errors with context
+        throw new Error(`Linear issue operation failed: ${message}`);
       }
     },
   });
@@ -673,13 +688,21 @@ async function registerLinearTools(pi) {
     },
     renderResult: renderMarkdownResult,
     async execute(_toolCallId, params) {
-      const client = await createAuthenticatedClient();
+      try {
+        const client = await createAuthenticatedClient();
 
-      switch (params.action) {
-        case 'list':
-          return executeProjectList(client);
-        default:
-          throw new Error(`Unknown action: ${params.action}`);
+        switch (params.action) {
+          case 'list':
+            return await executeProjectList(client);
+          default:
+            throw new Error(`Unknown action: ${params.action}`);
+        }
+      } catch (error) {
+        const message = String(error?.message || error || 'Unknown error');
+        if (message.includes('Linear API error:') || message.includes('rate limit') || message.includes('forbidden') || message.includes('unauthorized')) {
+          throw error;
+        }
+        throw new Error(`Linear project operation failed: ${message}`);
       }
     },
   });
@@ -702,13 +725,21 @@ async function registerLinearTools(pi) {
     },
     renderResult: renderMarkdownResult,
     async execute(_toolCallId, params) {
-      const client = await createAuthenticatedClient();
+      try {
+        const client = await createAuthenticatedClient();
 
-      switch (params.action) {
-        case 'list':
-          return executeTeamList(client);
-        default:
-          throw new Error(`Unknown action: ${params.action}`);
+        switch (params.action) {
+          case 'list':
+            return await executeTeamList(client);
+          default:
+            throw new Error(`Unknown action: ${params.action}`);
+        }
+      } catch (error) {
+        const message = String(error?.message || error || 'Unknown error');
+        if (message.includes('Linear API error:') || message.includes('rate limit') || message.includes('forbidden') || message.includes('unauthorized')) {
+          throw error;
+        }
+        throw new Error(`Linear team operation failed: ${message}`);
       }
     },
   });
@@ -752,9 +783,9 @@ async function registerLinearTools(pi) {
       },
       renderResult: renderMarkdownResult,
       async execute(_toolCallId, params) {
-        const client = await createAuthenticatedClient();
-
         try {
+          const client = await createAuthenticatedClient();
+
           switch (params.action) {
             case 'list':
               return await executeMilestoneList(client, params);
@@ -770,7 +801,13 @@ async function registerLinearTools(pi) {
               throw new Error(`Unknown action: ${params.action}`);
           }
         } catch (error) {
-          throw withMilestoneScopeHint(error);
+          // Apply milestone-specific hint, then wrap with operation context
+          const hintError = withMilestoneScopeHint(error);
+          const message = String(hintError?.message || hintError || 'Unknown error');
+          if (message.includes('Linear API error:') || message.includes('rate limit') || message.includes('forbidden') || message.includes('unauthorized')) {
+            throw hintError;
+          }
+          throw new Error(`Linear milestone operation failed: ${message}`);
         }
       },
     });

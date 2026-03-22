@@ -27,8 +27,9 @@ import {
   updateProjectMilestone,
   deleteProjectMilestone,
   deleteIssue,
+  withHandlerErrorHandling,
 } from './linear.js';
-import { debug } from './logger.js';
+import { debug, warn } from './logger.js';
 
 function toTextResult(text, details = {}) {
   return {
@@ -128,57 +129,59 @@ async function startGitBranch(branchName, fromRef = 'HEAD', onBranchExists = 'sw
  * List issues in a project
  */
 export async function executeIssueList(client, params) {
-  let projectRef = params.project;
-  if (!projectRef) {
-    projectRef = process.cwd().split('/').pop();
-  }
+  return withHandlerErrorHandling(async () => {
+    let projectRef = params.project;
+    if (!projectRef) {
+      projectRef = process.cwd().split('/').pop();
+    }
 
-  const resolved = await resolveProjectRef(client, projectRef);
+    const resolved = await resolveProjectRef(client, projectRef);
 
-  let assigneeId = null;
-  if (params.assignee === 'me') {
-    const viewer = await client.viewer;
-    assigneeId = viewer.id;
-  }
+    let assigneeId = null;
+    if (params.assignee === 'me') {
+      const viewer = await client.viewer;
+      assigneeId = viewer.id;
+    }
 
-  const { issues, truncated } = await fetchIssuesByProject(client, resolved.id, params.states || null, {
-    assigneeId,
-    limit: params.limit || 50,
-  });
+    const { issues, truncated } = await fetchIssuesByProject(client, resolved.id, params.states || null, {
+      assigneeId,
+      limit: params.limit || 50,
+    });
 
-  if (issues.length === 0) {
-    return toTextResult(`No issues found in project "${resolved.name}"`, {
+    if (issues.length === 0) {
+      return toTextResult(`No issues found in project "${resolved.name}"`, {
+        projectId: resolved.id,
+        projectName: resolved.name,
+        issueCount: 0,
+      });
+    }
+
+    const lines = [`## Issues in project "${resolved.name}" (${issues.length}${truncated ? '+' : ''})\n`];
+
+    for (const issue of issues) {
+      const stateLabel = issue.state?.name || 'Unknown';
+      const assigneeLabel = issue.assignee?.displayName || 'Unassigned';
+      const priorityLabel = issue.priority !== undefined && issue.priority !== null
+        ? ['None', 'Urgent', 'High', 'Medium', 'Low'][issue.priority] || `P${issue.priority}`
+        : null;
+
+      const metaParts = [`[${stateLabel}]`, `@${assigneeLabel}`];
+      if (priorityLabel) metaParts.push(priorityLabel);
+
+      lines.push(`- **${issue.identifier}**: ${issue.title} _${metaParts.join(' ')}_`);
+    }
+
+    if (truncated) {
+      lines.push('\n_Results may be truncated. Use limit parameter to fetch more._');
+    }
+
+    return toTextResult(lines.join('\n'), {
       projectId: resolved.id,
       projectName: resolved.name,
-      issueCount: 0,
+      issueCount: issues.length,
+      truncated,
     });
-  }
-
-  const lines = [`## Issues in project "${resolved.name}" (${issues.length}${truncated ? '+' : ''})\n`];
-
-  for (const issue of issues) {
-    const stateLabel = issue.state?.name || 'Unknown';
-    const assigneeLabel = issue.assignee?.displayName || 'Unassigned';
-    const priorityLabel = issue.priority !== undefined && issue.priority !== null
-      ? ['None', 'Urgent', 'High', 'Medium', 'Low'][issue.priority] || `P${issue.priority}`
-      : null;
-
-    const metaParts = [`[${stateLabel}]`, `@${assigneeLabel}`];
-    if (priorityLabel) metaParts.push(priorityLabel);
-
-    lines.push(`- **${issue.identifier}**: ${issue.title} _${metaParts.join(' ')}_`);
-  }
-
-  if (truncated) {
-    lines.push('\n_Results may be truncated. Use limit parameter to fetch more._');
-  }
-
-  return toTextResult(lines.join('\n'), {
-    projectId: resolved.id,
-    projectName: resolved.name,
-    issueCount: issues.length,
-    truncated,
-  });
+  }, 'executeIssueList');
 }
 
 /**

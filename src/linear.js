@@ -7,6 +7,134 @@
 
 import { warn, info, debug } from './logger.js';
 
+// ===== ERROR HANDLING =====
+
+/**
+ * Check if an error is a Linear SDK error type
+ * @param {Error} error - The error to check
+ * @returns {boolean}
+ */
+function isLinearError(error) {
+  return error?.constructor?.name?.includes('LinearError') ||
+    error?.name?.includes('LinearError') ||
+    error?.type?.startsWith?.('Ratelimited') ||
+    error?.type?.startsWith?.('Forbidden') ||
+    error?.type?.startsWith?.('Authentication') ||
+    error?.type === 'invalid_request' ||
+    error?.type === 'NetworkError' ||
+    error?.type === 'InternalError';
+}
+
+/**
+ * Format a Linear API error into a user-friendly message
+ * @param {Error} error - The original error
+ * @returns {Error} Formatted error with user-friendly message
+ */
+function formatLinearError(error) {
+  const message = String(error?.message || error || 'Unknown error');
+  const errorType = error?.type || 'Unknown';
+
+  // Rate limit error
+  if (errorType === 'Ratelimited' || message.toLowerCase().includes('rate limit')) {
+    const retryAfter = error?.retryAfter;
+    const resetAt = error?.requestsResetAt
+      ? new Date(error.requestsResetAt).toLocaleTimeString()
+      : '1 hour';
+
+    return new Error(
+      `Linear API rate limit exceeded. Please wait before making more requests.\n` +
+      `Rate limit resets at: ${resetAt}\n` +
+      `Hint: Reduce request frequency or wait before retrying.`
+    );
+  }
+
+  // Authentication/Forbidden errors
+  if (errorType === 'Forbidden' || errorType === 'AuthenticationError' ||
+    message.toLowerCase().includes('forbidden') || message.toLowerCase().includes('unauthorized')) {
+    return new Error(
+      `${message}\nHint: Check your Linear API key or OAuth token permissions.`
+    );
+  }
+
+  // Network errors
+  if (errorType === 'NetworkError' || message.toLowerCase().includes('network')) {
+    return new Error(
+      `Network error while communicating with Linear API.\nHint: Check your internet connection and try again.`
+    );
+  }
+
+  // Internal server errors
+  if (errorType === 'InternalError' || (error?.status >= 500 && error?.status < 600)) {
+    return new Error(
+      `Linear API server error (${error?.status || 'unknown'}).\nHint: Linear may be experiencing issues. Try again later.`
+    );
+  }
+
+  // Generic Linear API error
+  if (isLinearError(error)) {
+    return new Error(
+      `Linear API error: ${message}`
+    );
+  }
+
+  return error;
+}
+
+/**
+ * Wrap an async function with Linear-specific error handling
+ * @param {Function} fn - Async function to wrap
+ * @param {string} operation - Description of the operation for error messages
+ * @returns {Promise<*>} Result of the wrapped function
+ */
+async function withLinearErrorHandling(fn, operation = 'Linear API operation') {
+  try {
+    return await fn();
+  } catch (error) {
+    if (isLinearError(error)) {
+      const formatted = formatLinearError(error);
+      debug(`${operation} failed with Linear error`, {
+        originalError: error?.message,
+        errorType: error?.type,
+        formattedMessage: formatted.message,
+      });
+      throw formatted;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Wrap a handler function with comprehensive error handling for Linear API errors.
+ * This provides user-friendly error messages for rate limits, auth issues, etc.
+ * Use this in the execute() functions of tool handlers.
+ *
+ * @param {Function} fn - Async handler function to wrap
+ * @param {string} operation - Description of the operation for error messages
+ * @returns {Promise<*>} Result of the wrapped function
+ * @example
+ * ```js
+ * export async function executeIssueList(client, params) {
+ *   return withHandlerErrorHandling(async () => {
+ *     // ... implementation
+ *   }, 'executeIssueList');
+ * }
+ * ```
+ */
+export async function withHandlerErrorHandling(fn, operation = 'Handler') {
+  return withLinearErrorHandling(async () => {
+    try {
+      return await fn();
+    } catch (error) {
+      // Log additional context for unexpected errors
+      debug(`${operation} failed unexpectedly`, {
+        error: error?.message,
+        stack: error?.stack,
+      });
+      throw error;
+    }
+  }, operation);
+}
+
 // ===== HELPERS =====
 
 /**
@@ -111,12 +239,14 @@ function normalizeIssueRefList(value) {
  * @returns {Promise<{id: string, name: string}>}
  */
 export async function fetchViewer(client) {
-  const viewer = await client.viewer;
-  return {
-    id: viewer.id,
-    name: viewer.name,
-    displayName: viewer.displayName,
-  };
+  return withLinearErrorHandling(async () => {
+    const viewer = await client.viewer;
+    return {
+      id: viewer.id,
+      name: viewer.name,
+      displayName: viewer.displayName,
+    };
+  }, 'fetchViewer');
 }
 
 /**
@@ -128,51 +258,53 @@ export async function fetchViewer(client) {
  * @returns {Promise<{issues: Array, truncated: boolean}>}
  */
 export async function fetchIssues(client, assigneeId, openStates, limit) {
-  const filter = {
-    state: { name: { in: openStates } },
-  };
+  return withLinearErrorHandling(async () => {
+    const filter = {
+      state: { name: { in: openStates } },
+    };
 
-  if (assigneeId) {
-    filter.assignee = { id: { eq: assigneeId } };
-  }
+    if (assigneeId) {
+      filter.assignee = { id: { eq: assigneeId } };
+    }
 
-  const result = await client.issues({
-    first: limit,
-    filter,
-  });
-
-  const nodes = result.nodes || [];
-  const hasNextPage = result.pageInfo?.hasNextPage ?? false;
-
-  // Transform SDK issues to plain objects
-  const issues = await Promise.all(nodes.map(transformIssue));
-
-  // DEBUG: Log issues delivered by Linear API
-  debug('Issues delivered by Linear API', {
-    issueCount: issues.length,
-    issues: issues.map(issue => ({
-      id: issue.id,
-      title: issue.title,
-      state: issue.state?.name,
-      assigneeId: issue.assignee?.id,
-      project: issue.project?.name,
-      projectId: issue.project?.id,
-    })),
-  });
-
-  const truncated = hasNextPage || nodes.length >= limit;
-  if (truncated) {
-    warn('Linear issues query may be truncated by LINEAR_PAGE_LIMIT', {
-      limit,
-      returned: nodes.length,
-      hasNextPage,
+    const result = await client.issues({
+      first: limit,
+      filter,
     });
-  }
 
-  return {
-    issues,
-    truncated,
-  };
+    const nodes = result.nodes || [];
+    const hasNextPage = result.pageInfo?.hasNextPage ?? false;
+
+    // Transform SDK issues to plain objects
+    const issues = await Promise.all(nodes.map(transformIssue));
+
+    // DEBUG: Log issues delivered by Linear API
+    debug('Issues delivered by Linear API', {
+      issueCount: issues.length,
+      issues: issues.map(issue => ({
+        id: issue.id,
+        title: issue.title,
+        state: issue.state?.name,
+        assigneeId: issue.assignee?.id,
+        project: issue.project?.name,
+        projectId: issue.project?.id,
+      })),
+    });
+
+    const truncated = hasNextPage || nodes.length >= limit;
+    if (truncated) {
+      warn('Linear issues query may be truncated by LINEAR_PAGE_LIMIT', {
+        limit,
+        returned: nodes.length,
+        hasNextPage,
+      });
+    }
+
+    return {
+      issues,
+      truncated,
+    };
+  }, 'fetchIssues');
 }
 
 /**
@@ -186,51 +318,53 @@ export async function fetchIssues(client, assigneeId, openStates, limit) {
  * @returns {Promise<{issues: Array, truncated: boolean}>}
  */
 export async function fetchIssuesByProject(client, projectId, states, options = {}) {
-  const { assigneeId = null, limit = 50 } = options;
+  return withLinearErrorHandling(async () => {
+    const { assigneeId = null, limit = 50 } = options;
 
-  const filter = {
-    project: { id: { eq: projectId } },
-  };
+    const filter = {
+      project: { id: { eq: projectId } },
+    };
 
-  if (states && states.length > 0) {
-    filter.state = { name: { in: states } };
-  }
+    if (states && states.length > 0) {
+      filter.state = { name: { in: states } };
+    }
 
-  if (assigneeId) {
-    filter.assignee = { id: { eq: assigneeId } };
-  }
+    if (assigneeId) {
+      filter.assignee = { id: { eq: assigneeId } };
+    }
 
-  const result = await client.issues({
-    first: limit,
-    filter,
-  });
-
-  const nodes = result.nodes || [];
-  const hasNextPage = result.pageInfo?.hasNextPage ?? false;
-
-  // Transform SDK issues to plain objects
-  const issues = await Promise.all(nodes.map(transformIssue));
-
-  debug('Fetched issues by project', {
-    projectId,
-    stateCount: states?.length ?? 0,
-    issueCount: issues.length,
-    truncated: hasNextPage,
-  });
-
-  const truncated = hasNextPage || nodes.length >= limit;
-  if (truncated) {
-    warn('Issues query may be truncated', {
-      limit,
-      returned: nodes.length,
-      hasNextPage,
+    const result = await client.issues({
+      first: limit,
+      filter,
     });
-  }
 
-  return {
-    issues,
-    truncated,
-  };
+    const nodes = result.nodes || [];
+    const hasNextPage = result.pageInfo?.hasNextPage ?? false;
+
+    // Transform SDK issues to plain objects
+    const issues = await Promise.all(nodes.map(transformIssue));
+
+    debug('Fetched issues by project', {
+      projectId,
+      stateCount: states?.length ?? 0,
+      issueCount: issues.length,
+      truncated: hasNextPage,
+    });
+
+    const truncated = hasNextPage || nodes.length >= limit;
+    if (truncated) {
+      warn('Issues query may be truncated', {
+        limit,
+        returned: nodes.length,
+        hasNextPage,
+      });
+    }
+
+    return {
+      issues,
+      truncated,
+    };
+  }, 'fetchIssuesByProject');
 }
 
 /**
@@ -239,15 +373,17 @@ export async function fetchIssuesByProject(client, projectId, states, options = 
  * @returns {Promise<Array<{id: string, name: string}>>}
  */
 export async function fetchProjects(client) {
-  const result = await client.projects();
-  const nodes = result.nodes ?? [];
+  return withLinearErrorHandling(async () => {
+    const result = await client.projects();
+    const nodes = result.nodes ?? [];
 
-  debug('Fetched Linear projects', {
-    projectCount: nodes.length,
-    projects: nodes.map((p) => ({ id: p.id, name: p.name })),
-  });
+    debug('Fetched Linear projects', {
+      projectCount: nodes.length,
+      projects: nodes.map((p) => ({ id: p.id, name: p.name })),
+    });
 
-  return nodes.map(p => ({ id: p.id, name: p.name }));
+    return nodes.map(p => ({ id: p.id, name: p.name }));
+  }, 'fetchProjects');
 }
 
 /**
@@ -256,21 +392,23 @@ export async function fetchProjects(client) {
  * @returns {Promise<Array<{id: string, name: string}>>}
  */
 export async function fetchWorkspaces(client) {
-  const viewer = await client.viewer;
-  const organization = await (viewer?.organization?.catch?.(() => null) ?? viewer?.organization ?? null);
+  return withLinearErrorHandling(async () => {
+    const viewer = await client.viewer;
+    const organization = await (viewer?.organization?.catch?.(() => null) ?? viewer?.organization ?? null);
 
-  if (!organization) {
-    debug('No organization available from viewer context');
-    return [];
-  }
+    if (!organization) {
+      debug('No organization available from viewer context');
+      return [];
+    }
 
-  const workspace = { id: organization.id, name: organization.name || organization.urlKey || 'Workspace' };
+    const workspace = { id: organization.id, name: organization.name || organization.urlKey || 'Workspace' };
 
-  debug('Fetched Linear workspace from viewer organization', {
-    workspace,
-  });
+    debug('Fetched Linear workspace from viewer organization', {
+      workspace,
+    });
 
-  return [workspace];
+    return [workspace];
+  }, 'fetchWorkspaces');
 }
 
 /**
@@ -279,15 +417,17 @@ export async function fetchWorkspaces(client) {
  * @returns {Promise<Array<{id: string, key: string, name: string}>>}
  */
 export async function fetchTeams(client) {
-  const result = await client.teams();
-  const nodes = result.nodes ?? [];
+  return withLinearErrorHandling(async () => {
+    const result = await client.teams();
+    const nodes = result.nodes ?? [];
 
-  debug('Fetched Linear teams', {
-    teamCount: nodes.length,
-    teams: nodes.map((t) => ({ id: t.id, key: t.key, name: t.name })),
-  });
+    debug('Fetched Linear teams', {
+      teamCount: nodes.length,
+      teams: nodes.map((t) => ({ id: t.id, key: t.key, name: t.name })),
+    });
 
-  return nodes.map(t => ({ id: t.id, key: t.key, name: t.name }));
+    return nodes.map(t => ({ id: t.id, key: t.key, name: t.name }));
+  }, 'fetchTeams');
 }
 
 /**
@@ -344,19 +484,21 @@ export async function resolveTeamRef(client, teamRef) {
  * @returns {Promise<Object>} Resolved issue object
  */
 export async function resolveIssue(client, issueRef) {
-  const lookup = normalizeIssueLookupInput(issueRef);
+  return withLinearErrorHandling(async () => {
+    const lookup = normalizeIssueLookupInput(issueRef);
 
-  // The SDK's client.issue() method accepts both UUIDs and identifiers (ABC-123)
-  try {
-    const issue = await client.issue(lookup);
-    if (issue) {
-      return transformIssue(issue);
+    // The SDK's client.issue() method accepts both UUIDs and identifiers (ABC-123)
+    try {
+      const issue = await client.issue(lookup);
+      if (issue) {
+        return transformIssue(issue);
+      }
+    } catch (err) {
+      // Fall through to error
     }
-  } catch (err) {
-    // Fall through to error
-  }
 
-  throw new Error(`Issue not found: ${lookup}`);
+    throw new Error(`Issue not found: ${lookup}`);
+  }, 'resolveIssue');
 }
 
 /**
@@ -366,17 +508,19 @@ export async function resolveIssue(client, issueRef) {
  * @returns {Promise<Array<{id: string, name: string, type: string}>>}
  */
 export async function getTeamWorkflowStates(client, teamRef) {
-  const team = await client.team(teamRef);
-  if (!team) {
-    throw new Error(`Team not found: ${teamRef}`);
-  }
+  return withLinearErrorHandling(async () => {
+    const team = await client.team(teamRef);
+    if (!team) {
+      throw new Error(`Team not found: ${teamRef}`);
+    }
 
-  const states = await team.states();
-  return (states.nodes || []).map(s => ({
-    id: s.id,
-    name: s.name,
-    type: s.type,
-  }));
+    const states = await team.states();
+    return (states.nodes || []).map(s => ({
+      id: s.id,
+      name: s.name,
+      type: s.type,
+    }));
+  }, 'getTeamWorkflowStates');
 }
 
 /**
@@ -427,111 +571,113 @@ export async function resolveProjectRef(client, projectRef) {
  * @returns {Promise<Object>} Issue details
  */
 export async function fetchIssueDetails(client, issueRef, options = {}) {
-  const { includeComments = true } = options;
+  return withLinearErrorHandling(async () => {
+    const { includeComments = true } = options;
 
-  // Resolve issue - client.issue() accepts both UUIDs and identifiers
-  const lookup = normalizeIssueLookupInput(issueRef);
-  const sdkIssue = await client.issue(lookup);
+    // Resolve issue - client.issue() accepts both UUIDs and identifiers
+    const lookup = normalizeIssueLookupInput(issueRef);
+    const sdkIssue = await client.issue(lookup);
 
-  if (!sdkIssue) {
-    throw new Error(`Issue not found: ${lookup}`);
-  }
+    if (!sdkIssue) {
+      throw new Error(`Issue not found: ${lookup}`);
+    }
 
-  // Fetch all nested relations in parallel
-  const [
-    state,
-    team,
-    project,
-    projectMilestone,
-    assignee,
-    creator,
-    labelsResult,
-    parent,
-    childrenResult,
-    commentsResult,
-    attachmentsResult,
-  ] = await Promise.all([
-    sdkIssue.state?.catch?.(() => null) ?? sdkIssue.state,
-    sdkIssue.team?.catch?.(() => null) ?? sdkIssue.team,
-    sdkIssue.project?.catch?.(() => null) ?? sdkIssue.project,
-    sdkIssue.projectMilestone?.catch?.(() => null) ?? sdkIssue.projectMilestone,
-    sdkIssue.assignee?.catch?.(() => null) ?? sdkIssue.assignee,
-    sdkIssue.creator?.catch?.(() => null) ?? sdkIssue.creator,
-    sdkIssue.labels?.()?.catch?.(() => ({ nodes: [] })) ?? sdkIssue.labels?.() ?? { nodes: [] },
-    sdkIssue.parent?.catch?.(() => null) ?? sdkIssue.parent,
-    sdkIssue.children?.()?.catch?.(() => ({ nodes: [] })) ?? sdkIssue.children?.() ?? { nodes: [] },
-    includeComments ? (sdkIssue.comments?.()?.catch?.(() => ({ nodes: [] })) ?? sdkIssue.comments?.() ?? { nodes: [] }) : Promise.resolve({ nodes: [] }),
-    sdkIssue.attachments?.()?.catch?.(() => ({ nodes: [] })) ?? sdkIssue.attachments?.() ?? { nodes: [] },
-  ]);
+    // Fetch all nested relations in parallel
+    const [
+      state,
+      team,
+      project,
+      projectMilestone,
+      assignee,
+      creator,
+      labelsResult,
+      parent,
+      childrenResult,
+      commentsResult,
+      attachmentsResult,
+    ] = await Promise.all([
+      sdkIssue.state?.catch?.(() => null) ?? sdkIssue.state,
+      sdkIssue.team?.catch?.(() => null) ?? sdkIssue.team,
+      sdkIssue.project?.catch?.(() => null) ?? sdkIssue.project,
+      sdkIssue.projectMilestone?.catch?.(() => null) ?? sdkIssue.projectMilestone,
+      sdkIssue.assignee?.catch?.(() => null) ?? sdkIssue.assignee,
+      sdkIssue.creator?.catch?.(() => null) ?? sdkIssue.creator,
+      sdkIssue.labels?.()?.catch?.(() => ({ nodes: [] })) ?? sdkIssue.labels?.() ?? { nodes: [] },
+      sdkIssue.parent?.catch?.(() => null) ?? sdkIssue.parent,
+      sdkIssue.children?.()?.catch?.(() => ({ nodes: [] })) ?? sdkIssue.children?.() ?? { nodes: [] },
+      includeComments ? (sdkIssue.comments?.()?.catch?.(() => ({ nodes: [] })) ?? sdkIssue.comments?.() ?? { nodes: [] }) : Promise.resolve({ nodes: [] }),
+      sdkIssue.attachments?.()?.catch?.(() => ({ nodes: [] })) ?? sdkIssue.attachments?.() ?? { nodes: [] },
+    ]);
 
-  // Transform parent if exists
-  let transformedParent = null;
-  if (parent) {
-    const parentState = await parent.state?.catch?.(() => null) ?? parent.state;
-    transformedParent = {
-      identifier: parent.identifier,
-      title: parent.title,
-      state: parentState ? { name: parentState.name, color: parentState.color } : null,
+    // Transform parent if exists
+    let transformedParent = null;
+    if (parent) {
+      const parentState = await parent.state?.catch?.(() => null) ?? parent.state;
+      transformedParent = {
+        identifier: parent.identifier,
+        title: parent.title,
+        state: parentState ? { name: parentState.name, color: parentState.color } : null,
+      };
+    }
+
+    // Transform children
+    const children = (childrenResult.nodes || []).map(c => ({
+      identifier: c.identifier,
+      title: c.title,
+      state: c.state ? { name: c.state.name, color: c.state.color } : null,
+    }));
+
+    // Transform comments
+    const comments = (commentsResult.nodes || []).map(c => ({
+      id: c.id,
+      body: c.body,
+      createdAt: c.createdAt,
+      updatedAt: c.updatedAt,
+      user: c.user ? { name: c.user.name, displayName: c.user.displayName } : null,
+      externalUser: c.externalUser ? { name: c.externalUser.name, displayName: c.externalUser.displayName } : null,
+      parent: c.parent ? { id: c.parent.id } : null,
+    }));
+
+    // Transform attachments
+    const attachments = (attachmentsResult.nodes || []).map(a => ({
+      id: a.id,
+      title: a.title,
+      url: a.url,
+      subtitle: a.subtitle,
+      sourceType: a.sourceType,
+      createdAt: a.createdAt,
+    }));
+
+    // Transform labels
+    const labels = (labelsResult.nodes || []).map(l => ({
+      id: l.id,
+      name: l.name,
+      color: l.color,
+    }));
+
+    return {
+      identifier: sdkIssue.identifier,
+      title: sdkIssue.title,
+      description: sdkIssue.description,
+      url: sdkIssue.url,
+      branchName: sdkIssue.branchName,
+      priority: sdkIssue.priority,
+      estimate: sdkIssue.estimate,
+      createdAt: sdkIssue.createdAt,
+      updatedAt: sdkIssue.updatedAt,
+      state: state ? { name: state.name, color: state.color, type: state.type } : null,
+      team: team ? { id: team.id, key: team.key, name: team.name } : null,
+      project: project ? { id: project.id, name: project.name } : null,
+      projectMilestone: projectMilestone ? { id: projectMilestone.id, name: projectMilestone.name } : null,
+      assignee: assignee ? { id: assignee.id, name: assignee.name, displayName: assignee.displayName } : null,
+      creator: creator ? { id: creator.id, name: creator.name, displayName: creator.displayName } : null,
+      labels,
+      parent: transformedParent,
+      children,
+      comments,
+      attachments,
     };
-  }
-
-  // Transform children
-  const children = (childrenResult.nodes || []).map(c => ({
-    identifier: c.identifier,
-    title: c.title,
-    state: c.state ? { name: c.state.name, color: c.state.color } : null,
-  }));
-
-  // Transform comments
-  const comments = (commentsResult.nodes || []).map(c => ({
-    id: c.id,
-    body: c.body,
-    createdAt: c.createdAt,
-    updatedAt: c.updatedAt,
-    user: c.user ? { name: c.user.name, displayName: c.user.displayName } : null,
-    externalUser: c.externalUser ? { name: c.externalUser.name, displayName: c.externalUser.displayName } : null,
-    parent: c.parent ? { id: c.parent.id } : null,
-  }));
-
-  // Transform attachments
-  const attachments = (attachmentsResult.nodes || []).map(a => ({
-    id: a.id,
-    title: a.title,
-    url: a.url,
-    subtitle: a.subtitle,
-    sourceType: a.sourceType,
-    createdAt: a.createdAt,
-  }));
-
-  // Transform labels
-  const labels = (labelsResult.nodes || []).map(l => ({
-    id: l.id,
-    name: l.name,
-    color: l.color,
-  }));
-
-  return {
-    identifier: sdkIssue.identifier,
-    title: sdkIssue.title,
-    description: sdkIssue.description,
-    url: sdkIssue.url,
-    branchName: sdkIssue.branchName,
-    priority: sdkIssue.priority,
-    estimate: sdkIssue.estimate,
-    createdAt: sdkIssue.createdAt,
-    updatedAt: sdkIssue.updatedAt,
-    state: state ? { name: state.name, color: state.color, type: state.type } : null,
-    team: team ? { id: team.id, key: team.key, name: team.name } : null,
-    project: project ? { id: project.id, name: project.name } : null,
-    projectMilestone: projectMilestone ? { id: projectMilestone.id, name: projectMilestone.name } : null,
-    assignee: assignee ? { id: assignee.id, name: assignee.name, displayName: assignee.displayName } : null,
-    creator: creator ? { id: creator.id, name: creator.name, displayName: creator.displayName } : null,
-    labels,
-    parent: transformedParent,
-    children,
-    comments,
-    attachments,
-  };
+  }, 'fetchIssueDetails');
 }
 
 // ===== MUTATION FUNCTIONS =====
@@ -544,17 +690,19 @@ export async function fetchIssueDetails(client, issueRef, options = {}) {
  * @returns {Promise<Object>} Updated issue
  */
 export async function setIssueState(client, issueId, stateId) {
-  const issue = await client.issue(issueId);
-  if (!issue) {
-    throw new Error(`Issue not found: ${issueId}`);
-  }
+  return withLinearErrorHandling(async () => {
+    const issue = await client.issue(issueId);
+    if (!issue) {
+      throw new Error(`Issue not found: ${issueId}`);
+    }
 
-  const result = await issue.update({ stateId });
-  if (!result.success) {
-    throw new Error('Failed to update issue state');
-  }
+    const result = await issue.update({ stateId });
+    if (!result.success) {
+      throw new Error('Failed to update issue state');
+    }
 
-  return transformIssue(result.issue);
+    return transformIssue(result.issue);
+  }, 'setIssueState');
 }
 
 /**
@@ -571,86 +719,88 @@ export async function setIssueState(client, issueId, stateId) {
  * @returns {Promise<Object>} Created issue
  */
 export async function createIssue(client, input) {
-  const title = String(input.title || '').trim();
-  if (!title) {
-    throw new Error('Missing required field: title');
-  }
-
-  const teamId = String(input.teamId || '').trim();
-  if (!teamId) {
-    throw new Error('Missing required field: teamId');
-  }
-
-  const createInput = {
-    teamId,
-    title,
-  };
-
-  if (input.description !== undefined) {
-    createInput.description = String(input.description);
-  }
-
-  if (input.projectId !== undefined) {
-    createInput.projectId = input.projectId;
-  }
-
-  if (input.priority !== undefined) {
-    const parsed = Number.parseInt(String(input.priority), 10);
-    if (Number.isNaN(parsed) || parsed < 0 || parsed > 4) {
-      throw new Error(`Invalid priority: ${input.priority}. Valid range: 0..4`);
+  return withLinearErrorHandling(async () => {
+    const title = String(input.title || '').trim();
+    if (!title) {
+      throw new Error('Missing required field: title');
     }
-    createInput.priority = parsed;
-  }
 
-  if (input.assigneeId !== undefined) {
-    createInput.assigneeId = input.assigneeId;
-  }
+    const teamId = String(input.teamId || '').trim();
+    if (!teamId) {
+      throw new Error('Missing required field: teamId');
+    }
 
-  if (input.parentId !== undefined) {
-    createInput.parentId = input.parentId;
-  }
+    const createInput = {
+      teamId,
+      title,
+    };
 
-  if (input.stateId !== undefined) {
-    createInput.stateId = input.stateId;
-  }
+    if (input.description !== undefined) {
+      createInput.description = String(input.description);
+    }
 
-  const result = await client.createIssue(createInput);
+    if (input.projectId !== undefined) {
+      createInput.projectId = input.projectId;
+    }
 
-  if (!result.success) {
-    throw new Error('Failed to create issue');
-  }
-
-  // Prefer official data path: resolve created issue ID then refetch full issue.
-  const createdIssueId =
-    result.issue?.id
-    || result._issue?.id
-    || null;
-
-  if (createdIssueId) {
-    try {
-      const fullIssue = await client.issue(createdIssueId);
-      if (fullIssue) {
-        const transformed = await transformIssue(fullIssue);
-        return transformed;
+    if (input.priority !== undefined) {
+      const parsed = Number.parseInt(String(input.priority), 10);
+      if (Number.isNaN(parsed) || parsed < 0 || parsed > 4) {
+        throw new Error(`Invalid priority: ${input.priority}. Valid range: 0..4`);
       }
-    } catch {
-      // continue to fallback
+      createInput.priority = parsed;
     }
-  }
 
-  // Minimal fallback when SDK payload does not expose a resolvable issue ID.
-  return {
-    id: createdIssueId,
-    identifier: null,
-    title,
-    description: input.description ?? null,
-    url: null,
-    priority: input.priority ?? null,
-    state: null,
-    team: null,
-    project: null,
-    assignee: null,
-  };
+    if (input.assigneeId !== undefined) {
+      createInput.assigneeId = input.assigneeId;
+    }
+
+    if (input.parentId !== undefined) {
+      createInput.parentId = input.parentId;
+    }
+
+    if (input.stateId !== undefined) {
+      createInput.stateId = input.stateId;
+    }
+
+    const result = await client.createIssue(createInput);
+
+    if (!result.success) {
+      throw new Error('Failed to create issue');
+    }
+
+    // Prefer official data path: resolve created issue ID then refetch full issue.
+    const createdIssueId =
+      result.issue?.id
+      || result._issue?.id
+      || null;
+
+    if (createdIssueId) {
+      try {
+        const fullIssue = await client.issue(createdIssueId);
+        if (fullIssue) {
+          const transformed = await transformIssue(fullIssue);
+          return transformed;
+        }
+      } catch {
+        // continue to fallback
+      }
+    }
+
+    // Minimal fallback when SDK payload does not expose a resolvable issue ID.
+    return {
+      id: createdIssueId,
+      identifier: null,
+      title,
+      description: input.description ?? null,
+      url: null,
+      priority: input.priority ?? null,
+      state: null,
+      team: null,
+      project: null,
+      assignee: null,
+    };
+  }, 'createIssue');
 }
 
 /**
@@ -662,32 +812,34 @@ export async function createIssue(client, input) {
  * @returns {Promise<{issue: Object, comment: Object}>}
  */
 export async function addIssueComment(client, issueRef, body, parentCommentId) {
-  const commentBody = String(body || '').trim();
-  if (!commentBody) {
-    throw new Error('Missing required comment body');
-  }
+  return withLinearErrorHandling(async () => {
+    const commentBody = String(body || '').trim();
+    if (!commentBody) {
+      throw new Error('Missing required comment body');
+    }
 
-  const targetIssue = await resolveIssue(client, issueRef);
+    const targetIssue = await resolveIssue(client, issueRef);
 
-  const input = {
-    issueId: targetIssue.id,
-    body: commentBody,
-  };
+    const input = {
+      issueId: targetIssue.id,
+      body: commentBody,
+    };
 
-  if (parentCommentId) {
-    input.parentId = parentCommentId;
-  }
+    if (parentCommentId) {
+      input.parentId = parentCommentId;
+    }
 
-  const result = await client.createComment(input);
+    const result = await client.createComment(input);
 
-  if (!result.success) {
-    throw new Error('Failed to create comment');
-  }
+    if (!result.success) {
+      throw new Error('Failed to create comment');
+    }
 
-  return {
-    issue: targetIssue,
-    comment: result.comment,
-  };
+    return {
+      issue: targetIssue,
+      comment: result.comment,
+    };
+  }, 'addIssueComment');
 }
 
 /**
@@ -698,185 +850,187 @@ export async function addIssueComment(client, issueRef, body, parentCommentId) {
  * @returns {Promise<{issue: Object, changed: Array<string>}>}
  */
 export async function updateIssue(client, issueRef, patch = {}) {
-  const targetIssue = await resolveIssue(client, issueRef);
-  const updateInput = {};
+  return withLinearErrorHandling(async () => {
+    const targetIssue = await resolveIssue(client, issueRef);
+    const updateInput = {};
 
-  debug('updateIssue: received patch', {
-    issueRef,
-    resolvedIssueId: targetIssue?.id,
-    resolvedIdentifier: targetIssue?.identifier,
-    patchKeys: Object.keys(patch || {}),
-    hasTitle: patch.title !== undefined,
-    hasDescription: patch.description !== undefined,
-    priority: patch.priority,
-    state: patch.state,
-    assigneeId: patch.assigneeId,
-    milestone: patch.milestone,
-    projectMilestoneId: patch.projectMilestoneId,
-    subIssueOf: patch.subIssueOf,
-    parentOf: patch.parentOf,
-    blockedBy: patch.blockedBy,
-    blocking: patch.blocking,
-    relatedTo: patch.relatedTo,
-    duplicateOf: patch.duplicateOf,
-  });
+    debug('updateIssue: received patch', {
+      issueRef,
+      resolvedIssueId: targetIssue?.id,
+      resolvedIdentifier: targetIssue?.identifier,
+      patchKeys: Object.keys(patch || {}),
+      hasTitle: patch.title !== undefined,
+      hasDescription: patch.description !== undefined,
+      priority: patch.priority,
+      state: patch.state,
+      assigneeId: patch.assigneeId,
+      milestone: patch.milestone,
+      projectMilestoneId: patch.projectMilestoneId,
+      subIssueOf: patch.subIssueOf,
+      parentOf: patch.parentOf,
+      blockedBy: patch.blockedBy,
+      blocking: patch.blocking,
+      relatedTo: patch.relatedTo,
+      duplicateOf: patch.duplicateOf,
+    });
 
-  if (patch.title !== undefined) {
-    updateInput.title = String(patch.title);
-  }
-
-  if (patch.description !== undefined) {
-    updateInput.description = String(patch.description);
-  }
-
-  if (patch.priority !== undefined) {
-    const parsed = Number.parseInt(String(patch.priority), 10);
-    if (Number.isNaN(parsed) || parsed < 0 || parsed > 4) {
-      throw new Error(`Invalid priority: ${patch.priority}. Valid range: 0..4`);
-    }
-    updateInput.priority = parsed;
-  }
-
-  if (patch.state !== undefined) {
-    // Need to resolve state ID from team's workflow states
-    const team = targetIssue.team;
-    if (!team?.id) {
-      throw new Error(`Issue ${targetIssue.identifier} has no team assigned`);
+    if (patch.title !== undefined) {
+      updateInput.title = String(patch.title);
     }
 
-    const states = await getTeamWorkflowStates(client, team.id);
-    updateInput.stateId = resolveStateIdFromInput(states, patch.state);
-  }
+    if (patch.description !== undefined) {
+      updateInput.description = String(patch.description);
+    }
 
-  if (patch.assigneeId !== undefined) {
-    updateInput.assigneeId = patch.assigneeId;
-  }
+    if (patch.priority !== undefined) {
+      const parsed = Number.parseInt(String(patch.priority), 10);
+      if (Number.isNaN(parsed) || parsed < 0 || parsed > 4) {
+        throw new Error(`Invalid priority: ${patch.priority}. Valid range: 0..4`);
+      }
+      updateInput.priority = parsed;
+    }
 
-  if (patch.projectMilestoneId !== undefined) {
-    updateInput.projectMilestoneId = patch.projectMilestoneId;
-  } else if (patch.milestone !== undefined) {
-    const milestoneRef = String(patch.milestone || '').trim();
-    const clearMilestoneValues = new Set(['', 'none', 'null', 'unassigned', 'clear']);
-
-    if (clearMilestoneValues.has(milestoneRef.toLowerCase())) {
-      updateInput.projectMilestoneId = null;
-    } else {
-      const projectId = targetIssue.project?.id;
-      if (!projectId) {
-        throw new Error(`Issue ${targetIssue.identifier} has no project; cannot resolve milestone by name`);
+    if (patch.state !== undefined) {
+      // Need to resolve state ID from team's workflow states
+      const team = targetIssue.team;
+      if (!team?.id) {
+        throw new Error(`Issue ${targetIssue.identifier} has no team assigned`);
       }
 
-      const milestones = await fetchProjectMilestones(client, projectId);
-      updateInput.projectMilestoneId = resolveProjectMilestoneIdFromInput(milestones, milestoneRef);
-    }
-  }
-
-  if (patch.subIssueOf !== undefined) {
-    const parentRef = String(patch.subIssueOf || '').trim();
-    const clearParentValues = new Set(['', 'none', 'null', 'unassigned', 'clear']);
-    if (clearParentValues.has(parentRef.toLowerCase())) {
-      updateInput.parentId = null;
-    } else {
-      const parentIssue = await resolveIssue(client, parentRef);
-      updateInput.parentId = parentIssue.id;
-    }
-  }
-
-  const relationCreates = [];
-  const parentOfRefs = normalizeIssueRefList(patch.parentOf);
-  const blockedByRefs = normalizeIssueRefList(patch.blockedBy);
-  const blockingRefs = normalizeIssueRefList(patch.blocking);
-  const relatedToRefs = normalizeIssueRefList(patch.relatedTo);
-  const duplicateOfRef = patch.duplicateOf !== undefined ? String(patch.duplicateOf || '').trim() : null;
-
-  for (const childRef of parentOfRefs) {
-    const childIssue = await resolveIssue(client, childRef);
-    const childSdkIssue = await client.issue(childIssue.id);
-    if (!childSdkIssue) {
-      throw new Error(`Issue not found: ${childRef}`);
-    }
-    const rel = await childSdkIssue.update({ parentId: targetIssue.id });
-    if (!rel.success) {
-      throw new Error(`Failed to set parent for issue: ${childRef}`);
-    }
-  }
-
-  for (const blockerRef of blockedByRefs) {
-    const blocker = await resolveIssue(client, blockerRef);
-    relationCreates.push({ issueId: blocker.id, relatedIssueId: targetIssue.id, type: 'blocks' });
-  }
-
-  for (const blockedRef of blockingRefs) {
-    const blocked = await resolveIssue(client, blockedRef);
-    relationCreates.push({ issueId: targetIssue.id, relatedIssueId: blocked.id, type: 'blocks' });
-  }
-
-  for (const relatedRef of relatedToRefs) {
-    const related = await resolveIssue(client, relatedRef);
-    relationCreates.push({ issueId: targetIssue.id, relatedIssueId: related.id, type: 'related' });
-  }
-
-  if (duplicateOfRef) {
-    const duplicateTarget = await resolveIssue(client, duplicateOfRef);
-    relationCreates.push({ issueId: targetIssue.id, relatedIssueId: duplicateTarget.id, type: 'duplicate' });
-  }
-
-  debug('updateIssue: computed update input', {
-    issueRef,
-    resolvedIdentifier: targetIssue?.identifier,
-    updateKeys: Object.keys(updateInput),
-    updateInput,
-    relationCreateCount: relationCreates.length,
-    parentOfCount: parentOfRefs.length,
-  });
-
-  if (Object.keys(updateInput).length === 0
-    && relationCreates.length === 0
-    && parentOfRefs.length === 0) {
-    throw new Error('No update fields provided');
-  }
-
-  if (Object.keys(updateInput).length > 0) {
-    // Get fresh issue instance for update
-    const sdkIssue = await client.issue(targetIssue.id);
-    if (!sdkIssue) {
-      throw new Error(`Issue not found: ${targetIssue.id}`);
+      const states = await getTeamWorkflowStates(client, team.id);
+      updateInput.stateId = resolveStateIdFromInput(states, patch.state);
     }
 
-    const result = await sdkIssue.update(updateInput);
-    if (!result.success) {
-      throw new Error('Failed to update issue');
+    if (patch.assigneeId !== undefined) {
+      updateInput.assigneeId = patch.assigneeId;
     }
-  }
 
-  for (const relationInput of relationCreates) {
-    const relationResult = await client.createIssueRelation(relationInput);
-    if (!relationResult.success) {
-      throw new Error(`Failed to create issue relation (${relationInput.type})`);
+    if (patch.projectMilestoneId !== undefined) {
+      updateInput.projectMilestoneId = patch.projectMilestoneId;
+    } else if (patch.milestone !== undefined) {
+      const milestoneRef = String(patch.milestone || '').trim();
+      const clearMilestoneValues = new Set(['', 'none', 'null', 'unassigned', 'clear']);
+
+      if (clearMilestoneValues.has(milestoneRef.toLowerCase())) {
+        updateInput.projectMilestoneId = null;
+      } else {
+        const projectId = targetIssue.project?.id;
+        if (!projectId) {
+          throw new Error(`Issue ${targetIssue.identifier} has no project; cannot resolve milestone by name`);
+        }
+
+        const milestones = await fetchProjectMilestones(client, projectId);
+        updateInput.projectMilestoneId = resolveProjectMilestoneIdFromInput(milestones, milestoneRef);
+      }
     }
-  }
 
-  // Prefer official data path: refetch the issue after successful mutation.
-  let updatedSdkIssue = null;
-  try {
-    updatedSdkIssue = await client.issue(targetIssue.id);
-  } catch {
-    updatedSdkIssue = null;
-  }
+    if (patch.subIssueOf !== undefined) {
+      const parentRef = String(patch.subIssueOf || '').trim();
+      const clearParentValues = new Set(['', 'none', 'null', 'unassigned', 'clear']);
+      if (clearParentValues.has(parentRef.toLowerCase())) {
+        updateInput.parentId = null;
+      } else {
+        const parentIssue = await resolveIssue(client, parentRef);
+        updateInput.parentId = parentIssue.id;
+      }
+    }
 
-  const updatedIssue = await transformIssue(updatedSdkIssue);
+    const relationCreates = [];
+    const parentOfRefs = normalizeIssueRefList(patch.parentOf);
+    const blockedByRefs = normalizeIssueRefList(patch.blockedBy);
+    const blockingRefs = normalizeIssueRefList(patch.blocking);
+    const relatedToRefs = normalizeIssueRefList(patch.relatedTo);
+    const duplicateOfRef = patch.duplicateOf !== undefined ? String(patch.duplicateOf || '').trim() : null;
 
-  const changed = [...Object.keys(updateInput)];
-  if (parentOfRefs.length > 0) changed.push('parentOf');
-  if (blockedByRefs.length > 0) changed.push('blockedBy');
-  if (blockingRefs.length > 0) changed.push('blocking');
-  if (relatedToRefs.length > 0) changed.push('relatedTo');
-  if (duplicateOfRef) changed.push('duplicateOf');
+    for (const childRef of parentOfRefs) {
+      const childIssue = await resolveIssue(client, childRef);
+      const childSdkIssue = await client.issue(childIssue.id);
+      if (!childSdkIssue) {
+        throw new Error(`Issue not found: ${childRef}`);
+      }
+      const rel = await childSdkIssue.update({ parentId: targetIssue.id });
+      if (!rel.success) {
+        throw new Error(`Failed to set parent for issue: ${childRef}`);
+      }
+    }
 
-  return {
-    issue: updatedIssue || targetIssue,
-    changed,
-  };
+    for (const blockerRef of blockedByRefs) {
+      const blocker = await resolveIssue(client, blockerRef);
+      relationCreates.push({ issueId: blocker.id, relatedIssueId: targetIssue.id, type: 'blocks' });
+    }
+
+    for (const blockedRef of blockingRefs) {
+      const blocked = await resolveIssue(client, blockedRef);
+      relationCreates.push({ issueId: targetIssue.id, relatedIssueId: blocked.id, type: 'blocks' });
+    }
+
+    for (const relatedRef of relatedToRefs) {
+      const related = await resolveIssue(client, relatedRef);
+      relationCreates.push({ issueId: targetIssue.id, relatedIssueId: related.id, type: 'related' });
+    }
+
+    if (duplicateOfRef) {
+      const duplicateTarget = await resolveIssue(client, duplicateOfRef);
+      relationCreates.push({ issueId: targetIssue.id, relatedIssueId: duplicateTarget.id, type: 'duplicate' });
+    }
+
+    debug('updateIssue: computed update input', {
+      issueRef,
+      resolvedIdentifier: targetIssue?.identifier,
+      updateKeys: Object.keys(updateInput),
+      updateInput,
+      relationCreateCount: relationCreates.length,
+      parentOfCount: parentOfRefs.length,
+    });
+
+    if (Object.keys(updateInput).length === 0
+      && relationCreates.length === 0
+      && parentOfRefs.length === 0) {
+      throw new Error('No update fields provided');
+    }
+
+    if (Object.keys(updateInput).length > 0) {
+      // Get fresh issue instance for update
+      const sdkIssue = await client.issue(targetIssue.id);
+      if (!sdkIssue) {
+        throw new Error(`Issue not found: ${targetIssue.id}`);
+      }
+
+      const result = await sdkIssue.update(updateInput);
+      if (!result.success) {
+        throw new Error('Failed to update issue');
+      }
+    }
+
+    for (const relationInput of relationCreates) {
+      const relationResult = await client.createIssueRelation(relationInput);
+      if (!relationResult.success) {
+        throw new Error(`Failed to create issue relation (${relationInput.type})`);
+      }
+    }
+
+    // Prefer official data path: refetch the issue after successful mutation.
+    let updatedSdkIssue = null;
+    try {
+      updatedSdkIssue = await client.issue(targetIssue.id);
+    } catch {
+      updatedSdkIssue = null;
+    }
+
+    const updatedIssue = await transformIssue(updatedSdkIssue);
+
+    const changed = [...Object.keys(updateInput)];
+    if (parentOfRefs.length > 0) changed.push('parentOf');
+    if (blockedByRefs.length > 0) changed.push('blockedBy');
+    if (blockingRefs.length > 0) changed.push('blocking');
+    if (relatedToRefs.length > 0) changed.push('relatedTo');
+    if (duplicateOfRef) changed.push('duplicateOf');
+
+    return {
+      issue: updatedIssue || targetIssue,
+      changed,
+    };
+  }, 'updateIssue');
 }
 
 /**
@@ -961,23 +1115,25 @@ async function transformMilestone(sdkMilestone) {
  * @returns {Promise<Array<Object>>} Array of milestones
  */
 export async function fetchProjectMilestones(client, projectId) {
-  const project = await client.project(projectId);
-  if (!project) {
-    throw new Error(`Project not found: ${projectId}`);
-  }
+  return withLinearErrorHandling(async () => {
+    const project = await client.project(projectId);
+    if (!project) {
+      throw new Error(`Project not found: ${projectId}`);
+    }
 
-  const result = await project.projectMilestones();
-  const nodes = result.nodes || [];
+    const result = await project.projectMilestones();
+    const nodes = result.nodes || [];
 
-  const milestones = await Promise.all(nodes.map(transformMilestone));
+    const milestones = await Promise.all(nodes.map(transformMilestone));
 
-  debug('Fetched project milestones', {
-    projectId,
-    milestoneCount: milestones.length,
-    milestones: milestones.map((m) => ({ id: m.id, name: m.name, status: m.status })),
-  });
+    debug('Fetched project milestones', {
+      projectId,
+      milestoneCount: milestones.length,
+      milestones: milestones.map((m) => ({ id: m.id, name: m.name, status: m.status })),
+    });
 
-  return milestones;
+    return milestones;
+  }, 'fetchProjectMilestones');
 }
 
 /**
@@ -987,48 +1143,50 @@ export async function fetchProjectMilestones(client, projectId) {
  * @returns {Promise<Object>} Milestone details with issues
  */
 export async function fetchMilestoneDetails(client, milestoneId) {
-  const milestone = await client.projectMilestone(milestoneId);
-  if (!milestone) {
-    throw new Error(`Milestone not found: ${milestoneId}`);
-  }
+  return withLinearErrorHandling(async () => {
+    const milestone = await client.projectMilestone(milestoneId);
+    if (!milestone) {
+      throw new Error(`Milestone not found: ${milestoneId}`);
+    }
 
-  // Fetch project and issues in parallel
-  const [project, issuesResult] = await Promise.all([
-    milestone.project?.catch?.(() => null) ?? milestone.project,
-    milestone.issues?.()?.catch?.(() => ({ nodes: [] })) ?? milestone.issues?.() ?? { nodes: [] },
-  ]);
+    // Fetch project and issues in parallel
+    const [project, issuesResult] = await Promise.all([
+      milestone.project?.catch?.(() => null) ?? milestone.project,
+      milestone.issues?.()?.catch?.(() => ({ nodes: [] })) ?? milestone.issues?.() ?? { nodes: [] },
+    ]);
 
-  // Transform issues
-  const issues = await Promise.all(
-    (issuesResult.nodes || []).map(async (issue) => {
-      const [state, assignee] = await Promise.all([
-        issue.state?.catch?.(() => null) ?? issue.state,
-        issue.assignee?.catch?.(() => null) ?? issue.assignee,
-      ]);
+    // Transform issues
+    const issues = await Promise.all(
+      (issuesResult.nodes || []).map(async (issue) => {
+        const [state, assignee] = await Promise.all([
+          issue.state?.catch?.(() => null) ?? issue.state,
+          issue.assignee?.catch?.(() => null) ?? issue.assignee,
+        ]);
 
-      return {
-        id: issue.id,
-        identifier: issue.identifier,
-        title: issue.title,
-        state: state ? { name: state.name, color: state.color, type: state.type } : null,
-        assignee: assignee ? { id: assignee.id, name: assignee.name, displayName: assignee.displayName } : null,
-        priority: issue.priority,
-        estimate: issue.estimate,
-      };
-    })
-  );
+        return {
+          id: issue.id,
+          identifier: issue.identifier,
+          title: issue.title,
+          state: state ? { name: state.name, color: state.color, type: state.type } : null,
+          assignee: assignee ? { id: assignee.id, name: assignee.name, displayName: assignee.displayName } : null,
+          priority: issue.priority,
+          estimate: issue.estimate,
+        };
+      })
+    );
 
-  return {
-    id: milestone.id,
-    name: milestone.name,
-    description: milestone.description,
-    progress: milestone.progress,
-    order: milestone.order,
-    targetDate: milestone.targetDate,
-    status: milestone.status,
-    project: project ? { id: project.id, name: project.name } : null,
-    issues,
-  };
+    return {
+      id: milestone.id,
+      name: milestone.name,
+      description: milestone.description,
+      progress: milestone.progress,
+      order: milestone.order,
+      targetDate: milestone.targetDate,
+      status: milestone.status,
+      project: project ? { id: project.id, name: project.name } : null,
+      issues,
+    };
+  }, 'fetchMilestoneDetails');
 }
 
 /**
@@ -1043,70 +1201,72 @@ export async function fetchMilestoneDetails(client, milestoneId) {
  * @returns {Promise<Object>} Created milestone
  */
 export async function createProjectMilestone(client, input) {
-  const name = String(input.name || '').trim();
-  if (!name) {
-    throw new Error('Missing required field: name');
-  }
-
-  const projectId = String(input.projectId || '').trim();
-  if (!projectId) {
-    throw new Error('Missing required field: projectId');
-  }
-
-  const createInput = {
-    projectId,
-    name,
-  };
-
-  if (input.description !== undefined) {
-    createInput.description = String(input.description);
-  }
-
-  if (input.targetDate !== undefined) {
-    createInput.targetDate = input.targetDate;
-  }
-
-  if (input.status !== undefined) {
-    const validStatuses = ['backlogged', 'planned', 'inProgress', 'paused', 'completed', 'done', 'cancelled'];
-    const status = String(input.status);
-    if (!validStatuses.includes(status)) {
-      throw new Error(`Invalid status: ${status}. Valid values: ${validStatuses.join(', ')}`);
+  return withLinearErrorHandling(async () => {
+    const name = String(input.name || '').trim();
+    if (!name) {
+      throw new Error('Missing required field: name');
     }
-    createInput.status = status;
-  }
 
-  const result = await client.createProjectMilestone(createInput);
+    const projectId = String(input.projectId || '').trim();
+    if (!projectId) {
+      throw new Error('Missing required field: projectId');
+    }
 
-  if (!result.success) {
-    throw new Error('Failed to create milestone');
-  }
+    const createInput = {
+      projectId,
+      name,
+    };
 
-  // The payload has projectMilestone
-  const created = result.projectMilestone || result._projectMilestone;
+    if (input.description !== undefined) {
+      createInput.description = String(input.description);
+    }
 
-  // Try to fetch the full milestone
-  try {
-    if (created?.id) {
-      const fullMilestone = await client.projectMilestone(created.id);
-      if (fullMilestone) {
-        return transformMilestone(fullMilestone);
+    if (input.targetDate !== undefined) {
+      createInput.targetDate = input.targetDate;
+    }
+
+    if (input.status !== undefined) {
+      const validStatuses = ['backlogged', 'planned', 'inProgress', 'paused', 'completed', 'done', 'cancelled'];
+      const status = String(input.status);
+      if (!validStatuses.includes(status)) {
+        throw new Error(`Invalid status: ${status}. Valid values: ${validStatuses.join(', ')}`);
       }
+      createInput.status = status;
     }
-  } catch {
-    // Continue with fallback
-  }
 
-  // Fallback: Build response from create result
-  return {
-    id: created?.id || null,
-    name: created?.name || name,
-    description: created?.description ?? input.description ?? null,
-    progress: created?.progress ?? 0,
-    order: created?.order ?? null,
-    targetDate: created?.targetDate ?? input.targetDate ?? null,
-    status: created?.status ?? input.status ?? 'backlogged',
-    project: null,
-  };
+    const result = await client.createProjectMilestone(createInput);
+
+    if (!result.success) {
+      throw new Error('Failed to create milestone');
+    }
+
+    // The payload has projectMilestone
+    const created = result.projectMilestone || result._projectMilestone;
+
+    // Try to fetch the full milestone
+    try {
+      if (created?.id) {
+        const fullMilestone = await client.projectMilestone(created.id);
+        if (fullMilestone) {
+          return transformMilestone(fullMilestone);
+        }
+      }
+    } catch {
+      // Continue with fallback
+    }
+
+    // Fallback: Build response from create result
+    return {
+      id: created?.id || null,
+      name: created?.name || name,
+      description: created?.description ?? input.description ?? null,
+      progress: created?.progress ?? 0,
+      order: created?.order ?? null,
+      targetDate: created?.targetDate ?? input.targetDate ?? null,
+      status: created?.status ?? input.status ?? 'backlogged',
+      project: null,
+    };
+  }, 'createProjectMilestone');
 }
 
 /**
@@ -1117,44 +1277,46 @@ export async function createProjectMilestone(client, input) {
  * @returns {Promise<{milestone: Object, changed: Array<string>}>}
  */
 export async function updateProjectMilestone(client, milestoneId, patch = {}) {
-  const milestone = await client.projectMilestone(milestoneId);
-  if (!milestone) {
-    throw new Error(`Milestone not found: ${milestoneId}`);
-  }
+  return withLinearErrorHandling(async () => {
+    const milestone = await client.projectMilestone(milestoneId);
+    if (!milestone) {
+      throw new Error(`Milestone not found: ${milestoneId}`);
+    }
 
-  const updateInput = {};
+    const updateInput = {};
 
-  if (patch.name !== undefined) {
-    updateInput.name = String(patch.name);
-  }
+    if (patch.name !== undefined) {
+      updateInput.name = String(patch.name);
+    }
 
-  if (patch.description !== undefined) {
-    updateInput.description = String(patch.description);
-  }
+    if (patch.description !== undefined) {
+      updateInput.description = String(patch.description);
+    }
 
-  if (patch.targetDate !== undefined) {
-    updateInput.targetDate = patch.targetDate;
-  }
+    if (patch.targetDate !== undefined) {
+      updateInput.targetDate = patch.targetDate;
+    }
 
-  // Note: status is a computed/read-only field in Linear's API (ProjectMilestoneStatus enum)
-  // It cannot be set via ProjectMilestoneUpdateInput. The status values (done, next, overdue, unstarted)
-  // are automatically determined by Linear based on milestone progress and dates.
+    // Note: status is a computed/read-only field in Linear's API (ProjectMilestoneStatus enum)
+    // It cannot be set via ProjectMilestoneUpdateInput. The status values (done, next, overdue, unstarted)
+    // are automatically determined by Linear based on milestone progress and dates.
 
-  if (Object.keys(updateInput).length === 0) {
-    throw new Error('No update fields provided');
-  }
+    if (Object.keys(updateInput).length === 0) {
+      throw new Error('No update fields provided');
+    }
 
-  const result = await milestone.update(updateInput);
-  if (!result.success) {
-    throw new Error('Failed to update milestone');
-  }
+    const result = await milestone.update(updateInput);
+    if (!result.success) {
+      throw new Error('Failed to update milestone');
+    }
 
-  const updatedMilestone = await transformMilestone(result.projectMilestone || result._projectMilestone || milestone);
+    const updatedMilestone = await transformMilestone(result.projectMilestone || result._projectMilestone || milestone);
 
-  return {
-    milestone: updatedMilestone,
-    changed: Object.keys(updateInput),
-  };
+    return {
+      milestone: updatedMilestone,
+      changed: Object.keys(updateInput),
+    };
+  }, 'updateProjectMilestone');
 }
 
 /**
@@ -1164,24 +1326,26 @@ export async function updateProjectMilestone(client, milestoneId, patch = {}) {
  * @returns {Promise<{success: boolean, milestoneId: string, name: string|null}>}
  */
 export async function deleteProjectMilestone(client, milestoneId) {
-  let milestoneName = null;
+  return withLinearErrorHandling(async () => {
+    let milestoneName = null;
 
-  try {
-    const existing = await client.projectMilestone(milestoneId);
-    if (existing?.name) {
-      milestoneName = existing.name;
+    try {
+      const existing = await client.projectMilestone(milestoneId);
+      if (existing?.name) {
+        milestoneName = existing.name;
+      }
+    } catch {
+      milestoneName = null;
     }
-  } catch {
-    milestoneName = null;
-  }
 
-  const result = await client.deleteProjectMilestone(milestoneId);
+    const result = await client.deleteProjectMilestone(milestoneId);
 
-  return {
-    success: result.success,
-    milestoneId,
-    name: milestoneName,
-  };
+    return {
+      success: result.success,
+      milestoneId,
+      name: milestoneName,
+    };
+  }, 'deleteProjectMilestone');
 }
 
 /**
@@ -1191,21 +1355,23 @@ export async function deleteProjectMilestone(client, milestoneId) {
  * @returns {Promise<{success: boolean, issueId: string, identifier: string}>}
  */
 export async function deleteIssue(client, issueRef) {
-  const targetIssue = await resolveIssue(client, issueRef);
+  return withLinearErrorHandling(async () => {
+    const targetIssue = await resolveIssue(client, issueRef);
 
-  // Get SDK issue instance for delete
-  const sdkIssue = await client.issue(targetIssue.id);
-  if (!sdkIssue) {
-    throw new Error(`Issue not found: ${targetIssue.id}`);
-  }
+    // Get SDK issue instance for delete
+    const sdkIssue = await client.issue(targetIssue.id);
+    if (!sdkIssue) {
+      throw new Error(`Issue not found: ${targetIssue.id}`);
+    }
 
-  const result = await sdkIssue.delete();
+    const result = await sdkIssue.delete();
 
-  return {
-    success: result.success,
-    issueId: targetIssue.id,
-    identifier: targetIssue.identifier,
-  };
+    return {
+      success: result.success,
+      issueId: targetIssue.id,
+      identifier: targetIssue.identifier,
+    };
+  }, 'deleteIssue');
 }
 
 // ===== PURE HELPER FUNCTIONS (unchanged) =====
