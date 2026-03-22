@@ -12,15 +12,15 @@ async function main() {
   assert.equal(packageJson.name, '@fink-andreas/pi-linear-tools');
   assert.ok(packageJson.pi, 'package.json must contain a pi manifest');
   assert.ok(Array.isArray(packageJson.pi.extensions), 'pi.extensions must be an array');
-  assert.ok(packageJson.pi.extensions.includes('./extensions'), 'pi.extensions must include ./extensions');
+  assert.ok(packageJson.pi.extensions.includes('./index.js'), 'pi.extensions must include ./index.js');
 
   assert.ok(Array.isArray(packageJson.files), 'package.json files must be an array');
-  assert.ok(packageJson.files.includes('extensions/'), 'published files must include extensions/');
+  assert.ok(packageJson.files.includes('index.js'), 'published files must include index.js');
 
   assert.ok(Array.isArray(packageJson.keywords), 'package.json keywords must be an array');
   assert.ok(packageJson.keywords.includes('pi-package'), 'package.json keywords must include pi-package');
 
-  const extensionPath = resolve('extensions', 'pi-linear-tools.js');
+  const extensionPath = resolve('index.js');
   assert.ok(existsSync(extensionPath), 'extension entrypoint file must exist');
 
   const extensionSource = await readFile(extensionPath, 'utf-8');
