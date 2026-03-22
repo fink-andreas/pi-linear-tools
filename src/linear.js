@@ -7,6 +7,125 @@
 
 import { warn, info, debug } from './logger.js';
 
+// ===== OPTIMIZED GRAPHQL QUERIES =====
+// These queries fetch relations upfront to avoid N+1 API calls
+
+/**
+ * Optimized GraphQL query to fetch issues with all relations in a single request
+ * This reduces API calls from ~251 (N+1) to 1 per query
+ */
+const ISSUES_WITH_RELATIONS_QUERY = `
+  query IssuesWithRelations($first: Int, $filter: IssueFilterInput) {
+    issues(first: $first, filter: $filter) {
+      nodes {
+        id
+        identifier
+        title
+        description
+        url
+        branchName
+        priority
+        state {
+          id
+          name
+          type
+        }
+        team {
+          id
+          key
+          name
+        }
+        project {
+          id
+          name
+        }
+        projectMilestone {
+          id
+          name
+        }
+        assignee {
+          id
+          name
+          displayName
+        }
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+    }
+  }
+`;
+
+/**
+ * Execute an optimized GraphQL query using rawRequest
+ * Falls back to SDK method if rawRequest is not available (e.g., in tests)
+ * @param {LinearClient} client - Linear SDK client
+ * @param {string} query - GraphQL query string
+ * @param {Object} variables - Query variables
+ * @returns {Promise<{data: Object, headers: Headers}>}
+ */
+async function executeOptimizedQuery(client, query, variables) {
+  // Try rawRequest first (preferred - more efficient)
+  if (typeof client.rawRequest === 'function') {
+    const response = await client.rawRequest(query, variables);
+    return {
+      data: response.data,
+      headers: response.headers,
+    };
+  }
+
+  // Fallback to SDK method for testing/compatibility
+  if (typeof client.client?.rawRequest === 'function') {
+    const response = await client.client.rawRequest(query, variables);
+    return {
+      data: response.data,
+      headers: response.headers,
+    };
+  }
+
+  // Fallback: use SDK's issues() method (less efficient but always available)
+  warn('executeOptimizedQuery: rawRequest not available, falling back to SDK method');
+  const filter = variables.filter || {};
+  const result = await client.issues({
+    first: variables.first,
+    filter,
+  });
+
+  return {
+    data: {
+      issues: {
+        nodes: result.nodes || [],
+        pageInfo: result.pageInfo || { hasNextPage: false },
+      },
+    },
+    headers: new Headers(),
+  };
+}
+
+/**
+ * Transform raw GraphQL issue data to plain object format
+ * Used by optimized queries to avoid SDK lazy loading
+ */
+function transformRawIssue(rawIssue) {
+  if (!rawIssue) return null;
+
+  return {
+    id: rawIssue.id,
+    identifier: rawIssue.identifier,
+    title: rawIssue.title,
+    description: rawIssue.description,
+    url: rawIssue.url,
+    branchName: rawIssue.branchName,
+    priority: rawIssue.priority,
+    state: rawIssue.state ? { id: rawIssue.state.id, name: rawIssue.state.name, type: rawIssue.state.type } : null,
+    team: rawIssue.team ? { id: rawIssue.team.id, key: rawIssue.team.key, name: rawIssue.team.name } : null,
+    project: rawIssue.project ? { id: rawIssue.project.id, name: rawIssue.project.name } : null,
+    projectMilestone: rawIssue.projectMilestone ? { id: rawIssue.projectMilestone.id, name: rawIssue.projectMilestone.name } : null,
+    assignee: rawIssue.assignee ? { id: rawIssue.assignee.id, name: rawIssue.assignee.name, displayName: rawIssue.assignee.displayName } : null,
+  };
+}
+
 // ===== RATE LIMIT TRACKING =====
 
 /**
@@ -402,6 +521,7 @@ export async function fetchViewer(client) {
 
 /**
  * Fetch issues in specific states, optionally filtered by assignee
+ * OPTIMIZED: Uses rawRequest with custom GraphQL to fetch all relations in ONE request
  * @param {LinearClient} client - Linear SDK client
  * @param {string|null} assigneeId - Assignee ID to filter by (null = all assignees)
  * @param {Array<string>} openStates - List of state names to include
@@ -418,33 +538,26 @@ export async function fetchIssues(client, assigneeId, openStates, limit) {
       filter.assignee = { id: { eq: assigneeId } };
     }
 
-    const result = await client.issues({
+    // Use optimized rawRequest to fetch issues with ALL relations in ONE request
+    const { data } = await executeOptimizedQuery(client, ISSUES_WITH_RELATIONS_QUERY, {
       first: limit,
       filter,
     });
 
-    const nodes = result.nodes || [];
-    const hasNextPage = result.pageInfo?.hasNextPage ?? false;
+    const nodes = data?.issues?.nodes || [];
+    const pageInfo = data?.issues?.pageInfo;
+    const hasNextPage = pageInfo?.hasNextPage ?? false;
 
-    // Transform SDK issues to plain objects
-    const issues = await Promise.all(nodes.map(transformIssue));
+    // Transform raw GraphQL response directly - no lazy loading needed
+    const issues = nodes.map(transformRawIssue);
 
-    // DEBUG: Log issues delivered by Linear API
-    debug('Issues delivered by Linear API', {
+    debug('Fetched issues (optimized)', {
       issueCount: issues.length,
-      issues: issues.map(issue => ({
-        id: issue.id,
-        title: issue.title,
-        state: issue.state?.name,
-        assigneeId: issue.assignee?.id,
-        project: issue.project?.name,
-        projectId: issue.project?.id,
-      })),
     });
 
     const truncated = hasNextPage || nodes.length >= limit;
     if (truncated) {
-      warn('Linear issues query may be truncated by LINEAR_PAGE_LIMIT', {
+      warn('Issues query may be truncated', {
         limit,
         returned: nodes.length,
         hasNextPage,
@@ -460,6 +573,8 @@ export async function fetchIssues(client, assigneeId, openStates, limit) {
 
 /**
  * Fetch issues by project and optional state filter
+ * OPTIMIZED: Uses rawRequest with custom GraphQL to fetch all relations in ONE request
+ * instead of N+1 requests (1 for list + 5 per issue for lazy-loaded relations)
  * @param {LinearClient} client - Linear SDK client
  * @param {string} projectId - Project ID to filter by
  * @param {Array<string>|null} states - List of state names to include (null = all states)
@@ -484,18 +599,21 @@ export async function fetchIssuesByProject(client, projectId, states, options = 
       filter.assignee = { id: { eq: assigneeId } };
     }
 
-    const result = await client.issues({
+    // Use optimized rawRequest to fetch issues with ALL relations in ONE request
+    // This eliminates the N+1 problem where each issue triggered 5 additional API calls
+    const { data } = await executeOptimizedQuery(client, ISSUES_WITH_RELATIONS_QUERY, {
       first: limit,
       filter,
     });
 
-    const nodes = result.nodes || [];
-    const hasNextPage = result.pageInfo?.hasNextPage ?? false;
+    const nodes = data?.issues?.nodes || [];
+    const pageInfo = data?.issues?.pageInfo;
+    const hasNextPage = pageInfo?.hasNextPage ?? false;
 
-    // Transform SDK issues to plain objects
-    const issues = await Promise.all(nodes.map(transformIssue));
+    // Transform raw GraphQL response directly - no lazy loading needed
+    const issues = nodes.map(transformRawIssue);
 
-    debug('Fetched issues by project', {
+    debug('Fetched issues by project (optimized)', {
       projectId,
       stateCount: states?.length ?? 0,
       issueCount: issues.length,
