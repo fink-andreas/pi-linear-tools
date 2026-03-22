@@ -148,3 +148,9 @@ finished/
 
 # Local desloppify state
 .desloppify/
+
+# Generated scorecard
+scorecard.png
+
+# Claude agent directory
+.claude/
