@@ -40,7 +40,7 @@
   ],
   "pi": {
     "extensions": [
-      "./extensions"
+      "./index.js"
     ]
   },
   "license": "MIT",
