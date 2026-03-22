@@ -112,8 +112,9 @@ export function createLinearClient(auth) {
   }
 
   // Wrap the rawRequest to capture rate limit headers
-  const originalRawRequest = client.rawRequest.bind(client);
-  client.rawRequest = async function wrappedRawRequest(query, variables, requestHeaders) {
+  // rawRequest is on client.client (internal GraphQL client)
+  const originalRawRequest = client.client.rawRequest.bind(client.client);
+  client.client.rawRequest = async function wrappedRawRequest(query, variables, requestHeaders) {
     const response = await originalRawRequest(query, variables, requestHeaders);
 
     // Extract rate limit headers from response
