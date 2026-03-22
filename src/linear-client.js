@@ -14,6 +14,41 @@ let _testClientFactory = null;
 /** @type {Map<string, {remaining: number, resetAt: number}>} Per-client rate limit tracking */
 const rateLimitTracker = new Map();
 
+/** Track globally if we've detected a rate limit error */
+let globalRateLimited = false;
+let globalRateLimitResetAt = null;
+
+/**
+ * Check if we know we're rate limited and should skip API calls
+ * @returns {{isRateLimited: boolean, resetAt: Date|null}}
+ */
+export function isGloballyRateLimited() {
+  if (!globalRateLimited || !globalRateLimitResetAt) {
+    return { isRateLimited: false, resetAt: null };
+  }
+
+  // Check if rate limit window has passed
+  if (Date.now() >= globalRateLimitResetAt) {
+    globalRateLimited = false;
+    globalRateLimitResetAt = null;
+    return { isRateLimited: false, resetAt: null };
+  }
+
+  return { isRateLimited: true, resetAt: new Date(globalRateLimitResetAt) };
+}
+
+/**
+ * Mark that we've hit the rate limit
+ * @param {number} resetAt - Reset timestamp in milliseconds
+ */
+export function markRateLimited(resetAt) {
+  globalRateLimited = true;
+  globalRateLimitResetAt = resetAt;
+  warn('[pi-linear-tools] Rate limit hit - will skip API calls until reset', {
+    resetAt: new Date(resetAt).toLocaleTimeString(),
+  });
+}
+
 /**
  * Extract rate limit info from SDK client response
  * The Linear SDK stores response metadata on the client after requests

@@ -1,5 +1,5 @@
 import { loadSettings, saveSettings } from '../src/settings.js';
-import { createLinearClient } from '../src/linear-client.js';
+import { createLinearClient, isGloballyRateLimited, markRateLimited } from '../src/linear-client.js';
 import { setQuietMode } from '../src/logger.js';
 import {
   resolveProjectRef,
@@ -631,6 +631,16 @@ async function registerLinearTools(pi) {
     },
     renderResult: renderMarkdownResult,
     async execute(_toolCallId, params) {
+      // Pre-check: skip API calls if we know we're rate limited
+      const { isRateLimited, resetAt } = isGloballyRateLimited();
+      if (isRateLimited) {
+        throw new Error(
+          `Linear API rate limit exceeded (cached).\n\n` +
+          `The rate limit resets at: ${resetAt.toLocaleTimeString()}\n\n` +
+          `Please wait before making more requests.`
+        );
+      }
+
       try {
         const client = await createAuthenticatedClient();
 
@@ -661,14 +671,14 @@ async function registerLinearTools(pi) {
         const errorType = error?.type || '';
         const errorMessage = String(error?.message || error || 'Unknown error');
 
-        // Rate limit error - provide clear reset time (handles SDK's RatelimitedLinearError)
+        // Rate limit error - provide clear reset time and mark globally
         if (errorType === 'Ratelimited' || errorMessage.toLowerCase().includes('rate limit')) {
-          const resetAt = error?.requestsResetAt
-            ? new Date(error.requestsResetAt).toLocaleTimeString()
-            : 'approximately 1 hour from now';
+          const resetTimestamp = error?.requestsResetAt || (Date.now() + 3600000);
+          const resetTime = new Date(resetTimestamp).toLocaleTimeString();
+          markRateLimited(resetTimestamp);
           throw new Error(
             `Linear API rate limit exceeded.\n\n` +
-            `The rate limit resets at: ${resetAt}\n\n` +
+            `The rate limit resets at: ${resetTime}\n\n` +
             `Please wait before making more requests, or reduce the frequency of API calls.`
           );
         }
