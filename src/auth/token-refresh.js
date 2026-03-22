@@ -133,25 +133,23 @@ const refreshManager = new TokenRefreshManager();
  * @returns {Promise<string>} New access token
  * @throws {Error} If refresh fails
  */
-export async function refreshTokens(refreshToken) {
+async function refreshTokens(refreshToken) {
   return refreshManager.refresh(refreshToken);
 }
 
 /**
- * Check if a token refresh is currently in progress
+ * Check if a token refresh is currently in progress (internal)
  *
  * @returns {boolean} True if a refresh is in progress
  */
-export function isRefreshing() {
+function isRefreshing() {
   return refreshManager.isRefreshInProgress();
 }
 
 /**
- * Reset the token refresh manager
- *
- * This is mainly for testing purposes.
+ * Reset the token refresh manager (internal, for testing)
  */
-export function resetRefreshManager() {
+function resetRefreshManager() {
   refreshManager.reset();
 }
 

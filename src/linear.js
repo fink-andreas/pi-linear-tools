@@ -139,10 +139,10 @@ const rateLimitState = {
 };
 
 /**
- * Update rate limit state from response headers
+ * Update rate limit state from response headers (internal)
  * @param {Response} response - Fetch response object
  */
-export function updateRateLimitState(response) {
+function updateRateLimitState(response) {
   if (!response) return;
 
   const headers = response.headers;
