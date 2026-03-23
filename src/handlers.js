@@ -5,6 +5,7 @@
  * All handlers are pure functions that accept a LinearClient and parameters.
  */
 
+import path from 'path';
 import {
   prepareIssueStart,
   setIssueState,
@@ -134,7 +135,7 @@ export async function executeIssueList(client, params) {
   return withHandlerErrorHandling(async () => {
     let projectRef = params.project;
     if (!projectRef) {
-      projectRef = process.cwd().split('/').pop();
+      projectRef = path.basename(process.cwd());
     }
 
     const resolved = await resolveProjectRef(client, projectRef);
@@ -218,7 +219,7 @@ export async function executeIssueCreate(client, params, options = {}) {
 
   let projectRef = params.project;
   if (!projectRef) {
-    projectRef = process.cwd().split('/').pop();
+    projectRef = path.basename(process.cwd());
   }
 
   let projectId = null;
@@ -560,7 +561,7 @@ export async function executeTeamList(client) {
 export async function executeMilestoneList(client, params) {
   let projectRef = params.project;
   if (!projectRef) {
-    projectRef = process.cwd().split('/').pop();
+    projectRef = path.basename(process.cwd());
   }
 
   const resolved = await resolveProjectRef(client, projectRef);
@@ -688,7 +689,7 @@ export async function executeMilestoneCreate(client, params) {
 
   let projectRef = params.project;
   if (!projectRef) {
-    projectRef = process.cwd().split('/').pop();
+    projectRef = path.basename(process.cwd());
   }
 
   const resolved = await resolveProjectRef(client, projectRef);
