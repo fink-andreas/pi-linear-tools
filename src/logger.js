@@ -1,10 +1,49 @@
 /**
- * Structured logging module
+ * Structured logging module (file-first, TUI-safe)
  */
+
+import { mkdirSync, appendFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 
 const LOG_LEVELS = ['debug', 'info', 'warn', 'error'];
 let currentLevel = process.env.LOG_LEVEL || 'info';
 let quietMode = false;
+
+const LOG_TO_CONSOLE = String(process.env.PI_LINEAR_TOOLS_LOG_TO_CONSOLE || '').toLowerCase() === 'true';
+const DEFAULT_LOG_FILE = process.env.PI_LINEAR_TOOLS_LOG_FILE
+  || join(process.env.HOME || process.cwd(), '.config', 'pi-linear-tools', 'pi-linear-tools.log');
+
+let logFileReady = false;
+let logFilePath = DEFAULT_LOG_FILE;
+
+function ensureLogFileReady() {
+  if (logFileReady) return;
+  try {
+    mkdirSync(dirname(logFilePath), { recursive: true });
+  } catch {
+    // ignore; fallback handled in writeLogLine
+  }
+  logFileReady = true;
+}
+
+function writeLogLine(line, isError = false) {
+  try {
+    ensureLogFileReady();
+    appendFileSync(logFilePath, `${line}\n`, { encoding: 'utf8' });
+  } catch {
+    // Last-resort fallback is disabled by default to protect TUI.
+    // Only print when explicitly opted in.
+    if (LOG_TO_CONSOLE) {
+      if (isError) console.error(line);
+      else console.log(line);
+    }
+  }
+
+  if (LOG_TO_CONSOLE) {
+    if (isError) console.error(line);
+    else console.log(line);
+  }
+}
 
 /**
  * Enable quiet mode (suppress info/debug/warn, keep only errors)
@@ -35,7 +74,7 @@ function getTimestamp() {
  */
 function maskValue(key, value) {
   const sensitiveKeys = ['apiKey', 'token', 'password', 'secret', 'LINEAR_API_KEY'];
-  if (sensitiveKeys.some(sk => key.toLowerCase().includes(sk.toLowerCase()))) {
+  if (sensitiveKeys.some((sk) => key.toLowerCase().includes(sk.toLowerCase()))) {
     return '***masked***';
   }
   return value;
@@ -50,7 +89,7 @@ function formatLog(level, message, data = {}) {
     timestamp,
     level: level.toUpperCase(),
     message,
-    ...data
+    ...data,
   };
   return JSON.stringify(entry);
 }
@@ -60,7 +99,7 @@ function formatLog(level, message, data = {}) {
  */
 export function debug(message, data = {}) {
   if (shouldLog('debug')) {
-    console.log(formatLog('debug', message, data));
+    writeLogLine(formatLog('debug', message, data));
   }
 }
 
@@ -69,7 +108,7 @@ export function debug(message, data = {}) {
  */
 export function info(message, data = {}) {
   if (shouldLog('info')) {
-    console.log(formatLog('info', message, data));
+    writeLogLine(formatLog('info', message, data));
   }
 }
 
@@ -78,7 +117,7 @@ export function info(message, data = {}) {
  */
 export function warn(message, data = {}) {
   if (shouldLog('warn')) {
-    console.log(formatLog('warn', message, data));
+    writeLogLine(formatLog('warn', message, data));
   }
 }
 
@@ -87,7 +126,7 @@ export function warn(message, data = {}) {
  */
 export function error(message, data = {}) {
   if (shouldLog('error')) {
-    console.error(formatLog('error', message, data));
+    writeLogLine(formatLog('error', message, data), true);
   }
 }
 
@@ -95,13 +134,7 @@ export function error(message, data = {}) {
  * Print startup banner
  */
 export function printBanner() {
-  const banner = `
-╔════════════════════════════════════════════════════════════╗
-║               pi-linear-tools                             ║
-║     Pi extension tools for Linear SDK workflows           ║
-╚════════════════════════════════════════════════════════════╝
-`;
-  console.log(banner);
+  info('pi-linear-tools startup');
 }
 
 /**
@@ -110,8 +143,8 @@ export function printBanner() {
 export function logConfig(config) {
   info('Configuration loaded', {
     ...Object.fromEntries(
-      Object.entries(config).map(([key, value]) => [key, maskValue(key, value)])
-    )
+      Object.entries(config).map(([key, value]) => [key, maskValue(key, value)]),
+    ),
   });
 }
 
@@ -125,4 +158,11 @@ export function setLogLevel(level) {
   } else {
     warn(`Invalid log level: ${level}. Using: ${currentLevel}`);
   }
+}
+
+/**
+ * Expose active log file path for diagnostics/tests
+ */
+export function getLogFilePath() {
+  return logFilePath;
 }

@@ -6,7 +6,7 @@
  */
 
 import { LinearClient } from '@linear/sdk';
-import { debug, warn, error as logError } from './logger.js';
+import { debug, warn, info } from './logger.js';
 
 /** @type {Function|null} Test-only client factory override */
 let _testClientFactory = null;
@@ -14,9 +14,69 @@ let _testClientFactory = null;
 /** @type {Map<string, {remaining: number, resetAt: number}>} Per-client rate limit tracking */
 const rateLimitTracker = new Map();
 
+/** @type {Map<string, {total: number, success: number, failed: number, rateLimited: number, windowStart: number, lastSummaryAt: number}>} */
+const requestMetrics = new Map();
+
 /** Track globally if we've detected a rate limit error */
 let globalRateLimited = false;
 let globalRateLimitResetAt = null;
+
+const REQUEST_SUMMARY_INTERVAL = 50;
+const REQUEST_SUMMARY_MIN_MS = 15000;
+
+function getTrackerKey(apiKey) {
+  return apiKey || 'default';
+}
+
+function getRequestMetric(trackerKey) {
+  let metric = requestMetrics.get(trackerKey);
+  if (!metric) {
+    metric = {
+      total: 0,
+      success: 0,
+      failed: 0,
+      rateLimited: 0,
+      windowStart: Date.now(),
+      lastSummaryAt: 0,
+    };
+    requestMetrics.set(trackerKey, metric);
+  }
+  return metric;
+}
+
+function maybeLogRequestSummary(trackerKey) {
+  const metric = requestMetrics.get(trackerKey);
+  const tracker = rateLimitTracker.get(trackerKey);
+  if (!metric || !tracker) return;
+
+  const now = Date.now();
+  const shouldLogByCount = metric.total % REQUEST_SUMMARY_INTERVAL === 0;
+  const shouldLogByTime = now - metric.lastSummaryAt >= REQUEST_SUMMARY_MIN_MS;
+
+  if (!shouldLogByCount && !shouldLogByTime) return;
+
+  metric.lastSummaryAt = now;
+  const used = Math.max(0, 5000 - (tracker.remaining ?? 5000));
+
+  info('[pi-linear-tools] Linear API usage summary', {
+    trackerKey,
+    requestsTotal: metric.total,
+    requestsSuccess: metric.success,
+    requestsFailed: metric.failed,
+    requestsRateLimited: metric.rateLimited,
+    requestsRemaining: tracker.remaining,
+    requestsUsed: used,
+    resetAt: tracker.resetAt,
+    resetTime: tracker.resetAt ? new Date(tracker.resetAt).toLocaleTimeString() : null,
+  });
+}
+
+function extractOperationName(query) {
+  if (!query || typeof query !== 'string') return 'unknown';
+  const compact = query.replace(/\s+/g, ' ').trim();
+  const match = compact.match(/^(query|mutation)\s+([a-zA-Z0-9_]+)/i);
+  return match?.[2] || 'anonymous';
+}
 
 /**
  * Clear rate limit state if the window has expired
@@ -64,7 +124,6 @@ export function markRateLimited(resetAt) {
  * @returns {{remaining: number|null, resetAt: number|null, resetTime: string|null}}
  */
 export function getClientRateLimit(client) {
-  // Try to get from tracker first
   const trackerData = rateLimitTracker.get(client.apiKey || 'default');
   if (trackerData) {
     return {
@@ -75,6 +134,31 @@ export function getClientRateLimit(client) {
   }
 
   return { remaining: null, resetAt: null, resetTime: null };
+}
+
+/**
+ * Expose per-client request counters for diagnostics
+ */
+export function getClientRequestMetrics(client) {
+  const key = client?.apiKey || 'default';
+  const metric = requestMetrics.get(key);
+  if (!metric) {
+    return {
+      total: 0,
+      success: 0,
+      failed: 0,
+      rateLimited: 0,
+      windowStart: null,
+    };
+  }
+
+  return {
+    total: metric.total,
+    success: metric.success,
+    failed: metric.failed,
+    rateLimited: metric.rateLimited,
+    windowStart: metric.windowStart,
+  };
 }
 
 /**
@@ -122,11 +206,9 @@ export function createLinearClient(auth) {
 
   // Handle different input formats
   if (typeof auth === 'string') {
-    // Legacy: API key passed as string
     clientConfig = { apiKey: auth };
     apiKey = auth;
   } else if (typeof auth === 'object' && auth !== null) {
-    // Object format: { apiKey: '...' } or { accessToken: '...' }
     if (auth.accessToken) {
       clientConfig = { apiKey: auth.accessToken };
       apiKey = auth.accessToken;
@@ -136,61 +218,81 @@ export function createLinearClient(auth) {
       apiKey = auth.apiKey;
       debug('Creating Linear client with API key');
     } else {
-      throw new Error(
-        'Auth object must contain either apiKey or accessToken'
-      );
+      throw new Error('Auth object must contain either apiKey or accessToken');
     }
   } else {
-    throw new Error(
-      'Invalid auth parameter: must be a string (API key) or an object with apiKey or accessToken'
-    );
+    throw new Error('Invalid auth parameter: must be a string (API key) or an object with apiKey or accessToken');
   }
 
   const client = new LinearClient(clientConfig);
 
-  // Initialize rate limit tracking for this client
-  const trackerKey = apiKey || 'default';
+  const trackerKey = getTrackerKey(apiKey);
   if (!rateLimitTracker.has(trackerKey)) {
     rateLimitTracker.set(trackerKey, { remaining: 5000, resetAt: Date.now() + 3600000 });
   }
+  getRequestMetric(trackerKey);
 
-  // Wrap the rawRequest to capture rate limit headers
-  // rawRequest is on client.client (internal GraphQL client)
+  // Wrap internal rawRequest to capture request counts + rate limit metadata
   const originalRawRequest = client.client.rawRequest.bind(client.client);
   client.client.rawRequest = async function wrappedRawRequest(query, variables, requestHeaders) {
-    const response = await originalRawRequest(query, variables, requestHeaders);
+    const metric = getRequestMetric(trackerKey);
+    metric.total += 1;
 
-    // Extract rate limit headers from response
-    if (response.headers) {
-      const remaining = response.headers.get('X-RateLimit-Requests-Remaining');
-      const resetAt = response.headers.get('X-RateLimit-Requests-Reset');
+    debug('[pi-linear-tools] Linear request', {
+      trackerKey,
+      requestNumber: metric.total,
+      operation: extractOperationName(query),
+    });
 
-      if (remaining !== null) {
+    try {
+      const response = await originalRawRequest(query, variables, requestHeaders);
+      metric.success += 1;
+
+      if (response.headers) {
+        const remaining = response.headers.get('X-RateLimit-Requests-Remaining');
+        const resetAt = response.headers.get('X-RateLimit-Requests-Reset');
+
         const tracker = rateLimitTracker.get(trackerKey);
-        if (tracker) {
+        if (tracker && remaining !== null) {
           tracker.remaining = parseInt(remaining, 10);
         }
-      }
-      if (resetAt !== null) {
-        const tracker = rateLimitTracker.get(trackerKey);
-        if (tracker) {
+        if (tracker && resetAt !== null) {
           tracker.resetAt = parseInt(resetAt, 10);
         }
       }
-    }
 
-    // Check if we should warn about low rate limits
-    const tracker = rateLimitTracker.get(trackerKey);
-    if (tracker && tracker.remaining <= 500 && tracker.remaining > 0) {
-      const usagePercent = Math.round(((5000 - tracker.remaining) / 5000) * 100);
-      warn(`Linear API rate limit running low: ${tracker.remaining} requests remaining (~${usagePercent}% used). Resets at ${new Date(tracker.resetAt).toLocaleTimeString()}`, {
-        remaining: tracker.remaining,
-        resetTime: new Date(tracker.resetAt).toLocaleTimeString(),
-        usagePercent,
-      });
-    }
+      const tracker = rateLimitTracker.get(trackerKey);
+      if (tracker && tracker.remaining <= 500 && tracker.remaining > 0) {
+        const usagePercent = Math.round(((5000 - tracker.remaining) / 5000) * 100);
+        warn(`Linear API rate limit running low: ${tracker.remaining} requests remaining (~${usagePercent}% used). Resets at ${new Date(tracker.resetAt).toLocaleTimeString()}`, {
+          remaining: tracker.remaining,
+          resetTime: new Date(tracker.resetAt).toLocaleTimeString(),
+          usagePercent,
+        });
+      }
 
-    return response;
+      maybeLogRequestSummary(trackerKey);
+      return response;
+    } catch (error) {
+      metric.failed += 1;
+
+      const message = String(error?.message || error || 'unknown');
+      const isRateLimited = error?.type === 'Ratelimited' || message.toLowerCase().includes('rate limit');
+
+      if (isRateLimited) {
+        metric.rateLimited += 1;
+        const resetAt = Number(error?.requestsResetAt) || Date.now() + 3600000;
+        const remaining = Number.isFinite(error?.requestsRemaining) ? error.requestsRemaining : 0;
+        rateLimitTracker.set(trackerKey, {
+          remaining,
+          resetAt,
+        });
+        markRateLimited(resetAt);
+      }
+
+      maybeLogRequestSummary(trackerKey);
+      throw error;
+    }
   };
 
   return client;

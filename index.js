@@ -1,5 +1,5 @@
 import { loadSettings, saveSettings } from './src/settings.js';
-import { createLinearClient } from './src/linear-client.js';
+import { createLinearClient, checkAndClearRateLimit, markRateLimited } from './src/linear-client.js';
 import { setQuietMode } from './src/logger.js';
 import {
   resolveProjectRef,
@@ -410,7 +410,10 @@ function renderMarkdownResult(result, _options, _theme) {
 }
 
 async function registerLinearTools(pi) {
-  if (typeof pi.registerTool !== 'function') return;
+  if (typeof pi.registerTool !== 'function') {
+    console.warn('[pi-linear-tools] pi.registerTool not available');
+    return;
+  }
 
   pi.registerTool({
     name: 'linear_issue',
@@ -536,29 +539,90 @@ async function registerLinearTools(pi) {
     },
     renderResult: renderMarkdownResult,
     async execute(_toolCallId, params) {
-      const client = await createAuthenticatedClient();
+      // Pre-check: skip API calls if we know we're rate limited
+      const { isRateLimited, resetAt } = checkAndClearRateLimit();
+      if (isRateLimited) {
+        throw new Error(
+          `Linear API rate limit exceeded (cached).\n\n` +
+          `The rate limit resets at: ${resetAt.toLocaleTimeString()}\n\n` +
+          `Please wait before making more requests.`
+        );
+      }
 
-      switch (params.action) {
-        case 'list':
-          return executeIssueList(client, params);
-        case 'view':
-          return executeIssueView(client, params);
-        case 'create':
-          return executeIssueCreate(client, params, { resolveDefaultTeam });
-        case 'update':
-          return executeIssueUpdate(client, params);
-        case 'comment':
-          return executeIssueComment(client, params);
-        case 'start':
-          return executeIssueStart(client, params, {
-            gitExecutor: async (branchName, fromRef, onBranchExists) => {
-              return startGitBranchForIssue(pi, branchName, fromRef, onBranchExists);
-            },
-          });
-        case 'delete':
-          return executeIssueDelete(client, params);
-        default:
-          throw new Error(`Unknown action: ${params.action}`);
+      try {
+        const client = await createAuthenticatedClient();
+
+        switch (params.action) {
+          case 'list':
+            return await executeIssueList(client, params);
+          case 'view':
+            return await executeIssueView(client, params);
+          case 'create':
+            return await executeIssueCreate(client, params, { resolveDefaultTeam });
+          case 'update':
+            return await executeIssueUpdate(client, params);
+          case 'comment':
+            return await executeIssueComment(client, params);
+          case 'start':
+            return await executeIssueStart(client, params, {
+              gitExecutor: async (branchName, fromRef, onBranchExists) => {
+                return startGitBranchForIssue(pi, branchName, fromRef, onBranchExists);
+              },
+            });
+          case 'delete':
+            return await executeIssueDelete(client, params);
+          default:
+            throw new Error(`Unknown action: ${params.action}`);
+        }
+      } catch (error) {
+        // Comprehensive error handling - catch ALL errors including SDK's RatelimitedLinearError
+        const errorType = error?.type || '';
+        const errorMessage = String(error?.message || error || 'Unknown error');
+
+        // Rate limit error - provide clear reset time and mark globally
+        if (errorType === 'Ratelimited' || errorMessage.toLowerCase().includes('rate limit')) {
+          const resetTimestamp = error?.requestsResetAt || (Date.now() + 3600000);
+          const resetTime = new Date(resetTimestamp).toLocaleTimeString();
+          markRateLimited(resetTimestamp);
+          throw new Error(
+            `Linear API rate limit exceeded.\n\n` +
+            `The rate limit resets at: ${resetTime}\n\n` +
+            `Please wait before making more requests, or reduce the frequency of API calls.`
+          );
+        }
+
+        // Authentication/Forbidden errors (handles SDK's ForbiddenLinearError)
+        if (errorType === 'Forbidden' || errorType === 'AuthenticationError' ||
+          errorMessage.toLowerCase().includes('forbidden') || errorMessage.toLowerCase().includes('unauthorized')) {
+          throw new Error(
+            `Linear API authentication failed: ${errorMessage}\n\n` +
+            `Please check your API key or OAuth token permissions.`
+          );
+        }
+
+        // Network errors (handles SDK's NetworkError)
+        if (errorType === 'NetworkError' || errorMessage.toLowerCase().includes('network')) {
+          throw new Error(
+            `Network error communicating with Linear API.\n\n` +
+            `Please check your internet connection and try again.`
+          );
+        }
+
+        // Internal server errors (handles SDK's InternalError)
+        if (errorType === 'InternalError' || (error?.status >= 500 && error?.status < 600)) {
+          throw new Error(
+            `Linear API server error (${error?.status || 'unknown'}).\n\n` +
+            `Linear may be experiencing issues. Please try again later.`
+          );
+        }
+
+        // Re-throw if already formatted with "Linear API error:"
+        if (errorMessage.includes('Linear API error:')) {
+          throw error;
+        }
+
+        // Wrap unexpected errors with context - NEVER let raw errors propagate
+        throw new Error(`Linear issue operation failed: ${errorMessage}`);
       }
     },
   });
@@ -581,13 +645,32 @@ async function registerLinearTools(pi) {
     },
     renderResult: renderMarkdownResult,
     async execute(_toolCallId, params) {
-      const client = await createAuthenticatedClient();
+      try {
+        const client = await createAuthenticatedClient();
 
-      switch (params.action) {
-        case 'list':
-          return executeProjectList(client);
-        default:
-          throw new Error(`Unknown action: ${params.action}`);
+        switch (params.action) {
+          case 'list':
+            return await executeProjectList(client);
+          default:
+            throw new Error(`Unknown action: ${params.action}`);
+        }
+      } catch (error) {
+        // Comprehensive error handling - catch ALL errors
+        const errorType = error?.type || '';
+        const errorMessage = String(error?.message || error || 'Unknown error');
+
+        if (errorType === 'Ratelimited' || errorMessage.toLowerCase().includes('rate limit')) {
+          const resetAt = error?.requestsResetAt
+            ? new Date(error.requestsResetAt).toLocaleTimeString()
+            : 'approximately 1 hour from now';
+          throw new Error(`Linear API rate limit exceeded. Resets at: ${resetAt}. Please wait before retrying.`);
+        }
+
+        if (errorMessage.includes('Linear API error:')) {
+          throw error;
+        }
+
+        throw new Error(`Linear project operation failed: ${errorMessage}`);
       }
     },
   });
@@ -610,13 +693,32 @@ async function registerLinearTools(pi) {
     },
     renderResult: renderMarkdownResult,
     async execute(_toolCallId, params) {
-      const client = await createAuthenticatedClient();
+      try {
+        const client = await createAuthenticatedClient();
 
-      switch (params.action) {
-        case 'list':
-          return executeTeamList(client);
-        default:
-          throw new Error(`Unknown action: ${params.action}`);
+        switch (params.action) {
+          case 'list':
+            return await executeTeamList(client);
+          default:
+            throw new Error(`Unknown action: ${params.action}`);
+        }
+      } catch (error) {
+        // Comprehensive error handling - catch ALL errors
+        const errorType = error?.type || '';
+        const errorMessage = String(error?.message || error || 'Unknown error');
+
+        if (errorType === 'Ratelimited' || errorMessage.toLowerCase().includes('rate limit')) {
+          const resetAt = error?.requestsResetAt
+            ? new Date(error.requestsResetAt).toLocaleTimeString()
+            : 'approximately 1 hour from now';
+          throw new Error(`Linear API rate limit exceeded. Resets at: ${resetAt}. Please wait before retrying.`);
+        }
+
+        if (errorMessage.includes('Linear API error:')) {
+          throw error;
+        }
+
+        throw new Error(`Linear team operation failed: ${errorMessage}`);
       }
     },
   });
@@ -660,9 +762,9 @@ async function registerLinearTools(pi) {
       },
       renderResult: renderMarkdownResult,
       async execute(_toolCallId, params) {
-        const client = await createAuthenticatedClient();
-
         try {
+          const client = await createAuthenticatedClient();
+
           switch (params.action) {
             case 'list':
               return await executeMilestoneList(client, params);
@@ -678,7 +780,24 @@ async function registerLinearTools(pi) {
               throw new Error(`Unknown action: ${params.action}`);
           }
         } catch (error) {
-          throw withMilestoneScopeHint(error);
+          // Apply milestone-specific hint, then wrap with operation context
+          const hintError = withMilestoneScopeHint(error);
+          // Comprehensive error handling - catch ALL errors
+          const errorType = error?.type || '';
+          const errorMessage = String(hintError?.message || hintError || 'Unknown error');
+
+          if (errorType === 'Ratelimited' || errorMessage.toLowerCase().includes('rate limit')) {
+            const resetAt = error?.requestsResetAt
+              ? new Date(error.requestsResetAt).toLocaleTimeString()
+              : 'approximately 1 hour from now';
+            throw new Error(`Linear API rate limit exceeded. Resets at: ${resetAt}. Please wait before retrying.`);
+          }
+
+          if (errorMessage.includes('Linear API error:')) {
+            throw hintError;
+          }
+
+          throw new Error(`Linear milestone operation failed: ${errorMessage}`);
         }
       },
     });
@@ -686,6 +805,8 @@ async function registerLinearTools(pi) {
 }
 
 export default async function piLinearToolsExtension(pi) {
+  // Safety wrapper: never let extension errors crash pi
+  try {
   pi.registerCommand('linear-tools-config', {
     description: 'Configure pi-linear-tools settings (API key and default team mappings)',
     handler: async (argsText, ctx) => {
@@ -823,4 +944,8 @@ export default async function piLinearToolsExtension(pi) {
   });
 
   await registerLinearTools(pi);
+  } catch (error) {
+    // Safety: never let extension initialization crash pi
+    console.error('[pi-linear-tools] Extension initialization failed:', error?.message || error);
+  }
 }
