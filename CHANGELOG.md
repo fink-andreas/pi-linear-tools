@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.4.0 (2026-03-23)
+
+Comprehensive error handling and file-first logging release.
+
+### New Features
+- **File-first logging**: Structured JSON logs written to `~/.config/pi-linear-tools/` instead of stdout (TUI-safe)
+- **Request metrics tracking**: Monitor total/success/failed/rate-limited requests per client
+- **Periodic usage summaries**: Logged every 50 requests or 15 seconds
+
+### Bug Fixes
+- All tool `execute()` functions now wrapped with comprehensive try/catch
+- Never let raw SDK errors propagate to users
+- Extension initialization protected with safety wrapper
+
+### Improvements
+- Clear user-facing error messages for:
+  - Rate limit errors (with reset times)
+  - Authentication/authorization failures
+  - Network errors
+  - Server errors (5xx)
+- Graceful handling when `pi.registerTool` is unavailable
+- Better error context for debugging
+
 ## v0.3.0 (2026-03-22)
 
 Rate limit optimization and crash prevention release.
