@@ -54,21 +54,14 @@ Actions: `list`, `view`, `create`, `update`, `delete`
 
 ## CLI usage
 
-If installed globally via npm, you can run:
+If installed globally via ```npm install -g @fink-andreas/pi-linear-tools```, CLI command ```pi-linear-tools``` is available:
 
 ```bash
-npm install -g @fink-andreas/pi-linear-tools
 pi-linear-tools --help
 pi-linear-tools config
 pi-linear-tools config --api-key lin_xxx
 pi-linear-tools config --default-team ENG
 pi-linear-tools config --team ENG --project "My Project"
-```
-
-If `pi-linear-tools` is not found, run it from the repo:
-
-```bash
-node bin/pi-linear-tools.js --help
 ```
 
 ### Issue commands
