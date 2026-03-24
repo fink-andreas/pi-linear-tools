@@ -155,3 +155,4 @@ scorecard.png
 # Claude agent directory
 .claude/
 finished/
+.claude/skills/desloppify
