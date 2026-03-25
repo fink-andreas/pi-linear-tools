@@ -7,14 +7,13 @@
 ### As a pi package (recommended)
 ```bash
 pi install npm:@fink-andreas/pi-linear-tools
-pi config
 ```
-Enable the `pi-linear-tools` extension resource.
 
 ### As an npm package
 ```bash
 npm install -g @fink-andreas/pi-linear-tools
 ```
+Use pi-linear-tools as a CLI tool.
 
 ## Initial configuration
 
