@@ -29,6 +29,14 @@ Excluded:
 ## Tool behavior notes
 
 - `LINEAR_API_KEY` is resolved from env first, then settings
+- `PI_LINEAR_TOOLS_USAGE_SUMMARY=true` adds per-command API usage diagnostics to tool output (`details.apiUsage` and a markdown summary line)
+- in-memory request-reduction caches are used for resolver-style data:
+  - viewer: 30s TTL
+  - projects list: 60s TTL
+  - teams list: 60s TTL
+  - team workflow states: 60s TTL (per team)
+- issue list payloads are **not** cached; issue listing still fetches fresh issues from Linear
+- caches are per running process and auth context; `/reload` / restart resets in-memory cache state
 - project references may be project name or project ID
 - issue references may be identifier (`ABC-123`) or Linear issue ID
 - default team resolution order for issue creation:

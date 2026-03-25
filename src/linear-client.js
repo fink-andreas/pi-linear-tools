@@ -28,6 +28,10 @@ function getTrackerKey(apiKey) {
   return apiKey || 'default';
 }
 
+function getTrackerKeyFromClient(client) {
+  return client?.__piLinearTrackerKey || client?.apiKey || 'default';
+}
+
 function getRequestMetric(trackerKey) {
   let metric = requestMetrics.get(trackerKey);
   if (!metric) {
@@ -124,7 +128,7 @@ export function markRateLimited(resetAt) {
  * @returns {{remaining: number|null, resetAt: number|null, resetTime: string|null}}
  */
 export function getClientRateLimit(client) {
-  const trackerData = rateLimitTracker.get(client.apiKey || 'default');
+  const trackerData = rateLimitTracker.get(getTrackerKeyFromClient(client));
   if (trackerData) {
     return {
       remaining: trackerData.remaining,
@@ -140,7 +144,7 @@ export function getClientRateLimit(client) {
  * Expose per-client request counters for diagnostics
  */
 export function getClientRequestMetrics(client) {
-  const key = client?.apiKey || 'default';
+  const key = getTrackerKeyFromClient(client);
   const metric = requestMetrics.get(key);
   if (!metric) {
     return {
@@ -227,6 +231,7 @@ export function createLinearClient(auth) {
   const client = new LinearClient(clientConfig);
 
   const trackerKey = getTrackerKey(apiKey);
+  client.__piLinearTrackerKey = trackerKey;
   if (!rateLimitTracker.has(trackerKey)) {
     rateLimitTracker.set(trackerKey, { remaining: 5000, resetAt: Date.now() + 3600000 });
   }

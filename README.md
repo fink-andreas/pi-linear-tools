@@ -136,6 +136,12 @@ Settings path:
 Environment fallback:
 - `LINEAR_API_KEY` (takes precedence over settings)
 
+Debug/diagnostics environment flags:
+- `PI_LINEAR_TOOLS_USAGE_SUMMARY=true` — append per-command Linear API usage summary to tool output markdown and include `details.apiUsage`
+- `LOG_LEVEL=debug` — enable detailed file logging
+- `PI_LINEAR_TOOLS_LOG_TO_CONSOLE=true` — mirror logs to console (normally file-first logging)
+- `PI_LINEAR_TOOLS_LOG_FILE=/custom/path.log` — override log file path
+
 ## Development
 
 ```bash

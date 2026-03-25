@@ -7,6 +7,39 @@
 
 import { warn, info, debug } from './logger.js';
 
+const CACHE_TTL_MS = {
+  viewer: 30_000,
+  projects: 60_000,
+  teams: 60_000,
+  teamStates: 60_000,
+};
+
+const viewerCache = new Map();
+const projectsCache = new Map();
+const teamsCache = new Map();
+const teamStatesCache = new Map();
+
+function getClientCacheKey(client) {
+  return client?.apiKey || 'default';
+}
+
+function getCache(map, key) {
+  const entry = map.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    map.delete(key);
+    return null;
+  }
+  return entry.value;
+}
+
+function setCache(map, key, value, ttlMs) {
+  map.set(key, {
+    value,
+    expiresAt: Date.now() + ttlMs,
+  });
+}
+
 // ===== OPTIMIZED GRAPHQL QUERIES =====
 // These queries fetch relations upfront to avoid N+1 API calls
 
@@ -510,14 +543,23 @@ function normalizeIssueRefList(value) {
  */
 export async function fetchViewer(client) {
   return withLinearErrorHandling(async () => {
+    const cacheKey = getClientCacheKey(client);
+    const cached = getCache(viewerCache, cacheKey);
+    if (cached) return cached;
+
     const viewer = await client.viewer;
-    return {
+    const result = {
       id: viewer.id,
       name: viewer.name,
       displayName: viewer.displayName,
     };
+
+    setCache(viewerCache, cacheKey, result, CACHE_TTL_MS.viewer);
+    return result;
   }, 'fetchViewer');
 }
+
+export const getViewer = fetchViewer;
 
 /**
  * Fetch issues in specific states, optionally filtered by assignee
@@ -648,6 +690,10 @@ export async function fetchIssuesByProject(client, projectId, states, options = 
  */
 export async function fetchProjects(client) {
   return withLinearErrorHandling(async () => {
+    const cacheKey = getClientCacheKey(client);
+    const cached = getCache(projectsCache, cacheKey);
+    if (cached) return cached;
+
     const result = await client.projects();
     const nodes = result.nodes ?? [];
 
@@ -656,7 +702,9 @@ export async function fetchProjects(client) {
       projects: nodes.map((p) => ({ id: p.id, name: p.name })),
     });
 
-    return nodes.map(p => ({ id: p.id, name: p.name }));
+    const projects = nodes.map(p => ({ id: p.id, name: p.name }));
+    setCache(projectsCache, cacheKey, projects, CACHE_TTL_MS.projects);
+    return projects;
   }, 'fetchProjects');
 }
 
@@ -692,6 +740,10 @@ export async function fetchWorkspaces(client) {
  */
 export async function fetchTeams(client) {
   return withLinearErrorHandling(async () => {
+    const cacheKey = getClientCacheKey(client);
+    const cached = getCache(teamsCache, cacheKey);
+    if (cached) return cached;
+
     const result = await client.teams();
     const nodes = result.nodes ?? [];
 
@@ -700,7 +752,9 @@ export async function fetchTeams(client) {
       teams: nodes.map((t) => ({ id: t.id, key: t.key, name: t.name })),
     });
 
-    return nodes.map(t => ({ id: t.id, key: t.key, name: t.name }));
+    const teams = nodes.map(t => ({ id: t.id, key: t.key, name: t.name }));
+    setCache(teamsCache, cacheKey, teams, CACHE_TTL_MS.teams);
+    return teams;
   }, 'fetchTeams');
 }
 
@@ -716,16 +770,25 @@ export async function resolveTeamRef(client, teamRef) {
     throw new Error('Missing team reference');
   }
 
-  const teams = await fetchTeams(client);
-
-  // If it looks like a Linear ID (UUID), try direct lookup first
+  // If it looks like a Linear ID (UUID), try direct lookup first (cheap)
   if (isLinearId(ref)) {
+    try {
+      const direct = await client.team(ref);
+      if (direct) {
+        return { id: direct.id, key: direct.key, name: direct.name };
+      }
+    } catch {
+      // fall back to cached/full-team lookup below
+    }
+
     const byId = teams.find((t) => t.id === ref);
     if (byId) {
       return byId;
     }
     throw new Error(`Team not found with ID: ${ref}`);
   }
+
+  const teams = await fetchTeams(client);
 
   // Try exact key match (e.g., "ENG")
   const byKey = teams.find((t) => t.key === ref);
@@ -783,17 +846,24 @@ export async function resolveIssue(client, issueRef) {
  */
 export async function getTeamWorkflowStates(client, teamRef) {
   return withLinearErrorHandling(async () => {
+    const cacheKey = `${getClientCacheKey(client)}::${teamRef}`;
+    const cached = getCache(teamStatesCache, cacheKey);
+    if (cached) return cached;
+
     const team = await client.team(teamRef);
     if (!team) {
       throw new Error(`Team not found: ${teamRef}`);
     }
 
     const states = await team.states();
-    return (states.nodes || []).map(s => ({
+    const mapped = (states.nodes || []).map(s => ({
       id: s.id,
       name: s.name,
       type: s.type,
     }));
+
+    setCache(teamStatesCache, cacheKey, mapped, CACHE_TTL_MS.teamStates);
+    return mapped;
   }, 'getTeamWorkflowStates');
 }
 
@@ -809,16 +879,26 @@ export async function resolveProjectRef(client, projectRef) {
     throw new Error('Missing project reference');
   }
 
-  const projects = await fetchProjects(client);
-
-  // If it looks like a Linear ID (UUID), try direct lookup first
+  // If it looks like a Linear ID (UUID), try direct lookup first (cheap)
   if (isLinearId(ref)) {
-    const byId = projects.find((p) => p.id === ref);
+    try {
+      const direct = await client.project(ref);
+      if (direct) {
+        return { id: direct.id, name: direct.name };
+      }
+    } catch {
+      // fall back to cached/full-project lookup below
+    }
+
+    const projectsById = await fetchProjects(client);
+    const byId = projectsById.find((p) => p.id === ref);
     if (byId) {
       return byId;
     }
     throw new Error(`Project not found with ID: ${ref}`);
   }
+
+  const projects = await fetchProjects(client);
 
   // Try exact name match
   const exactName = projects.find((p) => p.name === ref);
@@ -1119,6 +1199,47 @@ export async function addIssueComment(client, issueRef, body, parentCommentId) {
  * @param {Object} patch - Fields to update
  * @returns {Promise<{issue: Object, changed: Array<string>}>}
  */
+function buildFallbackUpdatedIssue(targetIssue, updateInput) {
+  const fallback = { ...(targetIssue || {}) };
+
+  if (Object.prototype.hasOwnProperty.call(updateInput, 'title')) {
+    fallback.title = updateInput.title;
+  }
+  if (Object.prototype.hasOwnProperty.call(updateInput, 'description')) {
+    fallback.description = updateInput.description;
+  }
+  if (Object.prototype.hasOwnProperty.call(updateInput, 'priority')) {
+    fallback.priority = updateInput.priority;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(updateInput, 'assigneeId')) {
+    const assigneeId = updateInput.assigneeId;
+    if (assigneeId === null) {
+      fallback.assignee = null;
+    } else if (typeof assigneeId === 'string' && assigneeId.trim()) {
+      fallback.assignee = {
+        id: assigneeId,
+        name: fallback.assignee?.name || 'Unknown',
+        displayName: fallback.assignee?.displayName || 'Unknown',
+      };
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(updateInput, 'projectMilestoneId')) {
+    const milestoneId = updateInput.projectMilestoneId;
+    if (milestoneId === null) {
+      fallback.projectMilestone = null;
+    } else if (typeof milestoneId === 'string' && milestoneId.trim()) {
+      fallback.projectMilestone = {
+        id: milestoneId,
+        name: fallback.projectMilestone?.name || 'Unknown',
+      };
+    }
+  }
+
+  return fallback;
+}
+
 export async function updateIssue(client, issueRef, patch = {}) {
   return withLinearErrorHandling(async () => {
     const targetIssue = await resolveIssue(client, issueRef);
@@ -1280,14 +1401,28 @@ export async function updateIssue(client, issueRef, patch = {}) {
     }
 
     // Prefer official data path: refetch the issue after successful mutation.
-    let updatedSdkIssue = null;
+    // If this extra fetch is rate-limited, keep operation successful and return fallback data.
+    let updatedIssue = null;
+    let usedRateLimitFallback = false;
     try {
-      updatedSdkIssue = await client.issue(targetIssue.id);
-    } catch {
-      updatedSdkIssue = null;
-    }
+      const updatedSdkIssue = await client.issue(targetIssue.id);
+      updatedIssue = await transformIssue(updatedSdkIssue);
+    } catch (refreshError) {
+      const refreshMessage = String(refreshError?.message || refreshError || 'unknown');
+      const isRefreshRateLimited = refreshError?.type === 'Ratelimited' || refreshMessage.toLowerCase().includes('rate limit');
 
-    const updatedIssue = await transformIssue(updatedSdkIssue);
+      if (!isRefreshRateLimited) {
+        throw refreshError;
+      }
+
+      debug('updateIssue: post-update refresh was rate-limited; returning fallback issue payload', {
+        issueRef,
+        issueId: targetIssue?.id,
+      });
+
+      usedRateLimitFallback = true;
+      updatedIssue = buildFallbackUpdatedIssue(targetIssue, updateInput);
+    }
 
     const changed = [...Object.keys(updateInput)];
     if (parentOfRefs.length > 0) changed.push('parentOf');
@@ -1299,6 +1434,7 @@ export async function updateIssue(client, issueRef, patch = {}) {
     return {
       issue: updatedIssue || targetIssue,
       changed,
+      usedRateLimitFallback,
     };
   }, 'updateIssue');
 }

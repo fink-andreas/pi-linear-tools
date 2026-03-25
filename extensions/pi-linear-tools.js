@@ -1,6 +1,6 @@
 import { loadSettings, saveSettings } from '../src/settings.js';
-import { createLinearClient, checkAndClearRateLimit, markRateLimited } from '../src/linear-client.js';
-import { setQuietMode } from '../src/logger.js';
+import { createLinearClient, checkAndClearRateLimit, markRateLimited, getClientRequestMetrics } from '../src/linear-client.js';
+import { setQuietMode, debug } from '../src/logger.js';
 import {
   resolveProjectRef,
   fetchTeams,
@@ -65,6 +65,7 @@ import { authenticate, getAccessToken, logout } from '../src/auth/index.js';
 import { withMilestoneScopeHint } from '../src/error-hints.js';
 
 let cachedApiKey = null;
+const INCLUDE_USAGE_SUMMARY = String(process.env.PI_LINEAR_TOOLS_USAGE_SUMMARY || '').toLowerCase() === 'true';
 
 async function getLinearAuth() {
   const envKey = process.env.LINEAR_API_KEY;
@@ -104,6 +105,65 @@ async function getLinearAuth() {
 
 async function createAuthenticatedClient() {
   return createLinearClient(await getLinearAuth());
+}
+
+async function withRequestUsageLogging(client, toolName, action, operation) {
+  const before = getClientRequestMetrics(client);
+
+  try {
+    const result = await operation();
+    const after = getClientRequestMetrics(client);
+
+    const usageDelta = {
+      tool: toolName,
+      action,
+      requestsDelta: after.total - before.total,
+      successDelta: after.success - before.success,
+      failedDelta: after.failed - before.failed,
+      rateLimitedDelta: after.rateLimited - before.rateLimited,
+      summary: `Linear API usage: ${after.total - before.total} req (${after.success - before.success} ok, ${after.failed - before.failed} failed, ${after.rateLimited - before.rateLimited} rate-limited)`,
+    };
+
+    debug('[pi-linear-tools] API usage per command', usageDelta);
+
+    if (!INCLUDE_USAGE_SUMMARY || !result || typeof result !== 'object') {
+      return result;
+    }
+
+    const details = (result.details && typeof result.details === 'object') ? result.details : {};
+    const content = Array.isArray(result.content)
+      ? result.content.map((item, idx) => {
+        if (idx !== 0 || item?.type !== 'text' || typeof item.text !== 'string') return item;
+        return {
+          ...item,
+          text: `${item.text}\n\n_${usageDelta.summary}_`,
+        };
+      })
+      : result.content;
+
+    return {
+      ...result,
+      content,
+      details: {
+        ...details,
+        apiUsage: usageDelta,
+      },
+    };
+  } catch (error) {
+    const after = getClientRequestMetrics(client);
+
+    debug('[pi-linear-tools] API usage per command (error)', {
+      tool: toolName,
+      action,
+      requestsDelta: after.total - before.total,
+      successDelta: after.success - before.success,
+      failedDelta: after.failed - before.failed,
+      rateLimitedDelta: after.rateLimited - before.rateLimited,
+      error: String(error?.message || error || 'unknown'),
+    });
+
+    throw error;
+  }
 }
 
 async function resolveDefaultTeam(projectId) {
@@ -552,28 +612,30 @@ async function registerLinearTools(pi) {
       try {
         const client = await createAuthenticatedClient();
 
-        switch (params.action) {
-          case 'list':
-            return await executeIssueList(client, params);
-          case 'view':
-            return await executeIssueView(client, params);
-          case 'create':
-            return await executeIssueCreate(client, params, { resolveDefaultTeam });
-          case 'update':
-            return await executeIssueUpdate(client, params);
-          case 'comment':
-            return await executeIssueComment(client, params);
-          case 'start':
-            return await executeIssueStart(client, params, {
-              gitExecutor: async (branchName, fromRef, onBranchExists) => {
-                return startGitBranchForIssue(pi, branchName, fromRef, onBranchExists);
-              },
-            });
-          case 'delete':
-            return await executeIssueDelete(client, params);
-          default:
-            throw new Error(`Unknown action: ${params.action}`);
-        }
+        return await withRequestUsageLogging(client, 'linear_issue', params.action, async () => {
+          switch (params.action) {
+            case 'list':
+              return await executeIssueList(client, params);
+            case 'view':
+              return await executeIssueView(client, params);
+            case 'create':
+              return await executeIssueCreate(client, params, { resolveDefaultTeam });
+            case 'update':
+              return await executeIssueUpdate(client, params);
+            case 'comment':
+              return await executeIssueComment(client, params);
+            case 'start':
+              return await executeIssueStart(client, params, {
+                gitExecutor: async (branchName, fromRef, onBranchExists) => {
+                  return startGitBranchForIssue(pi, branchName, fromRef, onBranchExists);
+                },
+              });
+            case 'delete':
+              return await executeIssueDelete(client, params);
+            default:
+              throw new Error(`Unknown action: ${params.action}`);
+          }
+        });
       } catch (error) {
         // Comprehensive error handling - catch ALL errors including SDK's RatelimitedLinearError
         const errorType = error?.type || '';
@@ -648,12 +710,14 @@ async function registerLinearTools(pi) {
       try {
         const client = await createAuthenticatedClient();
 
-        switch (params.action) {
-          case 'list':
-            return await executeProjectList(client);
-          default:
-            throw new Error(`Unknown action: ${params.action}`);
-        }
+        return await withRequestUsageLogging(client, 'linear_project', params.action, async () => {
+          switch (params.action) {
+            case 'list':
+              return await executeProjectList(client);
+            default:
+              throw new Error(`Unknown action: ${params.action}`);
+          }
+        });
       } catch (error) {
         // Comprehensive error handling - catch ALL errors
         const errorType = error?.type || '';
@@ -696,12 +760,14 @@ async function registerLinearTools(pi) {
       try {
         const client = await createAuthenticatedClient();
 
-        switch (params.action) {
-          case 'list':
-            return await executeTeamList(client);
-          default:
-            throw new Error(`Unknown action: ${params.action}`);
-        }
+        return await withRequestUsageLogging(client, 'linear_team', params.action, async () => {
+          switch (params.action) {
+            case 'list':
+              return await executeTeamList(client);
+            default:
+              throw new Error(`Unknown action: ${params.action}`);
+          }
+        });
       } catch (error) {
         // Comprehensive error handling - catch ALL errors
         const errorType = error?.type || '';
@@ -765,20 +831,22 @@ async function registerLinearTools(pi) {
         try {
           const client = await createAuthenticatedClient();
 
-          switch (params.action) {
-            case 'list':
-              return await executeMilestoneList(client, params);
-            case 'view':
-              return await executeMilestoneView(client, params);
-            case 'create':
-              return await executeMilestoneCreate(client, params);
-            case 'update':
-              return await executeMilestoneUpdate(client, params);
-            case 'delete':
-              return await executeMilestoneDelete(client, params);
-            default:
-              throw new Error(`Unknown action: ${params.action}`);
-          }
+          return await withRequestUsageLogging(client, 'linear_milestone', params.action, async () => {
+            switch (params.action) {
+              case 'list':
+                return await executeMilestoneList(client, params);
+              case 'view':
+                return await executeMilestoneView(client, params);
+              case 'create':
+                return await executeMilestoneCreate(client, params);
+              case 'update':
+                return await executeMilestoneUpdate(client, params);
+              case 'delete':
+                return await executeMilestoneDelete(client, params);
+              default:
+                throw new Error(`Unknown action: ${params.action}`);
+            }
+          });
         } catch (error) {
           // Apply milestone-specific hint, then wrap with operation context
           const hintError = withMilestoneScopeHint(error);

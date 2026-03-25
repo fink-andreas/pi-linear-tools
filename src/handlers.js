@@ -27,6 +27,7 @@ import {
   deleteProjectMilestone,
   deleteIssue,
   withHandlerErrorHandling,
+  getViewer,
 } from './linear.js';
 import { debug } from './logger.js';
 
@@ -150,7 +151,7 @@ export async function executeIssueList(client, params) {
 
     let assigneeId = null;
     if (params.assignee === 'me') {
-      const viewer = await client.viewer;
+      const viewer = await getViewer(client);
       assigneeId = viewer.id;
     }
 
@@ -276,7 +277,7 @@ export async function executeIssueCreate(client, params, options = {}) {
   }
 
   if (params.assignee === 'me') {
-    const viewer = await client.viewer;
+    const viewer = await getViewer(client);
     createInput.assigneeId = viewer.id;
   } else if (params.assignee) {
     createInput.assigneeId = params.assignee;
@@ -374,7 +375,7 @@ export async function executeIssueUpdate(client, params) {
 
   // Handle assignee parameter
   if (params.assignee === 'me') {
-    const viewer = await client.viewer;
+    const viewer = await getViewer(client);
     updatePatch.assigneeId = viewer.id;
   } else if (params.assignee) {
     updatePatch.assigneeId = params.assignee;
@@ -429,8 +430,12 @@ export async function executeIssueUpdate(client, params) {
     ? ` (${changeSummaryParts.join(', ')})`
     : '';
 
+  const rateLimitNote = result.usedRateLimitFallback
+    ? '\n\n_Note: update succeeded, but detailed issue refresh was rate-limited. Some returned fields may be partial until rate limit resets._'
+    : '';
+
   return toTextResult(
-    `Updated issue ${result.issue.identifier}${suffix}`,
+    `Updated issue ${result.issue.identifier}${suffix}${rateLimitNote}`,
     {
       issueId: result.issue.id,
       identifier: result.issue.identifier,
@@ -438,6 +443,7 @@ export async function executeIssueUpdate(client, params) {
       state: result.issue.state,
       priority: result.issue.priority,
       projectMilestone: result.issue.projectMilestone,
+      usedRateLimitFallback: !!result.usedRateLimitFallback,
     }
   );
 }
