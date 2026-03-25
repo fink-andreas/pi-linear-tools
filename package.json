@@ -44,6 +44,10 @@
     ]
   },
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fink-andreas/pi-linear-tools.git"
+  },
   "dependencies": {
     "@linear/sdk": "^75.0.0",
     "@github/keytar": "^7.10.6"
