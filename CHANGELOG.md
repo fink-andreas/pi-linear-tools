@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.4.2 (2026-03-26)
+
+Rate-limit resilience and API usage diagnostics release.
+
+### Bug Fixes
+- Hardened issue update flow when post-mutation refresh is rate-limited
+- Added explicit user-facing note when update succeeded but refresh is partial due to rate limits
+- Fixed per-command API usage metric keying so usage deltas report correctly
+
+### Performance / API Usage
+- Added short-lived in-memory caches for viewer, project list, team list, and team workflow states
+- Added direct-ID fast paths for project/team resolution to avoid full list fetches
+
+### Diagnostics
+- Added optional per-command usage summary output via `PI_LINEAR_TOOLS_USAGE_SUMMARY=true`
+- Added debug-level per-command request delta logging across issue/project/team/milestone tools
+
+### Documentation / Tests
+- Documented new diagnostics flag and cache behavior
+- Added regression tests for rate-limit fallback and API usage caching
+
 ## v0.4.0 (2026-03-23)
 
 Comprehensive error handling and file-first logging release.
