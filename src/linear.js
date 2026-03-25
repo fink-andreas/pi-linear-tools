@@ -580,12 +580,13 @@ export async function fetchIssues(client, assigneeId, openStates, limit) {
  * @param {Array<string>|null} states - List of state names to include (null = all states)
  * @param {Object} options
  * @param {string|null} options.assigneeId - Assignee ID to filter by (null = all assignees)
+ * @param {string|null} options.teamId - Team ID to filter by (null = all teams)
  * @param {number} options.limit - Maximum number of issues to fetch
  * @returns {Promise<{issues: Array, truncated: boolean}>}
  */
 export async function fetchIssuesByProject(client, projectId, states, options = {}) {
   return withLinearErrorHandling(async () => {
-    const { assigneeId = null, limit = 20 } = options;
+    const { assigneeId = null, teamId = null, limit = 20 } = options;
 
     const filter = {
       project: { id: { eq: projectId } },
@@ -597,6 +598,10 @@ export async function fetchIssuesByProject(client, projectId, states, options = 
 
     if (assigneeId) {
       filter.assignee = { id: { eq: assigneeId } };
+    }
+
+    if (teamId) {
+      filter.team = { id: { eq: teamId } };
     }
 
     // Use optimized rawRequest to fetch issues with ALL relations in ONE request

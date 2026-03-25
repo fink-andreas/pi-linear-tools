@@ -149,7 +149,7 @@ Auth Actions:
   status   Show current authentication status
 
 Issue Actions:
-  list [--project X] [--states X,Y] [--assignee me|all] [--limit N]
+  list [--project X] [--states X,Y] [--assignee me|all] [--team X] [--limit N]
   view <issue> [--no-comments]
   create --title X [--team X] [--project X] [--description X] [--priority 0-4] [--assignee me|ID]
   update <issue> [--title X] [--description X] [--state X] [--priority 0-4]
@@ -217,6 +217,7 @@ List Options:
   --project X      Project name or ID (default: current directory name)
   --states X,Y     Filter by state names (comma-separated)
   --assignee X     Filter by assignee: "me" or "all"
+  --team X         Filter by team key (e.g., ENG) or ID
   --limit N        Max results (default: 50)
 
 View Options:
@@ -531,6 +532,7 @@ async function handleIssueList(args) {
     project: readFlag(args, '--project'),
     states: parseArrayValue(readFlag(args, '--states')),
     assignee: readFlag(args, '--assignee'),
+    team: readFlag(args, '--team'),
     limit: parseNumber(readFlag(args, '--limit')),
   };
 

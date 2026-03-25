@@ -130,6 +130,14 @@ async function startGitBranch(branchName, fromRef = 'HEAD', onBranchExists = 'sw
 
 /**
  * List issues in a project
+ * @param {LinearClient} client - Linear SDK client
+ * @param {Object} params - Parameters
+ * @param {string} [params.project] - Project name or ID
+ * @param {string[]} [params.states] - State names to filter by
+ * @param {string} [params.assignee] - "me" or "all" for assignee filtering
+ * @param {string} [params.team] - Team key or ID to filter by
+ * @param {number} [params.limit] - Maximum results (default: 20)
+ * @returns {Promise<{content: Array, details: Object}>}
  */
 export async function executeIssueList(client, params) {
   return withHandlerErrorHandling(async () => {
@@ -146,8 +154,16 @@ export async function executeIssueList(client, params) {
       assigneeId = viewer.id;
     }
 
+    // Resolve team if provided
+    let teamId = null;
+    if (params.team) {
+      const team = await resolveTeamRef(client, params.team);
+      teamId = team.id;
+    }
+
     const { issues, truncated } = await fetchIssuesByProject(client, resolved.id, params.states || null, {
       assigneeId,
+      teamId,
       limit: params.limit || 20,
     });
 
