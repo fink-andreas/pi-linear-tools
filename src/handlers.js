@@ -13,6 +13,7 @@ import {
   updateIssue,
   createIssue,
   fetchProjects,
+  fetchProjectDetails,
   fetchTeams,
   resolveProjectRef,
   resolveTeamRef,
@@ -25,6 +26,9 @@ import {
   createProjectMilestone,
   updateProjectMilestone,
   deleteProjectMilestone,
+  createProject,
+  updateProject,
+  deleteProject,
   deleteIssue,
   withHandlerErrorHandling,
   getViewer,
@@ -42,6 +46,17 @@ function ensureNonEmpty(value, fieldName) {
   const text = String(value || '').trim();
   if (!text) throw new Error(`Missing required field: ${fieldName}`);
   return text;
+}
+
+function parseRefList(value) {
+  if (value === undefined || value === null) return [];
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || '').trim()).filter(Boolean);
+  }
+  return String(value)
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 // ===== GIT OPERATIONS (for issue start) =====
@@ -549,6 +564,174 @@ export async function executeProjectList(client) {
     projectCount: projects.length,
     projects: projects.map((p) => ({ id: p.id, name: p.name })),
   });
+}
+
+export async function executeProjectView(client, params) {
+  return withHandlerErrorHandling(async () => {
+    const projectRef = ensureNonEmpty(params.project, 'project');
+    const project = await fetchProjectDetails(client, projectRef);
+
+    const lines = [`# Project: ${project.name}`];
+    const metaParts = [];
+
+    if (project.status?.name) metaParts.push(`**Status:** ${project.status.name}`);
+    if (project.health) metaParts.push(`**Health:** ${project.health}`);
+    if (project.progress !== undefined && project.progress !== null) metaParts.push(`**Progress:** ${project.progress}%`);
+    if (project.priority !== undefined && project.priority !== null) metaParts.push(`**Priority:** ${project.priority}`);
+    if (project.startDate) metaParts.push(`**Start:** ${project.startDate}`);
+    if (project.targetDate) metaParts.push(`**Target:** ${project.targetDate}`);
+
+    if (metaParts.length > 0) {
+      lines.push('');
+      lines.push(metaParts.join(' | '));
+    }
+
+    const teamLabel = project.teams.length > 0
+      ? project.teams.map((team) => `\`${team.key}\``).join(', ')
+      : 'None';
+    const leadLabel = project.lead?.displayName || project.lead?.name || 'Unassigned';
+
+    lines.push('');
+    lines.push(`**Teams:** ${teamLabel}`);
+    lines.push(`**Lead:** ${leadLabel}`);
+
+    if (project.url) {
+      lines.push(`**URL:** ${project.url}`);
+    }
+
+    if (project.description) {
+      lines.push('');
+      lines.push(project.description);
+    }
+
+    if (project.projectMilestones.length > 0) {
+      lines.push('');
+      lines.push(`## Milestones (${project.projectMilestones.length})`);
+      lines.push('');
+
+      for (const milestone of project.projectMilestones) {
+        const progressLabel = milestone.progress !== undefined && milestone.progress !== null
+          ? `${milestone.progress}%`
+          : 'N/A';
+        const targetLabel = milestone.targetDate ? ` → ${milestone.targetDate}` : '';
+        lines.push(`- **${milestone.name}** _[${milestone.status}]_ (${progressLabel})${targetLabel}`);
+      }
+    }
+
+    return toTextResult(lines.join('\n'), {
+      projectId: project.id,
+      name: project.name,
+      status: project.status,
+      teamCount: project.teams.length,
+      milestoneCount: project.projectMilestones.length,
+      url: project.url,
+    });
+  }, 'executeProjectView');
+}
+
+export async function executeProjectCreate(client, params) {
+  return withHandlerErrorHandling(async () => {
+    const name = ensureNonEmpty(params.name, 'name');
+    const teamRefs = parseRefList(params.teams ?? params.team);
+
+    if (teamRefs.length === 0) {
+      throw new Error('Missing required field: teams');
+    }
+
+    const teams = await Promise.all(teamRefs.map((teamRef) => resolveTeamRef(client, teamRef)));
+
+    let leadId;
+    if (params.lead === 'me') {
+      const viewer = await getViewer(client);
+      leadId = viewer.id;
+    } else if (params.lead) {
+      leadId = params.lead;
+    }
+
+    const project = await createProject(client, {
+      name,
+      teamIds: teams.map((team) => team.id),
+      description: params.description,
+      leadId,
+      priority: params.priority,
+      color: params.color,
+      icon: params.icon,
+      startDate: params.startDate,
+      targetDate: params.targetDate,
+    });
+
+    return toTextResult(
+      `Created project **${project.name}** for ${teams.map((team) => team.key).join(', ')}`,
+      {
+        projectId: project.id,
+        name: project.name,
+        teams: project.teams,
+        status: project.status,
+        url: project.url,
+      }
+    );
+  }, 'executeProjectCreate');
+}
+
+export async function executeProjectUpdate(client, params) {
+  return withHandlerErrorHandling(async () => {
+    const projectRef = ensureNonEmpty(params.project, 'project');
+    const patch = {
+      name: params.name,
+      description: params.description,
+      priority: params.priority,
+      color: params.color,
+      icon: params.icon,
+      startDate: params.startDate,
+      targetDate: params.targetDate,
+    };
+
+    if (params.lead === 'me') {
+      const viewer = await getViewer(client);
+      patch.leadId = viewer.id;
+    } else if (params.lead === 'none') {
+      patch.leadId = null;
+    } else if (params.lead !== undefined) {
+      patch.leadId = params.lead;
+    }
+
+    if (params.teams !== undefined || params.team !== undefined) {
+      const teamRefs = parseRefList(params.teams ?? params.team);
+      if (teamRefs.length === 0) {
+        throw new Error('At least one team is required when updating teams');
+      }
+      const teams = await Promise.all(teamRefs.map((teamRef) => resolveTeamRef(client, teamRef)));
+      patch.teamIds = teams.map((team) => team.id);
+    }
+
+    const result = await updateProject(client, projectRef, patch);
+
+    return toTextResult(
+      `Updated project **${result.project.name}** (${result.changed.join(', ')})`,
+      {
+        projectId: result.project.id,
+        name: result.project.name,
+        changed: result.changed,
+        status: result.project.status,
+      }
+    );
+  }, 'executeProjectUpdate');
+}
+
+export async function executeProjectDelete(client, params) {
+  return withHandlerErrorHandling(async () => {
+    const projectRef = ensureNonEmpty(params.project, 'project');
+    const result = await deleteProject(client, projectRef);
+
+    return toTextResult(
+      `Deleted project **${result.name}** \`${result.projectId}\``,
+      {
+        projectId: result.projectId,
+        name: result.name,
+        success: result.success,
+      }
+    );
+  }, 'executeProjectDelete');
 }
 
 // ===== TEAM HANDLERS =====

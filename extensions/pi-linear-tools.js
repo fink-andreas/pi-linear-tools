@@ -54,6 +54,10 @@ import {
   executeIssueStart,
   executeIssueDelete,
   executeProjectList,
+  executeProjectView,
+  executeProjectCreate,
+  executeProjectUpdate,
+  executeProjectDelete,
   executeTeamList,
   executeMilestoneList,
   executeMilestoneView,
@@ -692,14 +696,54 @@ async function registerLinearTools(pi) {
   pi.registerTool({
     name: 'linear_project',
     label: 'Linear Project',
-    description: 'Interact with Linear projects. Actions: list',
+    description: 'Interact with Linear projects. Actions: list, view, create, update, delete',
     parameters: {
       type: 'object',
       properties: {
         action: {
           type: 'string',
-          enum: ['list'],
+          enum: ['list', 'view', 'create', 'update', 'delete'],
           description: 'Action to perform on project(s)',
+        },
+        project: {
+          type: 'string',
+          description: 'Project name or ID (for view, update, delete)',
+        },
+        name: {
+          type: 'string',
+          description: 'Project name (required for create, optional for update)',
+        },
+        teams: {
+          type: 'string',
+          description: 'Comma-separated team keys or IDs (required for create, optional for update)',
+        },
+        description: {
+          type: 'string',
+          description: 'Project description in markdown',
+        },
+        lead: {
+          type: 'string',
+          description: 'Project lead user ID, "me", or "none" when updating',
+        },
+        priority: {
+          type: 'number',
+          description: 'Priority 0-4',
+        },
+        color: {
+          type: 'string',
+          description: 'Project color (hex)',
+        },
+        icon: {
+          type: 'string',
+          description: 'Project icon',
+        },
+        startDate: {
+          type: 'string',
+          description: 'Planned start date (YYYY-MM-DD)',
+        },
+        targetDate: {
+          type: 'string',
+          description: 'Planned target date (YYYY-MM-DD)',
         },
       },
       required: ['action'],
@@ -714,6 +758,14 @@ async function registerLinearTools(pi) {
           switch (params.action) {
             case 'list':
               return await executeProjectList(client);
+            case 'view':
+              return await executeProjectView(client, params);
+            case 'create':
+              return await executeProjectCreate(client, params);
+            case 'update':
+              return await executeProjectUpdate(client, params);
+            case 'delete':
+              return await executeProjectDelete(client, params);
             default:
               throw new Error(`Unknown action: ${params.action}`);
           }
@@ -984,7 +1036,7 @@ export default async function piLinearToolsExtension(pi) {
       const toolLines = [
         'LLM-callable tools:',
         '  linear_issue (list/view/create/update/comment/start/delete)',
-        '  linear_project (list)',
+        '  linear_project (list/view/create/update/delete)',
         '  linear_team (list)',
       ];
 

@@ -90,6 +90,92 @@ const ISSUES_WITH_RELATIONS_QUERY = `
   }
 `;
 
+const PROJECT_DETAILS_QUERY = `
+  query ProjectDetails($id: String!, $milestoneLimit: Int!) {
+    project(id: $id) {
+      id
+      name
+      description
+      content
+      color
+      icon
+      priority
+      progress
+      health
+      startDate
+      targetDate
+      slugId
+      url
+      archivedAt
+      completedAt
+      canceledAt
+      status {
+        id
+        name
+        type
+        color
+      }
+      lead {
+        id
+        name
+        displayName
+      }
+      teams {
+        nodes {
+          id
+          key
+          name
+        }
+      }
+      projectMilestones(first: $milestoneLimit) {
+        nodes {
+          id
+          name
+          status
+          progress
+          targetDate
+        }
+      }
+    }
+  }
+`;
+
+const PROJECT_CREATE_MUTATION = `
+  mutation ProjectCreate($input: ProjectCreateInput!) {
+    projectCreate(input: $input) {
+      success
+      project {
+        id
+        name
+      }
+    }
+  }
+`;
+
+const PROJECT_UPDATE_MUTATION = `
+  mutation ProjectUpdate($id: String!, $input: ProjectUpdateInput!) {
+    projectUpdate(id: $id, input: $input) {
+      success
+      project {
+        id
+        name
+      }
+    }
+  }
+`;
+
+const PROJECT_DELETE_MUTATION = `
+  mutation ProjectDelete($id: String!) {
+    projectDelete(id: $id) {
+      success
+      entity {
+        id
+        name
+      }
+    }
+  }
+`;
+
 /**
  * Execute an optimized GraphQL query using rawRequest
  * Falls back to SDK method if rawRequest is not available (e.g., in tests)
@@ -134,6 +220,21 @@ async function executeOptimizedQuery(client, query, variables) {
     },
     headers: new Headers(),
   };
+}
+
+async function executeGraphQL(client, query, variables = {}) {
+  const rawRequest =
+    (typeof client.client?.rawRequest === 'function' ? client.client.rawRequest.bind(client.client) : null) ||
+    (typeof client.rawRequest === 'function' ? client.rawRequest.bind(client) : null);
+
+  if (!rawRequest) {
+    throw new Error('GraphQL rawRequest is unavailable on this Linear client');
+  }
+
+  const response = await rawRequest(query, variables);
+  updateRateLimitState(response);
+  checkRateLimitWarning();
+  return response.data;
 }
 
 /**
@@ -708,6 +809,26 @@ export async function fetchProjects(client) {
   }, 'fetchProjects');
 }
 
+export async function fetchProjectDetails(client, projectRef, options = {}) {
+  return withLinearErrorHandling(async () => {
+    const { milestoneLimit = 10 } = options;
+    const ref = String(projectRef || '').trim();
+    const projectId = isLinearId(ref)
+      ? ref
+      : (await resolveProjectRef(client, ref)).id;
+    const data = await executeGraphQL(client, PROJECT_DETAILS_QUERY, {
+      id: projectId,
+      milestoneLimit,
+    });
+
+    if (!data?.project) {
+      throw new Error(`Project not found: ${projectRef}`);
+    }
+
+    return transformProject(data.project);
+  }, 'fetchProjectDetails');
+}
+
 /**
  * Fetch available workspaces (organization context) from Linear API
  * @param {LinearClient} client - Linear SDK client
@@ -914,6 +1035,117 @@ export async function resolveProjectRef(client, projectRef) {
   }
 
   throw new Error(`Project not found: ${ref}. Available projects: ${projects.map((p) => p.name).join(', ')}`);
+}
+
+export async function createProject(client, input) {
+  return withLinearErrorHandling(async () => {
+    const name = String(input.name || '').trim();
+    if (!name) {
+      throw new Error('Missing required field: name');
+    }
+
+    const teamIds = Array.isArray(input.teamIds)
+      ? input.teamIds.map((value) => String(value || '').trim()).filter(Boolean)
+      : [];
+
+    if (teamIds.length === 0) {
+      throw new Error('Missing required field: teamIds');
+    }
+
+    const createInput = {
+      name,
+      teamIds,
+    };
+
+    for (const field of ['description', 'color', 'icon', 'leadId', 'startDate', 'targetDate']) {
+      if (input[field] !== undefined) {
+        createInput[field] = input[field];
+      }
+    }
+
+    if (input.priority !== undefined) {
+      createInput.priority = input.priority;
+    }
+
+    const payload = await executeGraphQL(client, PROJECT_CREATE_MUTATION, {
+      input: createInput,
+    });
+
+    if (!payload?.projectCreate?.success || !payload?.projectCreate?.project?.id) {
+      throw new Error('Failed to create project');
+    }
+
+    invalidateProjectsCache(client);
+    return fetchProjectDetails(client, payload.projectCreate.project.id);
+  }, 'createProject');
+}
+
+export async function updateProject(client, projectRef, patch = {}) {
+  return withLinearErrorHandling(async () => {
+    const resolved = await resolveProjectRef(client, projectRef);
+    const updateInput = {};
+
+    for (const field of ['name', 'description', 'color', 'icon', 'startDate', 'targetDate']) {
+      if (patch[field] !== undefined) {
+        updateInput[field] = patch[field];
+      }
+    }
+
+    if (patch.priority !== undefined) {
+      updateInput.priority = patch.priority;
+    }
+
+    if (patch.leadId !== undefined) {
+      updateInput.leadId = patch.leadId;
+    }
+
+    if (patch.teamIds !== undefined) {
+      updateInput.teamIds = patch.teamIds;
+    }
+
+    if (Object.keys(updateInput).length === 0) {
+      throw new Error('No update fields provided');
+    }
+
+    const payload = await executeGraphQL(client, PROJECT_UPDATE_MUTATION, {
+      id: resolved.id,
+      input: updateInput,
+    });
+
+    if (!payload?.projectUpdate?.success || !payload?.projectUpdate?.project?.id) {
+      throw new Error('Failed to update project');
+    }
+
+    invalidateProjectsCache(client);
+    const project = await fetchProjectDetails(client, payload.projectUpdate.project.id);
+
+    return {
+      project,
+      changed: Object.keys(updateInput),
+    };
+  }, 'updateProject');
+}
+
+export async function deleteProject(client, projectRef) {
+  return withLinearErrorHandling(async () => {
+    const resolved = await resolveProjectRef(client, projectRef);
+    const payload = await executeGraphQL(client, PROJECT_DELETE_MUTATION, {
+      id: resolved.id,
+    });
+
+    if (!payload?.projectDelete?.success) {
+      throw new Error('Failed to delete project');
+    }
+
+    invalidateProjectsCache(client);
+
+    return {
+      success: true,
+      projectId: resolved.id,
+      name: resolved.name,
+      entity: transformProject(payload.projectDelete.entity),
+    };
+  }, 'deleteProject');
 }
 
 /**
@@ -1512,6 +1744,60 @@ async function transformMilestone(sdkMilestone) {
     status: sdkMilestone.status,
     project: project ? { id: project.id, name: project.name } : null,
   };
+}
+
+function transformProject(rawProject) {
+  if (!rawProject) return null;
+
+  const milestoneNodes = rawProject.projectMilestones?.nodes || [];
+  const teamNodes = rawProject.teams?.nodes || [];
+
+  return {
+    id: rawProject.id,
+    name: rawProject.name,
+    description: rawProject.description ?? '',
+    content: rawProject.content ?? null,
+    color: rawProject.color ?? null,
+    icon: rawProject.icon ?? null,
+    priority: rawProject.priority ?? null,
+    progress: rawProject.progress ?? null,
+    health: rawProject.health ?? null,
+    startDate: rawProject.startDate ?? null,
+    targetDate: rawProject.targetDate ?? null,
+    slugId: rawProject.slugId ?? null,
+    url: rawProject.url ?? null,
+    archivedAt: rawProject.archivedAt ?? null,
+    completedAt: rawProject.completedAt ?? null,
+    canceledAt: rawProject.canceledAt ?? null,
+    status: rawProject.status ? {
+      id: rawProject.status.id,
+      name: rawProject.status.name,
+      type: rawProject.status.type,
+      color: rawProject.status.color,
+    } : null,
+    lead: rawProject.lead ? {
+      id: rawProject.lead.id,
+      name: rawProject.lead.name,
+      displayName: rawProject.lead.displayName,
+    } : null,
+    teams: teamNodes.map((team) => ({
+      id: team.id,
+      key: team.key,
+      name: team.name,
+    })),
+    projectMilestones: milestoneNodes.map((milestone) => ({
+      id: milestone.id,
+      name: milestone.name,
+      status: milestone.status,
+      progress: milestone.progress ?? null,
+      targetDate: milestone.targetDate ?? null,
+    })),
+  };
+}
+
+function invalidateProjectsCache(client) {
+  const cacheKey = getClientCacheKey(client);
+  projectsCache.delete(cacheKey);
 }
 
 /**

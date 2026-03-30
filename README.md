@@ -46,7 +46,7 @@ Optional non-interactive commands:
 Actions: `list`, `view`, `create`, `update`, `comment`, `start`, `delete`
 
 ### `linear_project`
-Actions: `list`
+Actions: `list`, `view`, `create`, `update`, `delete`
 
 ### `linear_milestone`
 Actions: `list`, `view`, `create`, `update`, `delete`
@@ -99,6 +99,10 @@ pi-linear-tools issue delete ENG-123
 
 ```bash
 pi-linear-tools project list
+pi-linear-tools project view "My Project"
+pi-linear-tools project create --name "Roadmap Refresh" --teams ENG,OPS --lead me
+pi-linear-tools project update "Roadmap Refresh" --description "Updated scope" --target-date 2026-06-30
+pi-linear-tools project delete "Roadmap Refresh"
 ```
 
 ### Team commands

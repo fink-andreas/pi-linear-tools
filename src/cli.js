@@ -17,6 +17,10 @@ import {
   executeIssueStart,
   executeIssueDelete,
   executeProjectList,
+  executeProjectView,
+  executeProjectCreate,
+  executeProjectUpdate,
+  executeProjectDelete,
   executeTeamList,
   executeMilestoneList,
   executeMilestoneView,
@@ -160,6 +164,10 @@ Issue Actions:
 
 Project Actions:
   list
+  view <project>
+  create --name X --teams ENG,OPS [--description X] [--lead me|ID] [--priority 0-4]
+  update <project> [--name X] [--description X] [--teams X,Y] [--lead me|none|ID]
+  delete <project>
 
 Team Actions:
   list
@@ -261,10 +269,43 @@ function printProjectHelp() {
   console.log(`pi-linear-tools project - Manage Linear projects
 
 Usage:
-  pi-linear-tools project <action>
+  pi-linear-tools project <action> [options]
 
 Actions:
-  list    List all accessible projects
+  list      List all accessible projects
+  view      View project details
+  create    Create a new project
+  update    Update an existing project
+  delete    Delete a project
+
+View Options:
+  <project>        Project name or ID
+
+Create Options:
+  --name X         Project name (required)
+  --teams X,Y      Team keys or IDs (required)
+  --description X  Project description
+  --lead X         "me" or user ID
+  --priority N     Priority 0-4
+  --color X        Project color (hex)
+  --icon X         Project icon
+  --start-date X   Planned start date (YYYY-MM-DD)
+  --target-date X  Planned target date (YYYY-MM-DD)
+
+Update Options:
+  <project>        Project name or ID
+  --name X         New name
+  --teams X,Y      Replace associated teams
+  --description X  New description
+  --lead X         "me", "none", or user ID
+  --priority N     New priority 0-4
+  --color X        New project color (hex)
+  --icon X         New project icon
+  --start-date X   New planned start date
+  --target-date X  New planned target date
+
+Delete Options:
+  <project>        Project name or ID
 `);
 }
 
@@ -694,6 +735,81 @@ async function handleProjectList() {
   console.log(result.content[0].text);
 }
 
+async function handleProjectView(args) {
+  const client = await createAuthenticatedClient();
+  const positional = args.filter((a) => !a.startsWith('-'));
+  if (positional.length === 0) {
+    throw new Error('Missing required argument: project name or ID');
+  }
+
+  const result = await executeProjectView(client, {
+    project: positional[0],
+  });
+  console.log(result.content[0].text);
+}
+
+async function handleProjectCreate(args) {
+  const client = await createAuthenticatedClient();
+  const params = {
+    name: readFlag(args, '--name'),
+    teams: parseArrayValue(readFlag(args, '--teams')),
+    description: readFlag(args, '--description'),
+    lead: readFlag(args, '--lead'),
+    priority: parseNumber(readFlag(args, '--priority')),
+    color: readFlag(args, '--color'),
+    icon: readFlag(args, '--icon'),
+    startDate: readFlag(args, '--start-date'),
+    targetDate: readFlag(args, '--target-date'),
+  };
+
+  if (!params.name) {
+    throw new Error('Missing required flag: --name');
+  }
+  if (!params.teams || params.teams.length === 0) {
+    throw new Error('Missing required flag: --teams');
+  }
+
+  const result = await executeProjectCreate(client, params);
+  console.log(result.content[0].text);
+}
+
+async function handleProjectUpdate(args) {
+  const client = await createAuthenticatedClient();
+  const positional = args.filter((a) => !a.startsWith('-'));
+  if (positional.length === 0) {
+    throw new Error('Missing required argument: project name or ID');
+  }
+
+  const params = {
+    project: positional[0],
+    name: readFlag(args, '--name'),
+    teams: parseArrayValue(readFlag(args, '--teams')),
+    description: readFlag(args, '--description'),
+    lead: readFlag(args, '--lead'),
+    priority: parseNumber(readFlag(args, '--priority')),
+    color: readFlag(args, '--color'),
+    icon: readFlag(args, '--icon'),
+    startDate: readFlag(args, '--start-date'),
+    targetDate: readFlag(args, '--target-date'),
+  };
+
+  const result = await executeProjectUpdate(client, params);
+  console.log(result.content[0].text);
+}
+
+async function handleProjectDelete(args) {
+  const client = await createAuthenticatedClient();
+  const positional = args.filter((a) => !a.startsWith('-'));
+  if (positional.length === 0) {
+    throw new Error('Missing required argument: project name or ID');
+  }
+
+  const result = await executeProjectDelete(client, {
+    project: positional[0],
+  });
+  console.log(result.content[0].text);
+}
+
 async function handleProject(args) {
   const [action] = args;
 
@@ -705,6 +821,14 @@ async function handleProject(args) {
   switch (action) {
     case 'list':
       return handleProjectList();
+    case 'view':
+      return handleProjectView(args.slice(1));
+    case 'create':
+      return handleProjectCreate(args.slice(1));
+    case 'update':
+      return handleProjectUpdate(args.slice(1));
+    case 'delete':
+      return handleProjectDelete(args.slice(1));
     default:
       throw new Error(`Unknown project action: ${action}`);
   }
