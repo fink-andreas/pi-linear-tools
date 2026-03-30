@@ -736,6 +736,9 @@ async function registerLinearTools(pi) {
         priority: {
           type: 'number',
           description: 'Priority 0-4',
+          minimum: 0,
+          maximum: 4,
+          multipleOf: 1,
         },
         color: {
           type: 'string',
@@ -830,6 +833,7 @@ async function registerLinearTools(pi) {
         health: {
           type: 'string',
           description: 'Project update health: onTrack, atRisk, or offTrack',
+          enum: ['onTrack', 'atRisk', 'offTrack'],
         },
         isDiffHidden: {
           type: 'boolean',
@@ -838,6 +842,8 @@ async function registerLinearTools(pi) {
         limit: {
           type: 'number',
           description: 'Max updates to list',
+          minimum: 1,
+          multipleOf: 1,
         },
         includeArchived: {
           type: 'boolean',

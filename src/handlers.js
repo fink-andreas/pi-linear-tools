@@ -780,7 +780,7 @@ export async function executeProjectUpdateList(client, params) {
   return withHandlerErrorHandling(async () => {
     const projectRef = ensureNonEmpty(params.project, 'project');
     const { project, updates } = await fetchProjectUpdates(client, projectRef, {
-      limit: params.limit || 10,
+      limit: params.limit ?? 10,
       includeArchived: params.includeArchived === true,
     });
 

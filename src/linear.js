@@ -140,6 +140,19 @@ const PROJECT_DETAILS_QUERY = `
   }
 `;
 
+const PROJECTS_LOOKUP_QUERY = `
+  query ProjectsLookup($includeArchived: Boolean!) {
+    projects(first: 250, includeArchived: $includeArchived) {
+      nodes {
+        id
+        name
+        slugId
+        archivedAt
+      }
+    }
+  }
+`;
+
 const PROJECT_CREATE_MUTATION = `
   mutation ProjectCreate($input: ProjectCreateInput!) {
     projectCreate(input: $input) {
@@ -178,7 +191,7 @@ const PROJECT_DELETE_MUTATION = `
 
 const PROJECT_ARCHIVE_MUTATION = `
   mutation ProjectArchive($id: String!) {
-    projectArchive(id: $id, trash: false) {
+    projectArchiveResult: projectDelete(id: $id) {
       success
       entity {
         id
@@ -606,6 +619,38 @@ function normalizeIssueLookupInput(issue) {
   return value;
 }
 
+const PROJECT_UPDATE_HEALTH_VALUES = ['onTrack', 'atRisk', 'offTrack'];
+
+function normalizePositiveInteger(value, fieldName, defaultValue) {
+  if (value === undefined || value === null) {
+    return defaultValue;
+  }
+
+  const parsed = typeof value === 'number' ? value : Number(String(value).trim());
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(`${fieldName} must be a positive integer`);
+  }
+
+  return parsed;
+}
+
+function normalizeProjectUpdateHealth(value) {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const normalized = String(value).trim();
+  if (!normalized) {
+    throw new Error(`health must be one of: ${PROJECT_UPDATE_HEALTH_VALUES.join(', ')}`);
+  }
+
+  if (!PROJECT_UPDATE_HEALTH_VALUES.includes(normalized)) {
+    throw new Error(`health must be one of: ${PROJECT_UPDATE_HEALTH_VALUES.join(', ')}`);
+  }
+
+  return normalized;
+}
+
 /**
  * Safely resolve a lazy-loaded relation without triggering unnecessary API calls
  * Only fetches if the relation is already cached or if we have minimal data
@@ -910,24 +955,41 @@ export async function fetchIssuesByProject(client, projectId, states, options = 
 /**
  * Fetch all accessible projects from Linear API
  * @param {LinearClient} client - Linear SDK client
+ * @param {{ includeArchived?: boolean }} options - Fetch options
  * @returns {Promise<Array<{id: string, name: string}>>}
  */
-export async function fetchProjects(client) {
+export async function fetchProjects(client, options = {}) {
   return withLinearErrorHandling(async () => {
+    const { includeArchived = false } = options;
     const cacheKey = getClientCacheKey(client);
-    const cached = getCache(projectsCache, cacheKey);
+    const scopedCacheKey = `${cacheKey}::projects::${includeArchived ? 'all' : 'active'}`;
+    const cached = getCache(projectsCache, scopedCacheKey);
     if (cached) return cached;
 
-    const result = await client.projects();
-    const nodes = result.nodes ?? [];
+    let nodes = [];
+    if (includeArchived) {
+      const data = await executeGraphQL(client, PROJECTS_LOOKUP_QUERY, {
+        includeArchived: true,
+      });
+      nodes = data?.projects?.nodes ?? [];
+    } else {
+      const result = await client.projects();
+      nodes = result.nodes ?? [];
+    }
 
     debug('Fetched Linear projects', {
       projectCount: nodes.length,
+      includeArchived,
       projects: nodes.map((p) => ({ id: p.id, name: p.name })),
     });
 
-    const projects = nodes.map(p => ({ id: p.id, name: p.name }));
-    setCache(projectsCache, cacheKey, projects, CACHE_TTL_MS.projects);
+    const projects = nodes.map((p) => ({
+      id: p.id,
+      name: p.name,
+      slugId: p.slugId ?? null,
+      archivedAt: p.archivedAt ?? null,
+    }));
+    setCache(projectsCache, scopedCacheKey, projects, CACHE_TTL_MS.projects);
     return projects;
   }, 'fetchProjects');
 }
@@ -1115,10 +1177,12 @@ export async function getTeamWorkflowStates(client, teamRef) {
  * Resolve a project reference (name or ID) to a project object
  * @param {LinearClient} client - Linear SDK client
  * @param {string} projectRef - Project name or ID
+ * @param {{ includeArchived?: boolean }} options - Lookup options
  * @returns {Promise<{id: string, name: string}>}
  */
-export async function resolveProjectRef(client, projectRef) {
+export async function resolveProjectRef(client, projectRef, options = {}) {
   const ref = String(projectRef || '').trim();
+  const { includeArchived = false } = options;
   if (!ref) {
     throw new Error('Missing project reference');
   }
@@ -1134,7 +1198,7 @@ export async function resolveProjectRef(client, projectRef) {
       // fall back to cached/full-project lookup below
     }
 
-    const projectsById = await fetchProjects(client);
+    const projectsById = await fetchProjects(client, { includeArchived });
     const byId = projectsById.find((p) => p.id === ref);
     if (byId) {
       return byId;
@@ -1142,7 +1206,7 @@ export async function resolveProjectRef(client, projectRef) {
     throw new Error(`Project not found with ID: ${ref}`);
   }
 
-  const projects = await fetchProjects(client);
+  const projects = await fetchProjects(client, { includeArchived });
 
   // Try exact name match
   const exactName = projects.find((p) => p.name === ref);
@@ -1278,7 +1342,7 @@ export async function archiveProject(client, projectRef) {
       id: resolved.id,
     });
 
-    if (!payload?.projectArchive?.success) {
+    if (!payload?.projectArchiveResult?.success) {
       throw new Error('Failed to archive project');
     }
 
@@ -1288,7 +1352,7 @@ export async function archiveProject(client, projectRef) {
       success: true,
       projectId: resolved.id,
       name: resolved.name,
-      entity: transformProject(payload.projectArchive.entity),
+      entity: transformProject(payload.projectArchiveResult.entity),
     };
   }, 'archiveProject');
 }
@@ -1298,7 +1362,7 @@ export async function unarchiveProject(client, projectRef) {
     const ref = String(projectRef || '').trim();
     const resolved = isLinearId(ref)
       ? { id: ref, name: null }
-      : await resolveProjectRef(client, ref);
+      : await resolveProjectRef(client, ref, { includeArchived: true });
 
     const payload = await executeGraphQL(client, PROJECT_UNARCHIVE_MUTATION, {
       id: resolved.id,
@@ -1320,7 +1384,8 @@ export async function unarchiveProject(client, projectRef) {
 
 export async function fetchProjectUpdates(client, projectRef, options = {}) {
   return withLinearErrorHandling(async () => {
-    const { limit = 10, includeArchived = false } = options;
+    const includeArchived = options.includeArchived === true;
+    const limit = normalizePositiveInteger(options.limit, 'limit', 10);
     const resolved = await resolveProjectRef(client, projectRef);
     const data = await executeGraphQL(client, PROJECT_UPDATES_BY_PROJECT_QUERY, {
       id: resolved.id,
@@ -1365,7 +1430,7 @@ export async function createProjectUpdate(client, input) {
 
     const createInput = { projectId };
     if (input.body !== undefined) createInput.body = String(input.body);
-    if (input.health !== undefined) createInput.health = input.health;
+    if (input.health !== undefined) createInput.health = normalizeProjectUpdateHealth(input.health);
     if (input.isDiffHidden !== undefined) createInput.isDiffHidden = input.isDiffHidden;
 
     if (createInput.body === undefined && createInput.health === undefined) {
@@ -1393,7 +1458,7 @@ export async function updateProjectUpdate(client, projectUpdateId, patch = {}) {
 
     const updateInput = {};
     if (patch.body !== undefined) updateInput.body = String(patch.body);
-    if (patch.health !== undefined) updateInput.health = patch.health;
+    if (patch.health !== undefined) updateInput.health = normalizeProjectUpdateHealth(patch.health);
     if (patch.isDiffHidden !== undefined) updateInput.isDiffHidden = patch.isDiffHidden;
 
     if (Object.keys(updateInput).length === 0) {

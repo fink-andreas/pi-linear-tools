@@ -73,9 +73,26 @@ async function testProjectArchiveAndUnarchive() {
           assert.equal(variables.id, '11111111-1111-4111-8111-111111111111');
           return {
             data: {
-              projectArchive: {
+              projectArchiveResult: {
                 success: true,
                 entity: { id: variables.id, name: 'Roadmap Refresh' },
+              },
+            },
+            headers: new Headers(),
+          };
+        }
+
+        if (query.includes('ProjectsLookup')) {
+          assert.equal(variables.includeArchived, true);
+          return {
+            data: {
+              projects: {
+                nodes: [{
+                  id: '11111111-1111-4111-8111-111111111111',
+                  name: 'Roadmap Refresh',
+                  slugId: 'roadmap-refresh',
+                  archivedAt: '2026-03-30T00:00:00.000Z',
+                }],
               },
             },
             headers: new Headers(),
@@ -123,7 +140,7 @@ async function testProjectArchiveAndUnarchive() {
 
     const unarchiveResult = await projectTool.execute('call-project-unarchive', {
       action: 'unarchive',
-      project: '11111111-1111-4111-8111-111111111111',
+      project: 'Roadmap Refresh',
     });
     assert.match(unarchiveResult.content[0].text, /Unarchived project \*\*Roadmap Refresh\*\*/);
   } finally {
@@ -286,9 +303,54 @@ async function testProjectUpdateTool() {
   }
 }
 
+async function testProjectUpdateValidation() {
+  const prev = process.env.LINEAR_API_KEY;
+  process.env.LINEAR_API_KEY = 'lin_test';
+
+  try {
+    const mockClient = {
+      projects: async () => ({
+        nodes: [{ id: '11111111-1111-4111-8111-111111111111', name: 'Roadmap Refresh' }],
+      }),
+      rawRequest: async () => {
+        throw new Error('rawRequest should not be called for invalid project update input');
+      },
+    };
+
+    setTestClientFactory(() => mockClient);
+
+    const pi = createMockPi();
+    await extension(pi);
+
+    const projectUpdateTool = pi.tools.get('linear_project_update');
+
+    await assert.rejects(
+      () => projectUpdateTool.execute('call-project-update-invalid-health', {
+        action: 'create',
+        project: 'Roadmap Refresh',
+        health: 'green',
+      }),
+      /health must be one of: onTrack, atRisk, offTrack/
+    );
+
+    await assert.rejects(
+      () => projectUpdateTool.execute('call-project-update-invalid-limit', {
+        action: 'list',
+        project: 'Roadmap Refresh',
+        limit: 0,
+      }),
+      /limit must be a positive integer/
+    );
+  } finally {
+    resetTestClientFactory();
+    process.env.LINEAR_API_KEY = prev;
+  }
+}
+
 async function main() {
   await testProjectArchiveAndUnarchive();
   await testProjectUpdateTool();
+  await testProjectUpdateValidation();
   console.log('✓ tests/test-project-lifecycle.js passed');
 }
 
