@@ -46,7 +46,10 @@ Optional non-interactive commands:
 Actions: `list`, `view`, `create`, `update`, `comment`, `start`, `delete`
 
 ### `linear_project`
-Actions: `list`, `view`, `create`, `update`, `delete`
+Actions: `list`, `view`, `create`, `update`, `delete`, `archive`, `unarchive`
+
+### `linear_project_update`
+Actions: `list`, `view`, `create`, `update`, `archive`, `unarchive`
 
 ### `linear_milestone`
 Actions: `list`, `view`, `create`, `update`, `delete`
@@ -103,6 +106,19 @@ pi-linear-tools project view "My Project"
 pi-linear-tools project create --name "Roadmap Refresh" --teams ENG,OPS --lead me
 pi-linear-tools project update "Roadmap Refresh" --description "Updated scope" --target-date 2026-06-30
 pi-linear-tools project delete "Roadmap Refresh"
+pi-linear-tools project archive "Roadmap Refresh"
+pi-linear-tools project unarchive 11111111-1111-4111-8111-111111111111
+```
+
+### Project update commands
+
+```bash
+pi-linear-tools project-update list --project "My Project"
+pi-linear-tools project-update view 22222222-2222-4222-8222-222222222222
+pi-linear-tools project-update create --project "My Project" --body "Weekly progress update" --health onTrack
+pi-linear-tools project-update update 22222222-2222-4222-8222-222222222222 --health atRisk
+pi-linear-tools project-update archive 22222222-2222-4222-8222-222222222222
+pi-linear-tools project-update unarchive 22222222-2222-4222-8222-222222222222
 ```
 
 ### Team commands

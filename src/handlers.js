@@ -29,6 +29,14 @@ import {
   createProject,
   updateProject,
   deleteProject,
+  archiveProject,
+  unarchiveProject,
+  fetchProjectUpdates,
+  fetchProjectUpdateDetails,
+  createProjectUpdate,
+  updateProjectUpdate,
+  archiveProjectUpdate,
+  unarchiveProjectUpdate,
   deleteIssue,
   withHandlerErrorHandling,
   getViewer,
@@ -732,6 +740,185 @@ export async function executeProjectDelete(client, params) {
       }
     );
   }, 'executeProjectDelete');
+}
+
+export async function executeProjectArchive(client, params) {
+  return withHandlerErrorHandling(async () => {
+    const projectRef = ensureNonEmpty(params.project, 'project');
+    const result = await archiveProject(client, projectRef);
+
+    return toTextResult(
+      `Archived project **${result.name || result.entity?.name || result.projectId}**`,
+      {
+        projectId: result.projectId,
+        name: result.name || result.entity?.name || null,
+        success: result.success,
+      }
+    );
+  }, 'executeProjectArchive');
+}
+
+export async function executeProjectUnarchive(client, params) {
+  return withHandlerErrorHandling(async () => {
+    const projectRef = ensureNonEmpty(params.project, 'project');
+    const result = await unarchiveProject(client, projectRef);
+
+    return toTextResult(
+      `Unarchived project **${result.project.name}**`,
+      {
+        projectId: result.project.id,
+        name: result.project.name,
+        success: result.success,
+      }
+    );
+  }, 'executeProjectUnarchive');
+}
+
+// ===== PROJECT UPDATE HANDLERS =====
+
+export async function executeProjectUpdateList(client, params) {
+  return withHandlerErrorHandling(async () => {
+    const projectRef = ensureNonEmpty(params.project, 'project');
+    const { project, updates } = await fetchProjectUpdates(client, projectRef, {
+      limit: params.limit || 10,
+      includeArchived: params.includeArchived === true,
+    });
+
+    if (updates.length === 0) {
+      return toTextResult(`No project updates found for "${project.name}"`, {
+        projectId: project.id,
+        projectName: project.name,
+        updateCount: 0,
+      });
+    }
+
+    const lines = [`## Project updates for "${project.name}" (${updates.length})`, ''];
+    for (const update of updates) {
+      const author = update.user?.displayName || update.user?.name || 'Unknown';
+      const createdAt = update.createdAt ? String(update.createdAt).slice(0, 10) : 'unknown date';
+      const healthLabel = update.health ? ` [${update.health}]` : '';
+      const archivedLabel = update.archivedAt ? ' [archived]' : '';
+      const preview = update.body.replace(/\s+/g, ' ').trim().slice(0, 120);
+      lines.push(`- **${update.id}**${healthLabel}${archivedLabel} by ${author} on ${createdAt}`);
+      if (preview) {
+        lines.push(`  ${preview}${update.body.length > 120 ? '...' : ''}`);
+      }
+    }
+
+    return toTextResult(lines.join('\n'), {
+      projectId: project.id,
+      projectName: project.name,
+      updateCount: updates.length,
+    });
+  }, 'executeProjectUpdateList');
+}
+
+export async function executeProjectUpdateView(client, params) {
+  return withHandlerErrorHandling(async () => {
+    const projectUpdateId = ensureNonEmpty(params.projectUpdate, 'projectUpdate');
+    const projectUpdate = await fetchProjectUpdateDetails(client, projectUpdateId);
+
+    const lines = [`# Project update ${projectUpdate.id}`];
+    const meta = [];
+    if (projectUpdate.project?.name) meta.push(`**Project:** ${projectUpdate.project.name}`);
+    if (projectUpdate.health) meta.push(`**Health:** ${projectUpdate.health}`);
+    if (projectUpdate.user?.displayName || projectUpdate.user?.name) meta.push(`**Author:** ${projectUpdate.user?.displayName || projectUpdate.user?.name}`);
+    if (projectUpdate.createdAt) meta.push(`**Created:** ${String(projectUpdate.createdAt).slice(0, 10)}`);
+    if (projectUpdate.archivedAt) meta.push(`**Archived:** ${String(projectUpdate.archivedAt).slice(0, 10)}`);
+    if (meta.length > 0) {
+      lines.push('');
+      lines.push(meta.join(' | '));
+    }
+    if (projectUpdate.url) {
+      lines.push('');
+      lines.push(`**URL:** ${projectUpdate.url}`);
+    }
+    if (projectUpdate.body) {
+      lines.push('');
+      lines.push(projectUpdate.body);
+    }
+
+    return toTextResult(lines.join('\n'), {
+      projectUpdateId: projectUpdate.id,
+      projectId: projectUpdate.project?.id || null,
+      projectName: projectUpdate.project?.name || null,
+      health: projectUpdate.health,
+      archivedAt: projectUpdate.archivedAt,
+    });
+  }, 'executeProjectUpdateView');
+}
+
+export async function executeProjectUpdateCreate(client, params) {
+  return withHandlerErrorHandling(async () => {
+    const projectRef = ensureNonEmpty(params.project, 'project');
+    const resolved = await resolveProjectRef(client, projectRef);
+    const projectUpdate = await createProjectUpdate(client, {
+      projectId: resolved.id,
+      body: params.body,
+      health: params.health,
+      isDiffHidden: params.isDiffHidden,
+    });
+
+    return toTextResult(
+      `Created project update **${projectUpdate.id}** for "${resolved.name}"`,
+      {
+        projectUpdateId: projectUpdate.id,
+        projectId: resolved.id,
+        projectName: resolved.name,
+        health: projectUpdate.health,
+      }
+    );
+  }, 'executeProjectUpdateCreate');
+}
+
+export async function executeProjectUpdateUpdate(client, params) {
+  return withHandlerErrorHandling(async () => {
+    const projectUpdateId = ensureNonEmpty(params.projectUpdate, 'projectUpdate');
+    const result = await updateProjectUpdate(client, projectUpdateId, {
+      body: params.body,
+      health: params.health,
+      isDiffHidden: params.isDiffHidden,
+    });
+
+    return toTextResult(
+      `Updated project update **${result.projectUpdate.id}** (${result.changed.join(', ')})`,
+      {
+        projectUpdateId: result.projectUpdate.id,
+        changed: result.changed,
+        health: result.projectUpdate.health,
+      }
+    );
+  }, 'executeProjectUpdateUpdate');
+}
+
+export async function executeProjectUpdateArchive(client, params) {
+  return withHandlerErrorHandling(async () => {
+    const projectUpdateId = ensureNonEmpty(params.projectUpdate, 'projectUpdate');
+    const result = await archiveProjectUpdate(client, projectUpdateId);
+
+    return toTextResult(
+      `Archived project update **${projectUpdateId}**`,
+      {
+        projectUpdateId,
+        success: result.success,
+      }
+    );
+  }, 'executeProjectUpdateArchive');
+}
+
+export async function executeProjectUpdateUnarchive(client, params) {
+  return withHandlerErrorHandling(async () => {
+    const projectUpdateId = ensureNonEmpty(params.projectUpdate, 'projectUpdate');
+    const result = await unarchiveProjectUpdate(client, projectUpdateId);
+
+    return toTextResult(
+      `Unarchived project update **${result.projectUpdate.id}**`,
+      {
+        projectUpdateId: result.projectUpdate.id,
+        success: result.success,
+      }
+    );
+  }, 'executeProjectUpdateUnarchive');
 }
 
 // ===== TEAM HANDLERS =====

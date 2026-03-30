@@ -21,6 +21,14 @@ import {
   executeProjectCreate,
   executeProjectUpdate,
   executeProjectDelete,
+  executeProjectArchive,
+  executeProjectUnarchive,
+  executeProjectUpdateList,
+  executeProjectUpdateView,
+  executeProjectUpdateCreate,
+  executeProjectUpdateUpdate,
+  executeProjectUpdateArchive,
+  executeProjectUpdateUnarchive,
   executeTeamList,
   executeMilestoneList,
   executeMilestoneView,
@@ -137,6 +145,7 @@ Usage:
 Commands:
   issue <action> [options]      Manage issues
   project <action> [options]    Manage projects
+  project-update <action> [options]  Manage project updates
   team <action> [options]       Manage teams
   milestone <action> [options]  Manage milestones
 
@@ -168,6 +177,16 @@ Project Actions:
   create --name X --teams ENG,OPS [--description X] [--lead me|ID] [--priority 0-4]
   update <project> [--name X] [--description X] [--teams X,Y] [--lead me|none|ID]
   delete <project>
+  archive <project>
+  unarchive <project>
+
+Project Update Actions:
+  list --project X [--limit N] [--include-archived true|false]
+  view <project-update-id>
+  create --project X [--body X] [--health onTrack|atRisk|offTrack]
+  update <project-update-id> [--body X] [--health onTrack|atRisk|offTrack]
+  archive <project-update-id>
+  unarchive <project-update-id>
 
 Team Actions:
   list
@@ -277,6 +296,8 @@ Actions:
   create    Create a new project
   update    Update an existing project
   delete    Delete a project
+  archive   Archive a project
+  unarchive Restore an archived project
 
 View Options:
   <project>        Project name or ID
@@ -306,6 +327,54 @@ Update Options:
 
 Delete Options:
   <project>        Project name or ID
+
+Archive Options:
+  <project>        Project name or ID
+
+Unarchive Options:
+  <project>        Project name or ID
+`);
+}
+
+function printProjectUpdateHelp() {
+  console.log(`pi-linear-tools project-update - Manage Linear project updates
+
+Usage:
+  pi-linear-tools project-update <action> [options]
+
+Actions:
+  list       List updates for a project
+  view       View project update details
+  create     Create a new project update
+  update     Update an existing project update
+  archive    Archive a project update
+  unarchive  Restore an archived project update
+
+List Options:
+  --project X             Project name or ID (required)
+  --limit N               Max results (default: 10)
+  --include-archived X    true or false
+
+View Options:
+  <project-update-id>     Project update ID
+
+Create Options:
+  --project X             Project name or ID (required)
+  --body X                Update body in markdown
+  --health X              onTrack, atRisk, or offTrack
+  --is-diff-hidden X      true or false
+
+Update Options:
+  <project-update-id>     Project update ID
+  --body X                Updated body in markdown
+  --health X              onTrack, atRisk, or offTrack
+  --is-diff-hidden X      true or false
+
+Archive Options:
+  <project-update-id>     Project update ID
+
+Unarchive Options:
+  <project-update-id>     Project update ID
 `);
 }
 
@@ -810,6 +879,32 @@ async function handleProjectDelete(args) {
   console.log(result.content[0].text);
 }
 
+async function handleProjectArchive(args) {
+  const client = await createAuthenticatedClient();
+  const positional = args.filter((a) => !a.startsWith('-'));
+  if (positional.length === 0) {
+    throw new Error('Missing required argument: project name or ID');
+  }
+
+  const result = await executeProjectArchive(client, {
+    project: positional[0],
+  });
+  console.log(result.content[0].text);
+}
+
+async function handleProjectUnarchive(args) {
+  const client = await createAuthenticatedClient();
+  const positional = args.filter((a) => !a.startsWith('-'));
+  if (positional.length === 0) {
+    throw new Error('Missing required argument: project name or ID');
+  }
+
+  const result = await executeProjectUnarchive(client, {
+    project: positional[0],
+  });
+  console.log(result.content[0].text);
+}
+
 async function handleProject(args) {
   const [action] = args;
 
@@ -829,8 +924,130 @@ async function handleProject(args) {
       return handleProjectUpdate(args.slice(1));
     case 'delete':
       return handleProjectDelete(args.slice(1));
+    case 'archive':
+      return handleProjectArchive(args.slice(1));
+    case 'unarchive':
+      return handleProjectUnarchive(args.slice(1));
     default:
       throw new Error(`Unknown project action: ${action}`);
+  }
+}
+
+// ===== PROJECT UPDATE HANDLERS =====
+
+async function handleProjectUpdateListCli(args) {
+  const client = await createAuthenticatedClient();
+  const params = {
+    project: readFlag(args, '--project'),
+    limit: parseNumber(readFlag(args, '--limit')),
+    includeArchived: parseBoolean(readFlag(args, '--include-archived')),
+  };
+
+  if (!params.project) {
+    throw new Error('Missing required flag: --project');
+  }
+
+  const result = await executeProjectUpdateList(client, params);
+  console.log(result.content[0].text);
+}
+
+async function handleProjectUpdateViewCli(args) {
+  const client = await createAuthenticatedClient();
+  const positional = args.filter((a) => !a.startsWith('-'));
+  if (positional.length === 0) {
+    throw new Error('Missing required argument: project update ID');
+  }
+
+  const result = await executeProjectUpdateView(client, {
+    projectUpdate: positional[0],
+  });
+  console.log(result.content[0].text);
+}
+
+async function handleProjectUpdateCreateCli(args) {
+  const client = await createAuthenticatedClient();
+  const params = {
+    project: readFlag(args, '--project'),
+    body: readFlag(args, '--body'),
+    health: readFlag(args, '--health'),
+    isDiffHidden: parseBoolean(readFlag(args, '--is-diff-hidden')),
+  };
+
+  if (!params.project) {
+    throw new Error('Missing required flag: --project');
+  }
+
+  const result = await executeProjectUpdateCreate(client, params);
+  console.log(result.content[0].text);
+}
+
+async function handleProjectUpdateUpdateCli(args) {
+  const client = await createAuthenticatedClient();
+  const positional = args.filter((a) => !a.startsWith('-'));
+  if (positional.length === 0) {
+    throw new Error('Missing required argument: project update ID');
+  }
+
+  const params = {
+    projectUpdate: positional[0],
+    body: readFlag(args, '--body'),
+    health: readFlag(args, '--health'),
+    isDiffHidden: parseBoolean(readFlag(args, '--is-diff-hidden')),
+  };
+
+  const result = await executeProjectUpdateUpdate(client, params);
+  console.log(result.content[0].text);
+}
+
+async function handleProjectUpdateArchiveCli(args) {
+  const client = await createAuthenticatedClient();
+  const positional = args.filter((a) => !a.startsWith('-'));
+  if (positional.length === 0) {
+    throw new Error('Missing required argument: project update ID');
+  }
+
+  const result = await executeProjectUpdateArchive(client, {
+    projectUpdate: positional[0],
+  });
+  console.log(result.content[0].text);
+}
+
+async function handleProjectUpdateUnarchiveCli(args) {
+  const client = await createAuthenticatedClient();
+  const positional = args.filter((a) => !a.startsWith('-'));
+  if (positional.length === 0) {
+    throw new Error('Missing required argument: project update ID');
+  }
+
+  const result = await executeProjectUpdateUnarchive(client, {
+    projectUpdate: positional[0],
+  });
+  console.log(result.content[0].text);
+}
+
+async function handleProjectUpdateCommand(args) {
+  const [action] = args;
+
+  if (!action || action === '--help' || action === '-h') {
+    printProjectUpdateHelp();
+    return;
+  }
+
+  switch (action) {
+    case 'list':
+      return handleProjectUpdateListCli(args.slice(1));
+    case 'view':
+      return handleProjectUpdateViewCli(args.slice(1));
+    case 'create':
+      return handleProjectUpdateCreateCli(args.slice(1));
+    case 'update':
+      return handleProjectUpdateUpdateCli(args.slice(1));
+    case 'archive':
+      return handleProjectUpdateArchiveCli(args.slice(1));
+    case 'unarchive':
+      return handleProjectUpdateUnarchiveCli(args.slice(1));
+    default:
+      throw new Error(`Unknown project-update action: ${action}`);
   }
 }
 
@@ -998,6 +1215,11 @@ export async function runCli(argv = process.argv.slice(2)) {
 
   if (command === 'project') {
     await handleProject(rest);
+    return;
+  }
+
+  if (command === 'project-update') {
+    await handleProjectUpdateCommand(rest);
     return;
   }
 

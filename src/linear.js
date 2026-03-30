@@ -176,6 +176,129 @@ const PROJECT_DELETE_MUTATION = `
   }
 `;
 
+const PROJECT_ARCHIVE_MUTATION = `
+  mutation ProjectArchive($id: String!) {
+    projectArchive(id: $id, trash: false) {
+      success
+      entity {
+        id
+        name
+      }
+    }
+  }
+`;
+
+const PROJECT_UNARCHIVE_MUTATION = `
+  mutation ProjectUnarchive($id: String!) {
+    projectUnarchive(id: $id) {
+      success
+      entity {
+        id
+        name
+      }
+    }
+  }
+`;
+
+const PROJECT_UPDATES_BY_PROJECT_QUERY = `
+  query ProjectUpdatesByProject($id: String!, $first: Int!, $includeArchived: Boolean!) {
+    project(id: $id) {
+      id
+      name
+      projectUpdates(first: $first, includeArchived: $includeArchived) {
+        nodes {
+          id
+          body
+          health
+          createdAt
+          updatedAt
+          archivedAt
+          url
+          slugId
+          isDiffHidden
+          isStale
+          user {
+            id
+            name
+            displayName
+          }
+        }
+      }
+    }
+  }
+`;
+
+const PROJECT_UPDATE_DETAILS_QUERY = `
+  query ProjectUpdateDetails($id: String!) {
+    projectUpdate(id: $id) {
+      id
+      body
+      health
+      createdAt
+      updatedAt
+      archivedAt
+      editedAt
+      url
+      slugId
+      isDiffHidden
+      isStale
+      project {
+        id
+        name
+      }
+      user {
+        id
+        name
+        displayName
+      }
+    }
+  }
+`;
+
+const PROJECT_UPDATE_CREATE_MUTATION = `
+  mutation ProjectUpdateCreate($input: ProjectUpdateCreateInput!) {
+    projectUpdateCreate(input: $input) {
+      success
+      projectUpdate {
+        id
+      }
+    }
+  }
+`;
+
+const PROJECT_UPDATE_UPDATE_MUTATION = `
+  mutation ProjectUpdateUpdate($id: String!, $input: ProjectUpdateUpdateInput!) {
+    projectUpdateUpdate(id: $id, input: $input) {
+      success
+      projectUpdate {
+        id
+      }
+    }
+  }
+`;
+
+const PROJECT_UPDATE_ARCHIVE_MUTATION = `
+  mutation ProjectUpdateArchive($id: String!) {
+    projectUpdateArchive(id: $id) {
+      success
+      entity {
+        id
+      }
+    }
+  }
+`;
+
+const PROJECT_UPDATE_UNARCHIVE_MUTATION = `
+  mutation ProjectUpdateUnarchive($id: String!) {
+    projectUpdateUnarchive(id: $id) {
+      success
+      entity {
+        id
+      }
+    }
+  }
+`;
+
 /**
  * Execute an optimized GraphQL query using rawRequest
  * Falls back to SDK method if rawRequest is not available (e.g., in tests)
@@ -1148,6 +1271,191 @@ export async function deleteProject(client, projectRef) {
   }, 'deleteProject');
 }
 
+export async function archiveProject(client, projectRef) {
+  return withLinearErrorHandling(async () => {
+    const resolved = await resolveProjectRef(client, projectRef);
+    const payload = await executeGraphQL(client, PROJECT_ARCHIVE_MUTATION, {
+      id: resolved.id,
+    });
+
+    if (!payload?.projectArchive?.success) {
+      throw new Error('Failed to archive project');
+    }
+
+    invalidateProjectsCache(client);
+
+    return {
+      success: true,
+      projectId: resolved.id,
+      name: resolved.name,
+      entity: transformProject(payload.projectArchive.entity),
+    };
+  }, 'archiveProject');
+}
+
+export async function unarchiveProject(client, projectRef) {
+  return withLinearErrorHandling(async () => {
+    const ref = String(projectRef || '').trim();
+    const resolved = isLinearId(ref)
+      ? { id: ref, name: null }
+      : await resolveProjectRef(client, ref);
+
+    const payload = await executeGraphQL(client, PROJECT_UNARCHIVE_MUTATION, {
+      id: resolved.id,
+    });
+
+    if (!payload?.projectUnarchive?.success) {
+      throw new Error('Failed to unarchive project');
+    }
+
+    invalidateProjectsCache(client);
+    const project = await fetchProjectDetails(client, resolved.id);
+
+    return {
+      success: true,
+      project,
+    };
+  }, 'unarchiveProject');
+}
+
+export async function fetchProjectUpdates(client, projectRef, options = {}) {
+  return withLinearErrorHandling(async () => {
+    const { limit = 10, includeArchived = false } = options;
+    const resolved = await resolveProjectRef(client, projectRef);
+    const data = await executeGraphQL(client, PROJECT_UPDATES_BY_PROJECT_QUERY, {
+      id: resolved.id,
+      first: limit,
+      includeArchived,
+    });
+
+    const nodes = data?.project?.projectUpdates?.nodes || [];
+    return {
+      project: {
+        id: data?.project?.id || resolved.id,
+        name: data?.project?.name || resolved.name,
+      },
+      updates: nodes.map(transformProjectUpdate),
+    };
+  }, 'fetchProjectUpdates');
+}
+
+export async function fetchProjectUpdateDetails(client, projectUpdateId) {
+  return withLinearErrorHandling(async () => {
+    const id = String(projectUpdateId || '').trim();
+    if (!id) {
+      throw new Error('Missing required field: projectUpdate');
+    }
+
+    const data = await executeGraphQL(client, PROJECT_UPDATE_DETAILS_QUERY, { id });
+
+    if (!data?.projectUpdate) {
+      throw new Error(`Project update not found: ${id}`);
+    }
+
+    return transformProjectUpdate(data.projectUpdate);
+  }, 'fetchProjectUpdateDetails');
+}
+
+export async function createProjectUpdate(client, input) {
+  return withLinearErrorHandling(async () => {
+    const projectId = String(input.projectId || '').trim();
+    if (!projectId) {
+      throw new Error('Missing required field: projectId');
+    }
+
+    const createInput = { projectId };
+    if (input.body !== undefined) createInput.body = String(input.body);
+    if (input.health !== undefined) createInput.health = input.health;
+    if (input.isDiffHidden !== undefined) createInput.isDiffHidden = input.isDiffHidden;
+
+    if (createInput.body === undefined && createInput.health === undefined) {
+      throw new Error('At least one of body or health is required');
+    }
+
+    const payload = await executeGraphQL(client, PROJECT_UPDATE_CREATE_MUTATION, {
+      input: createInput,
+    });
+
+    if (!payload?.projectUpdateCreate?.success || !payload?.projectUpdateCreate?.projectUpdate?.id) {
+      throw new Error('Failed to create project update');
+    }
+
+    return fetchProjectUpdateDetails(client, payload.projectUpdateCreate.projectUpdate.id);
+  }, 'createProjectUpdate');
+}
+
+export async function updateProjectUpdate(client, projectUpdateId, patch = {}) {
+  return withLinearErrorHandling(async () => {
+    const id = String(projectUpdateId || '').trim();
+    if (!id) {
+      throw new Error('Missing required field: projectUpdate');
+    }
+
+    const updateInput = {};
+    if (patch.body !== undefined) updateInput.body = String(patch.body);
+    if (patch.health !== undefined) updateInput.health = patch.health;
+    if (patch.isDiffHidden !== undefined) updateInput.isDiffHidden = patch.isDiffHidden;
+
+    if (Object.keys(updateInput).length === 0) {
+      throw new Error('No update fields provided');
+    }
+
+    const payload = await executeGraphQL(client, PROJECT_UPDATE_UPDATE_MUTATION, {
+      id,
+      input: updateInput,
+    });
+
+    if (!payload?.projectUpdateUpdate?.success || !payload?.projectUpdateUpdate?.projectUpdate?.id) {
+      throw new Error('Failed to update project update');
+    }
+
+    const projectUpdate = await fetchProjectUpdateDetails(client, payload.projectUpdateUpdate.projectUpdate.id);
+    return {
+      projectUpdate,
+      changed: Object.keys(updateInput),
+    };
+  }, 'updateProjectUpdate');
+}
+
+export async function archiveProjectUpdate(client, projectUpdateId) {
+  return withLinearErrorHandling(async () => {
+    const id = String(projectUpdateId || '').trim();
+    if (!id) {
+      throw new Error('Missing required field: projectUpdate');
+    }
+
+    const payload = await executeGraphQL(client, PROJECT_UPDATE_ARCHIVE_MUTATION, { id });
+    if (!payload?.projectUpdateArchive?.success) {
+      throw new Error('Failed to archive project update');
+    }
+
+    return {
+      success: true,
+      projectUpdateId: id,
+    };
+  }, 'archiveProjectUpdate');
+}
+
+export async function unarchiveProjectUpdate(client, projectUpdateId) {
+  return withLinearErrorHandling(async () => {
+    const id = String(projectUpdateId || '').trim();
+    if (!id) {
+      throw new Error('Missing required field: projectUpdate');
+    }
+
+    const payload = await executeGraphQL(client, PROJECT_UPDATE_UNARCHIVE_MUTATION, { id });
+    if (!payload?.projectUpdateUnarchive?.success) {
+      throw new Error('Failed to unarchive project update');
+    }
+
+    const projectUpdate = await fetchProjectUpdateDetails(client, id);
+    return {
+      success: true,
+      projectUpdate,
+    };
+  }, 'unarchiveProjectUpdate');
+}
+
 /**
  * Fetch detailed issue information including comments, parent, children, and attachments
  * @param {LinearClient} client - Linear SDK client
@@ -1792,6 +2100,33 @@ function transformProject(rawProject) {
       progress: milestone.progress ?? null,
       targetDate: milestone.targetDate ?? null,
     })),
+  };
+}
+
+function transformProjectUpdate(rawUpdate) {
+  if (!rawUpdate) return null;
+
+  return {
+    id: rawUpdate.id,
+    body: rawUpdate.body ?? '',
+    health: rawUpdate.health ?? null,
+    createdAt: rawUpdate.createdAt ?? null,
+    updatedAt: rawUpdate.updatedAt ?? null,
+    archivedAt: rawUpdate.archivedAt ?? null,
+    editedAt: rawUpdate.editedAt ?? null,
+    url: rawUpdate.url ?? null,
+    slugId: rawUpdate.slugId ?? null,
+    isDiffHidden: rawUpdate.isDiffHidden ?? false,
+    isStale: rawUpdate.isStale ?? false,
+    project: rawUpdate.project ? {
+      id: rawUpdate.project.id,
+      name: rawUpdate.project.name,
+    } : null,
+    user: rawUpdate.user ? {
+      id: rawUpdate.user.id,
+      name: rawUpdate.user.name,
+      displayName: rawUpdate.user.displayName,
+    } : null,
   };
 }
 
