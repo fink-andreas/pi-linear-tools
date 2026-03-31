@@ -7,6 +7,12 @@ Useful mental model:
 - `sync-doc run` and `sync-doc check` default to all configured targets in `.linear-tools.json`
 - `sync-doc --target X` narrows the operation to one configured target
 
+Reference conventions:
+- issues use issue key or issue ID
+- projects use project name or project ID
+- project updates use project update ID
+- milestones use milestone ID
+
 ## Install
 
 ### As a pi package (recommended)

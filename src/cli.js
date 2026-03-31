@@ -218,6 +218,12 @@ More Help:
   pi-linear-tools sync-doc --help
   pi-linear-tools milestone --help
 
+Reference Conventions:
+  issues           issue key (ENG-123) or issue ID
+  projects         project name or project ID
+  project-updates  project update ID
+  milestones       milestone ID
+
 Common Flags:
   --project     Project name or ID
   --team        Team key (e.g., ENG)
