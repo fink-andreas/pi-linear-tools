@@ -153,11 +153,16 @@ async function loadConfigFile(configPath) {
   }
 
   const baseDir = dirname(configPath);
-  const targets = rawTargets.map((target, index) => normalizeTargetConfig(target, baseDir, `${configPath}#${index + 1}`));
+  const targets = rawTargets.map((target, index) => normalizeTargetConfig(
+    target,
+    baseDir,
+    `${configPath}#${index + 1}`,
+    configPath
+  ));
   return { path: configPath, targets };
 }
 
-function normalizeTargetConfig(target, baseDir, sourceLabel) {
+function normalizeTargetConfig(target, baseDir, sourceLabel, sourceConfigPath) {
   if (!target || typeof target !== 'object' || Array.isArray(target)) {
     throw new Error(`Invalid sync target at ${sourceLabel}`);
   }
@@ -191,6 +196,7 @@ function normalizeTargetConfig(target, baseDir, sourceLabel) {
     entityType,
     field,
     marker,
+    sourceConfigPath: sourceConfigPath || null,
   };
 }
 
@@ -250,7 +256,8 @@ function buildInlineTargetFromFlags(flags, cwd) {
       marker: flags.marker,
     },
     cwd,
-    'cli-flags'
+    'cli-flags',
+    null
   );
 }
 
@@ -320,15 +327,8 @@ async function getRemoteEntity(client, target) {
   };
 }
 
-export async function runSyncDoc(client, options = {}) {
-  const cwd = resolve(options.cwd || process.cwd());
-  const mode = options.mode === 'check' ? 'check' : 'run';
-
-  const inlineTarget = buildInlineTargetFromFlags(options, cwd);
-  const loaded = await loadSyncDocTargets({ cwd, configPath: options.configPath });
-  const target = inlineTarget || selectTarget(loaded.targets, options.targetName || options.target);
+async function runSyncDocTarget(client, target, loaded, { cwd, mode, inlineTarget }) {
   const remoteEntity = await getRemoteEntity(client, target);
-
   const fileContent = await readFile(target.file, 'utf8');
   const sourceContent = normalizeNewlines(fileContent).trimEnd();
   const nextValue = upsertManagedContent(remoteEntity.fieldValue, target.marker, sourceContent);
@@ -359,6 +359,7 @@ export async function runSyncDoc(client, options = {}) {
     marker: target.marker,
     file: target.file,
     configPath: loaded.configPath,
+    sourceConfigPath: target.sourceConfigPath || loaded.configPath || null,
     statePath,
   };
 
@@ -406,4 +407,58 @@ export async function runSyncDoc(client, options = {}) {
     beforeHash: sha256(currentValue),
     afterHash: sha256(nextValue),
   };
+}
+
+export async function listSyncDocTargets(options = {}) {
+  const cwd = resolve(options.cwd || process.cwd());
+  const loaded = await loadSyncDocTargets({ cwd, configPath: options.configPath });
+
+  return {
+    configPath: loaded.configPath,
+    statePath: loaded.statePath,
+    targets: loaded.targets.map((target) => ({
+      name: target.name,
+      entityType: target.entityType,
+      entityRef: target.project || target.issue,
+      file: target.file,
+      field: target.field,
+      marker: target.marker,
+      sourceConfigPath: target.sourceConfigPath || loaded.configPath || null,
+    })),
+  };
+}
+
+export async function runAllSyncDocs(client, options = {}) {
+  const cwd = resolve(options.cwd || process.cwd());
+  const loaded = await loadSyncDocTargets({ cwd, configPath: options.configPath });
+
+  if (!Array.isArray(loaded.targets) || loaded.targets.length === 0) {
+    throw new Error(`No sync targets configured. Add ${CONFIG_FILENAME} or pass --file with --project/--issue`);
+  }
+
+  const results = [];
+  for (const target of loaded.targets) {
+    results.push(await runSyncDocTarget(client, target, loaded, { cwd, mode: options.mode === 'check' ? 'check' : 'run', inlineTarget: false }));
+  }
+
+  return {
+    mode: options.mode === 'check' ? 'check' : 'run',
+    all: true,
+    configPath: loaded.configPath,
+    statePath: loaded.statePath,
+    total: results.length,
+    changedCount: results.filter((result) => result.changed).length,
+    unchangedCount: results.filter((result) => !result.changed).length,
+    results,
+  };
+}
+
+export async function runSyncDoc(client, options = {}) {
+  const cwd = resolve(options.cwd || process.cwd());
+  const mode = options.mode === 'check' ? 'check' : 'run';
+
+  const inlineTarget = buildInlineTargetFromFlags(options, cwd);
+  const loaded = await loadSyncDocTargets({ cwd, configPath: options.configPath });
+  const target = inlineTarget || selectTarget(loaded.targets, options.targetName || options.target);
+  return runSyncDocTarget(client, target, loaded, { cwd, mode, inlineTarget });
 }

@@ -1,7 +1,7 @@
 import { loadSettings, saveSettings } from './settings.js';
 import { createLinearClient } from './linear-client.js';
 import { resolveProjectRef } from './linear.js';
-import { runSyncDoc } from './sync-doc.js';
+import { listSyncDocTargets, runAllSyncDocs, runSyncDoc } from './sync-doc.js';
 import {
   authenticate,
   logout,
@@ -201,8 +201,11 @@ Milestone Actions:
   delete <milestone-id>
 
 Sync Doc Actions:
+  list [--config X]
   run [--target X] [--config X]
+  run --all [--config X]
   check [--target X] [--config X]
+  check --all [--config X]
   run --file X --project X [--field content|description] [--marker X]
   run --file X --issue X [--field description] [--marker X]
 
@@ -348,18 +351,20 @@ function printSyncDocHelp() {
   console.log(`pi-linear-tools sync-doc - Sync markdown files into Linear
 
 Usage:
-  pi-linear-tools sync-doc [run|check] [options]
+  pi-linear-tools sync-doc [list|run|check] [options]
 
 Config:
   Reads targets from .linear-tools.json in the current project tree and ~/.linear-tools.json.
   Prefer a repo or monorepo-root .linear-tools.json for shared targets. Use ~/.linear-tools.json for personal defaults.
 
 Actions:
+  list     Show resolved sync targets from config
   run      Update Linear if the managed block differs
   check    Show whether a sync would change Linear
 
 Target Options:
   --target X              Target name from config
+  --all                   Run every configured target from config
   --config X              Explicit path to .linear-tools.json
 
 One-off Options:
@@ -375,8 +380,11 @@ Managed Block:
   <!-- linear-tools:sync-end MARKER -->
 
 Examples:
+  pi-linear-tools sync-doc list
   pi-linear-tools sync-doc run --target package-readme
+  pi-linear-tools sync-doc run --all
   pi-linear-tools sync-doc check --target package-readme
+  pi-linear-tools sync-doc check --all
   pi-linear-tools sync-doc run --file README.md --project "Roadmap Refresh" --field content
 `);
 }
@@ -1010,8 +1018,36 @@ function printSyncDocResult(result) {
   console.log(`Synced ${result.file} to ${result.entityType} "${result.entityName}" field "${result.field}" using marker "${result.marker}"`);
 }
 
+function printSyncDocTargets(result) {
+  if (!Array.isArray(result.targets) || result.targets.length === 0) {
+    console.log('No sync-doc targets configured.');
+    return;
+  }
+
+  const lines = result.targets.map((target) => {
+    const entityLabel = `${target.entityType}:${target.entityRef}`;
+    return `- ${target.name} -> ${entityLabel} field "${target.field}" from ${target.file} (marker: ${target.marker})`;
+  });
+
+  if (result.configPath) {
+    console.log(`Resolved sync-doc targets from ${result.configPath}`);
+  }
+  console.log(lines.join('\n'));
+}
+
+function printSyncDocBatchResult(result) {
+  const header = result.mode === 'check'
+    ? `Checked ${result.total} sync-doc target(s): ${result.changedCount} need updates, ${result.unchangedCount} unchanged`
+    : `Ran ${result.total} sync-doc target(s): ${result.changedCount} updated, ${result.unchangedCount} unchanged`;
+  const lines = result.results.map((entry) => {
+    const status = entry.changed ? (result.mode === 'check' ? 'needs-sync' : 'synced') : 'unchanged';
+    return `- [${status}] ${entry.targetName} -> ${entry.entityType} "${entry.entityName}" field "${entry.field}" from ${entry.file}`;
+  });
+
+  console.log([header, ...lines].join('\n'));
+}
+
 async function handleSyncDocCommand(args) {
-  const client = await createAuthenticatedClient();
   const [maybeAction, ...restArgs] = args;
   const action = !maybeAction || maybeAction.startsWith('-') ? 'run' : maybeAction;
   const commandArgs = !maybeAction || maybeAction.startsWith('-') ? args : restArgs;
@@ -1021,8 +1057,33 @@ async function handleSyncDocCommand(args) {
     return;
   }
 
-  if (!['run', 'check'].includes(action)) {
+  if (!['list', 'run', 'check'].includes(action)) {
     throw new Error(`Unknown sync-doc action: ${action}`);
+  }
+
+  if (action === 'list') {
+    const result = await listSyncDocTargets({
+      cwd: process.cwd(),
+      configPath: readFlag(commandArgs, '--config'),
+    });
+    printSyncDocTargets(result);
+    return;
+  }
+
+  if (hasFlag(commandArgs, '--all') && (readFlag(commandArgs, '--target') || readFlag(commandArgs, '--file'))) {
+    throw new Error('The --all flag cannot be combined with --target or one-off --file/--project/--issue options');
+  }
+
+  const client = await createAuthenticatedClient();
+
+  if (hasFlag(commandArgs, '--all')) {
+    const result = await runAllSyncDocs(client, {
+      mode: action,
+      cwd: process.cwd(),
+      configPath: readFlag(commandArgs, '--config'),
+    });
+    printSyncDocBatchResult(result);
+    return;
   }
 
   const result = await runSyncDoc(client, {
