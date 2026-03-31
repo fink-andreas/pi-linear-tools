@@ -145,9 +145,9 @@ Usage:
   pi-linear-tools <command> [options]
 
 Commands:
-  issue <action> [options]      Manage issues
-  project <action> [options]    Manage projects
-  project-update <action> [options]  Manage project updates (Linear Updates tab)
+  issue <action> [options]      Manage issues, comments, and issue activity/history
+  project <action> [options]    Manage projects and project metadata
+  project-update <action> [options]  Manage project updates (Linear Updates tab entries)
   sync-doc [action] [options]   Sync local markdown into Linear fields
   team <action> [options]       Manage teams
   milestone <action> [options]  Manage milestones
@@ -210,11 +210,14 @@ Sync Doc Actions:
   run --file X --issue X [--field description] [--marker X]
 
 Command Notes:
+  issue update changes issue fields; issue activity reads the Activity timeline.
+  project update changes project fields; project-update manages Updates tab entries.
   project-update maps to Linear project updates in the Updates tab.
   sync-doc run/check defaults to all configured targets in .linear-tools.json.
   sync-doc --target X narrows the operation to one configured target.
 
 More Help:
+  pi-linear-tools issue --help
   pi-linear-tools project --help
   pi-linear-tools project-update --help
   pi-linear-tools sync-doc --help
@@ -237,16 +240,19 @@ Common Flags:
 Examples:
   pi-linear-tools auth login
   pi-linear-tools auth status
+  pi-linear-tools issue update ENG-123 --state "In Progress" --assignee me
+  pi-linear-tools issue comment ENG-123 --body "Blocked on API review"
   pi-linear-tools issue activity ENG-123 --limit 20
   pi-linear-tools project view "Roadmap Refresh"
+  pi-linear-tools project update "Roadmap Refresh" --target-date 2026-04-15 --lead me
   pi-linear-tools project-update create --project "Roadmap Refresh" --body "Weekly update" --health onTrack
+  pi-linear-tools project-update update 12345678-1234-1234-1234-123456789abc --health atRisk
   pi-linear-tools sync-doc list
   pi-linear-tools sync-doc run
   pi-linear-tools sync-doc check
   pi-linear-tools issue list --project MyProject --states "In Progress,Backlog"
   pi-linear-tools issue view ENG-123
   pi-linear-tools issue create --title "Fix bug" --team ENG --priority 2
-  pi-linear-tools issue update ENG-123 --state "In Progress" --assignee me
   pi-linear-tools issue start ENG-123
   pi-linear-tools milestone list --project MyProject
   pi-linear-tools config --api-key lin_xxx
@@ -264,6 +270,11 @@ function printIssueHelp() {
 
 Usage:
   pi-linear-tools issue <action> [options]
+
+Guidance:
+  Use "update" to change the issue itself: title, description, state, assignee, milestone, or parent.
+  Use "comment" to add a discussion entry.
+  Use "activity" to read the Activity timeline shown in Linear.
 
 Actions:
   list      List issues in a project
@@ -283,11 +294,11 @@ List Options:
   --limit N        Max results (default: 50)
 
 View Options:
-  <issue>          Issue key (e.g., ENG-123) or ID
+  <issue>          Issue key (e.g., ENG-123), ID, or issue URL
   --no-comments    Exclude comments from output
 
 Activity Options:
-  <issue>          Issue key or ID
+  <issue>          Issue key, ID, or issue URL
   --limit N        Max activity entries to fetch (default: 20)
   --include-archived X  true or false
 
@@ -321,6 +332,14 @@ Start Options:
 
 Delete Options:
   <issue>          Issue key or ID
+
+Examples:
+  pi-linear-tools issue view ENG-123
+  pi-linear-tools issue update ENG-123 --state "In Progress" --assignee me
+  pi-linear-tools issue update ENG-123 --milestone "Sprint 12" --priority 2
+  pi-linear-tools issue comment ENG-123 --body "Ready for review"
+  pi-linear-tools issue activity ENG-123 --limit 20
+  pi-linear-tools issue activity https://linear.app/workspace/issue/ENG-123/example --limit 20
 `);
 }
 
@@ -329,6 +348,10 @@ function printProjectHelp() {
 
 Usage:
   pi-linear-tools project <action> [options]
+
+Guidance:
+  Use "project update" to change the project record itself: name, teams, dates, lead, description, priority.
+  Use "project-update" for the Updates tab entries that appear as weekly or status updates in Linear.
 
 Actions:
   list      List all accessible projects
@@ -373,6 +396,12 @@ Archive Options:
 
 Unarchive Options:
   <project>        Project name or ID
+
+Examples:
+  pi-linear-tools project view "Roadmap Refresh"
+  pi-linear-tools project update "Roadmap Refresh" --description "New scope" --target-date 2026-04-15
+  pi-linear-tools project update "Roadmap Refresh" --lead me --teams ENG,OPS
+  pi-linear-tools project archive "Roadmap Refresh"
 `);
 }
 
@@ -423,6 +452,10 @@ function printProjectUpdateHelp() {
 Usage:
   pi-linear-tools project-update <action> [options]
 
+Guidance:
+  This command manages the entries shown in a project's Updates tab.
+  Create an update by project name or ID, then use the returned project update ID for later view/update/archive actions.
+
 Actions:
   list       List updates for a project
   view       View project update details
@@ -456,6 +489,12 @@ Archive Options:
 
 Unarchive Options:
   <project-update-id>     Project update ID
+
+Examples:
+  pi-linear-tools project-update list --project "Roadmap Refresh"
+  pi-linear-tools project-update create --project "Roadmap Refresh" --body "Weekly update" --health onTrack
+  pi-linear-tools project-update update 12345678-1234-1234-1234-123456789abc --body "Revised update" --health atRisk
+  pi-linear-tools project-update view 12345678-1234-1234-1234-123456789abc
 `);
 }
 
