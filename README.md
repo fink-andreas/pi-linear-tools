@@ -124,12 +124,14 @@ pi-linear-tools project-update unarchive 22222222-2222-4222-8222-222222222222
 ### Sync doc commands
 
 ```bash
-pi-linear-tools sync-doc run --target skiptracer-readme
-pi-linear-tools sync-doc check --target skiptracer-readme
+pi-linear-tools sync-doc run --target package-readme
+pi-linear-tools sync-doc check --target package-readme
 pi-linear-tools sync-doc run --file README.md --project "Roadmap Refresh" --field content
 ```
 
-Config is read from `.linear-tools.json` in the current project tree and `~/.linear-tools.json`.
+The simplest setup is to keep `.linear-tools.json` at your monorepo or repo root so the targets live with the code they sync.
+
+`~/.linear-tools.json` is also supported for personal defaults, but it should be treated as an override layer, not the main source of truth for repo-owned sync targets.
 
 Example:
 
@@ -138,9 +140,9 @@ Example:
   "syncDocs": {
     "targets": [
       {
-        "name": "skiptracer-readme",
-        "file": "packages/skiptracer/README.md",
-        "project": "https://linear.app/avm/project/skiptracing-185cf7975d8d",
+        "name": "package-readme",
+        "file": "packages/example-package/README.md",
+        "project": "https://linear.app/example/project/example-project-abc123def456",
         "field": "content"
       }
     ]

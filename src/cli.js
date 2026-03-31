@@ -352,6 +352,7 @@ Usage:
 
 Config:
   Reads targets from .linear-tools.json in the current project tree and ~/.linear-tools.json.
+  Prefer a repo or monorepo-root .linear-tools.json for shared targets. Use ~/.linear-tools.json for personal defaults.
 
 Actions:
   run      Update Linear if the managed block differs
@@ -374,8 +375,8 @@ Managed Block:
   <!-- linear-tools:sync-end MARKER -->
 
 Examples:
-  pi-linear-tools sync-doc run --target skiptracer-readme
-  pi-linear-tools sync-doc check --target skiptracer-readme
+  pi-linear-tools sync-doc run --target package-readme
+  pi-linear-tools sync-doc check --target package-readme
   pi-linear-tools sync-doc run --file README.md --project "Roadmap Refresh" --field content
 `);
 }

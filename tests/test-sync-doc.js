@@ -11,7 +11,7 @@ import { defaultMarkerFromFile, extractManagedSegments, loadSyncDocTargets, runS
 function createProjectPayload(content) {
   return {
     id: '11111111-1111-4111-8111-111111111111',
-    name: 'Skiptracing',
+    name: 'Example Project',
     description: '',
     content,
     color: '#123456',
@@ -21,8 +21,8 @@ function createProjectPayload(content) {
     health: 'onTrack',
     startDate: '2026-04-01',
     targetDate: '2026-06-30',
-    slugId: 'skiptracing-185cf7975d8d',
-    url: 'https://linear.app/avm/project/skiptracing-185cf7975d8d',
+    slugId: 'abc123def456',
+    url: 'https://linear.app/example/project/example-project-abc123def456',
     archivedAt: null,
     completedAt: null,
     canceledAt: null,
@@ -133,7 +133,7 @@ async function testLoadSyncDocTargets() {
 async function testRunSyncDocProjectTarget() {
   const repoDir = await mkdtemp(join(tmpdir(), 'pi-linear-tools-sync-project-'));
   const readmePath = join(repoDir, 'README.md');
-  await writeFile(readmePath, '# Skiptracer\n\nActive runtime surface.\n', 'utf8');
+  await writeFile(readmePath, '# Example Package\n\nActive runtime surface.\n', 'utf8');
 
   let remoteContent = 'Manual intro above.\n\n<!-- linear-tools:sync-start README -->\nOld content\n<!-- linear-tools:sync-end README -->\n\nManual tail below.';
 
@@ -141,8 +141,8 @@ async function testRunSyncDocProjectTarget() {
     projects: async () => ({
       nodes: [{
         id: '11111111-1111-4111-8111-111111111111',
-        name: 'Skiptracing',
-        slugId: 'skiptracing-185cf7975d8d',
+        name: 'Example Project',
+        slugId: 'example-project-abc123def456',
       }],
     }),
     rawRequest: async (query, variables) => {
@@ -152,8 +152,8 @@ async function testRunSyncDocProjectTarget() {
             projects: {
               nodes: [{
                 id: '11111111-1111-4111-8111-111111111111',
-                name: 'Skiptracing',
-                slugId: '185cf7975d8d',
+                name: 'Example Project',
+                slugId: 'abc123def456',
                 archivedAt: null,
               }],
             },
@@ -173,7 +173,7 @@ async function testRunSyncDocProjectTarget() {
 
       if (query.includes('ProjectUpdate')) {
         remoteContent = variables.input.content
-          .replace('<!-- linear-tools:sync-start README -->\n# Skiptracer', '<!-- linear-tools:sync-start README -->\n\n# Skiptracer')
+          .replace('<!-- linear-tools:sync-start README -->\n# Example Package', '<!-- linear-tools:sync-start README -->\n\n# Example Package')
           .replace('\nActive runtime surface.\n', '\n\nActive runtime surface.\n');
         return {
           data: {
@@ -196,14 +196,14 @@ async function testRunSyncDocProjectTarget() {
     mode: 'run',
     cwd: repoDir,
     file: readmePath,
-    project: 'https://linear.app/avm/project/skiptracing-185cf7975d8d',
+    project: 'https://linear.app/example/project/example-project-abc123def456',
     field: 'content',
   });
 
   assert.equal(result.changed, true);
   assert.match(remoteContent, /Manual intro above\./);
   assert.match(remoteContent, /linear-tools:sync-start README/);
-  assert.match(remoteContent, /# Skiptracer/);
+  assert.match(remoteContent, /# Example Package/);
   assert.match(remoteContent, /Manual tail below\./);
   assert.ok(existsSync(join(repoDir, '.linear-tools', 'sync-state.json')));
 
@@ -217,7 +217,7 @@ async function testRunSyncDocProjectTarget() {
     mode: 'check',
     cwd: repoDir,
     file: readmePath,
-    project: 'https://linear.app/avm/project/skiptracing-185cf7975d8d',
+    project: 'https://linear.app/example/project/example-project-abc123def456',
     field: 'content',
   });
 
