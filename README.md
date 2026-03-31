@@ -3,6 +3,8 @@
 `pi-linear-tools` is a Pi extension for the [Pi coding agent](https://github.com/badlogic/pi-mono) that lets you manage [Linear](https://linear.app/about) issues, projects, and milestones via LLM tools and CLI commands.
 
 Useful mental model:
+- `issue update` changes issue fields; `issue comment` adds discussion; `issue activity` reads the Activity timeline
+- `project update` changes project fields; `project-update` manages Updates tab entries
 - `project-update` maps to Linear project updates in the Updates tab
 - `sync-doc run` and `sync-doc check` default to all configured targets in `.linear-tools.json`
 - `sync-doc --target X` narrows the operation to one configured target
@@ -54,7 +56,7 @@ Optional non-interactive commands:
 ## LLM-callable tools
 
 ### `linear_issue`
-Actions: `list`, `view`, `create`, `update`, `comment`, `start`, `delete`
+Actions: `list`, `view`, `activity`, `create`, `update`, `comment`, `start`, `delete`
 
 ### `linear_project`
 Actions: `list`, `view`, `create`, `update`, `delete`, `archive`, `unarchive`
@@ -71,6 +73,7 @@ If installed globally via ```npm install -g @fink-andreas/pi-linear-tools```, CL
 
 ```bash
 pi-linear-tools --help
+pi-linear-tools issue --help
 pi-linear-tools project --help
 pi-linear-tools project-update --help
 pi-linear-tools sync-doc --help
@@ -82,6 +85,8 @@ pi-linear-tools config --team ENG --project "My Project"
 
 ### Issue commands
 
+Use `update` to change the issue itself. Use `comment` to add discussion. Use `activity` to read the Activity timeline shown in Linear.
+
 ```bash
 # List issues
 pi-linear-tools issue list --project "My Project"
@@ -91,7 +96,10 @@ pi-linear-tools issue list --project "My Project" --assignee me
 # View issue details
 pi-linear-tools issue view ENG-123
 pi-linear-tools issue view ENG-123 --no-comments
+
+# Read Activity timeline
 pi-linear-tools issue activity ENG-123 --limit 20
+pi-linear-tools issue activity https://linear.app/workspace/issue/ENG-123/example --limit 20
 
 # Create issue
 pi-linear-tools issue create --title "Fix login bug" --team ENG
@@ -101,13 +109,15 @@ pi-linear-tools issue create --title "New feature" --team ENG --project "My Proj
 pi-linear-tools issue update ENG-123 --state "In Progress"
 pi-linear-tools issue update ENG-123 --title "Updated title" --assignee me
 pi-linear-tools issue update ENG-123 --milestone "Sprint 1"
+pi-linear-tools issue update ENG-123 --sub-issue-of ENG-100
 
 # Comment on issue
 pi-linear-tools issue comment ENG-123 --body "This is fixed in PR #456"
+pi-linear-tools issue comment ENG-123 --body "Blocked on API review"
 
 # Start working on issue (creates branch, sets state to In Progress)
 pi-linear-tools issue start ENG-123
-pi-linear-tools issue start ENG-123 --branch custom-branch-name
+pi-linear-tools issue start ENG-123 --from-ref main --on-branch-exists suffix
 
 # Delete issue
 pi-linear-tools issue delete ENG-123
@@ -115,11 +125,14 @@ pi-linear-tools issue delete ENG-123
 
 ### Project commands
 
+Use `project update` to change the project record itself: name, teams, dates, lead, description, priority, color, or icon.
+
 ```bash
 pi-linear-tools project list
 pi-linear-tools project view "My Project"
 pi-linear-tools project create --name "Roadmap Refresh" --teams ENG,OPS --lead me
 pi-linear-tools project update "Roadmap Refresh" --description "Updated scope" --target-date 2026-06-30
+pi-linear-tools project update "Roadmap Refresh" --lead me --teams ENG,OPS
 pi-linear-tools project delete "Roadmap Refresh"
 pi-linear-tools project archive "Roadmap Refresh"
 pi-linear-tools project unarchive 11111111-1111-4111-8111-111111111111
@@ -127,13 +140,13 @@ pi-linear-tools project unarchive 11111111-1111-4111-8111-111111111111
 
 ### Project update commands
 
-This maps to the Updates tab inside a Linear project.
+This maps to the Updates tab inside a Linear project. Create an update by project name or ID, then use the returned project update ID for later view, update, archive, or unarchive actions.
 
 ```bash
 pi-linear-tools project-update list --project "My Project"
 pi-linear-tools project-update view 22222222-2222-4222-8222-222222222222
 pi-linear-tools project-update create --project "My Project" --body "Weekly progress update" --health onTrack
-pi-linear-tools project-update update 22222222-2222-4222-8222-222222222222 --health atRisk
+pi-linear-tools project-update update 22222222-2222-4222-8222-222222222222 --body "Revised update" --health atRisk
 pi-linear-tools project-update archive 22222222-2222-4222-8222-222222222222
 pi-linear-tools project-update unarchive 22222222-2222-4222-8222-222222222222
 ```
