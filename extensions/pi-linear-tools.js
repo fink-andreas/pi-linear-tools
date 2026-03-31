@@ -48,6 +48,7 @@ try {
 import {
   executeIssueList,
   executeIssueView,
+  executeIssueActivity,
   executeIssueCreate,
   executeIssueUpdate,
   executeIssueComment,
@@ -490,18 +491,18 @@ async function registerLinearTools(pi) {
   pi.registerTool({
     name: 'linear_issue',
     label: 'Linear Issue',
-    description: 'Interact with Linear issues. Actions: list, view, create, update, comment, start, delete',
+    description: 'Interact with Linear issues. Actions: list, view, activity, create, update, comment, start, delete',
     parameters: {
       type: 'object',
       properties: {
         action: {
           type: 'string',
-          enum: ['list', 'view', 'create', 'update', 'comment', 'start', 'delete'],
+          enum: ['list', 'view', 'activity', 'create', 'update', 'comment', 'start', 'delete'],
           description: 'Action to perform on issue(s)',
         },
         issue: {
           type: 'string',
-          description: 'Issue key (ABC-123) or Linear issue ID (for view, update, comment, start, delete)',
+          description: 'Issue key (ABC-123) or Linear issue ID (for view, activity, update, comment, start, delete)',
         },
         project: {
           type: 'string',
@@ -521,8 +522,8 @@ async function registerLinearTools(pi) {
           description: 'Optional explicit assignee ID alias for update/create debugging/compatibility.',
         },
         limit: {
-          type: 'number',
-          description: 'Maximum number of issues to list (default: 50)',
+          type: 'integer',
+          description: 'Maximum number of issues or activity entries to list',
         },
         includeComments: {
           type: 'boolean',
@@ -537,8 +538,12 @@ async function registerLinearTools(pi) {
           description: 'Issue description in markdown (for create, update)',
         },
         priority: {
-          type: 'number',
+          type: 'integer',
           description: 'Priority 0..4 (for create, update)',
+        },
+        includeArchived: {
+          type: 'boolean',
+          description: 'Include archived resources when listing activity or project updates',
         },
         state: {
           type: 'string',
@@ -630,6 +635,8 @@ async function registerLinearTools(pi) {
               return await executeIssueList(client, params);
             case 'view':
               return await executeIssueView(client, params);
+            case 'activity':
+              return await executeIssueActivity(client, params);
             case 'create':
               return await executeIssueCreate(client, params, { resolveDefaultTeam });
             case 'update':
@@ -734,7 +741,7 @@ async function registerLinearTools(pi) {
           description: 'Project lead user ID, "me", or "none" when updating',
         },
         priority: {
-          type: 'number',
+          type: 'integer',
           description: 'Priority 0-4',
           minimum: 0,
           maximum: 4,
@@ -840,7 +847,7 @@ async function registerLinearTools(pi) {
           description: 'Whether to hide the diff on the update',
         },
         limit: {
-          type: 'number',
+          type: 'integer',
           description: 'Max updates to list',
           minimum: 1,
           multipleOf: 1,
@@ -1140,7 +1147,7 @@ export default async function piLinearToolsExtension(pi) {
       const showMilestoneTool = await shouldExposeMilestoneTool();
       const toolLines = [
         'LLM-callable tools:',
-        '  linear_issue (list/view/create/update/comment/start/delete)',
+        '  linear_issue (list/view/activity/create/update/comment/start/delete)',
         '  linear_project (list/view/create/update/delete/archive/unarchive)',
         '  linear_project_update (list/view/create/update/archive/unarchive)',
         '  linear_team (list)',

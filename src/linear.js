@@ -312,6 +312,90 @@ const PROJECT_UPDATE_UNARCHIVE_MUTATION = `
   }
 `;
 
+const ISSUE_ACTIVITY_QUERY = `
+  query IssueActivity($id: String!, $first: Int!, $includeArchived: Boolean!) {
+    issue(id: $id) {
+      id
+      identifier
+      title
+      url
+      history(first: $first, includeArchived: $includeArchived) {
+        nodes {
+          id
+          createdAt
+          updatedAt
+          archived
+          archivedAt
+          autoArchived
+          autoClosed
+          trashed
+          updatedDescription
+          fromTitle
+          toTitle
+          fromPriority
+          toPriority
+          fromState {
+            id
+            name
+          }
+          toState {
+            id
+            name
+          }
+          fromAssignee {
+            id
+            name
+            displayName
+          }
+          toAssignee {
+            id
+            name
+            displayName
+          }
+          fromProject {
+            id
+            name
+          }
+          toProject {
+            id
+            name
+          }
+          fromProjectMilestone {
+            id
+            name
+          }
+          toProjectMilestone {
+            id
+            name
+          }
+          addedLabels {
+            id
+            name
+          }
+          removedLabels {
+            id
+            name
+          }
+          relationChanges {
+            identifier
+            type
+          }
+          attachment {
+            id
+            title
+            url
+          }
+          actor {
+            id
+            name
+            displayName
+          }
+        }
+      }
+    }
+  }
+`;
+
 /**
  * Execute an optimized GraphQL query using rawRequest
  * Falls back to SDK method if rawRequest is not available (e.g., in tests)
@@ -616,6 +700,12 @@ function isLinearId(value) {
 function normalizeIssueLookupInput(issue) {
   const value = String(issue || '').trim();
   if (!value) throw new Error('Missing required issue identifier');
+
+  const issueUrlMatch = value.match(/\/issue\/([A-Za-z0-9]+-\d+)(?:[/?#]|$)/i);
+  if (issueUrlMatch?.[1]) {
+    return issueUrlMatch[1].toUpperCase();
+  }
+
   return value;
 }
 
@@ -677,6 +767,132 @@ function normalizeProjectUpdateHealth(value) {
   }
 
   return normalized;
+}
+
+function formatPriorityLabel(value) {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return String(value);
+  }
+
+  const priorityNames = ['No priority', 'Urgent', 'High', 'Medium', 'Low'];
+  return priorityNames[numeric] || `Priority ${numeric}`;
+}
+
+function getUserDisplayName(user) {
+  return user?.displayName || user?.name || 'Unknown';
+}
+
+function summarizeIssueHistoryEntry(entry) {
+  if (entry.fromState?.name || entry.toState?.name) {
+    if (entry.fromState?.name && entry.toState?.name) {
+      return `moved state from ${entry.fromState.name} to ${entry.toState.name}`;
+    }
+    if (entry.toState?.name) {
+      return `set state to ${entry.toState.name}`;
+    }
+    return `cleared state ${entry.fromState.name}`;
+  }
+
+  if (entry.fromAssignee || entry.toAssignee) {
+    const fromAssignee = entry.fromAssignee ? getUserDisplayName(entry.fromAssignee) : null;
+    const toAssignee = entry.toAssignee ? getUserDisplayName(entry.toAssignee) : null;
+    if (fromAssignee && toAssignee) {
+      return `reassigned from ${fromAssignee} to ${toAssignee}`;
+    }
+    if (toAssignee) {
+      return `assigned to ${toAssignee}`;
+    }
+    return `unassigned from ${fromAssignee}`;
+  }
+
+  if (entry.fromTitle || entry.toTitle) {
+    if (entry.fromTitle && entry.toTitle) {
+      return `renamed issue from "${entry.fromTitle}" to "${entry.toTitle}"`;
+    }
+    if (entry.toTitle) {
+      return `set title to "${entry.toTitle}"`;
+    }
+  }
+
+  if (entry.fromPriority !== undefined || entry.toPriority !== undefined) {
+    const fromPriority = formatPriorityLabel(entry.fromPriority);
+    const toPriority = formatPriorityLabel(entry.toPriority);
+    if (fromPriority && toPriority) {
+      return `changed priority from ${fromPriority} to ${toPriority}`;
+    }
+    if (toPriority) {
+      return `set priority to ${toPriority}`;
+    }
+  }
+
+  if (entry.fromProject?.name || entry.toProject?.name) {
+    if (entry.fromProject?.name && entry.toProject?.name) {
+      return `moved project from ${entry.fromProject.name} to ${entry.toProject.name}`;
+    }
+    if (entry.toProject?.name) {
+      return `added to project ${entry.toProject.name}`;
+    }
+    return `removed from project ${entry.fromProject.name}`;
+  }
+
+  if (entry.fromProjectMilestone?.name || entry.toProjectMilestone?.name) {
+    if (entry.fromProjectMilestone?.name && entry.toProjectMilestone?.name) {
+      return `moved milestone from ${entry.fromProjectMilestone.name} to ${entry.toProjectMilestone.name}`;
+    }
+    if (entry.toProjectMilestone?.name) {
+      return `set milestone to ${entry.toProjectMilestone.name}`;
+    }
+    return `cleared milestone ${entry.fromProjectMilestone.name}`;
+  }
+
+  if ((entry.addedLabels?.length || 0) > 0 || (entry.removedLabels?.length || 0) > 0) {
+    const labelChanges = [];
+    if ((entry.addedLabels?.length || 0) > 0) {
+      labelChanges.push(`added labels ${entry.addedLabels.map((label) => label.name).join(', ')}`);
+    }
+    if ((entry.removedLabels?.length || 0) > 0) {
+      labelChanges.push(`removed labels ${entry.removedLabels.map((label) => label.name).join(', ')}`);
+    }
+    return labelChanges.join('; ');
+  }
+
+  if ((entry.relationChanges?.length || 0) > 0) {
+    const relationSummary = entry.relationChanges
+      .map((relation) => `${relation.type} ${relation.identifier}`)
+      .join(', ');
+    return `updated relations: ${relationSummary}`;
+  }
+
+  if (entry.updatedDescription) {
+    return 'updated description';
+  }
+
+  if (entry.attachment?.title || entry.attachment?.url) {
+    return `linked attachment ${entry.attachment.title ? `"${entry.attachment.title}"` : entry.attachment.url}`;
+  }
+
+  if (entry.archivedAt || entry.archived === true) {
+    return entry.autoArchived ? 'auto-archived issue' : 'archived issue';
+  }
+
+  if (entry.autoClosed) {
+    return 'auto-closed issue';
+  }
+
+  if (entry.trashed === true) {
+    return 'trashed issue';
+  }
+
+  if (entry.trashed === false) {
+    return 'restored issue from trash';
+  }
+
+  return 'updated issue';
 }
 
 /**
@@ -1680,6 +1896,79 @@ export async function fetchIssueDetails(client, issueRef, options = {}) {
       attachments,
     };
   }, 'fetchIssueDetails');
+}
+
+export async function fetchIssueActivity(client, issueRef, options = {}) {
+  return withLinearErrorHandling(async () => {
+    const limit = normalizePositiveInteger(options.limit, 'limit', 20);
+    const includeArchived = options.includeArchived === true;
+    const resolved = await resolveIssue(client, issueRef);
+    const data = await executeGraphQL(client, ISSUE_ACTIVITY_QUERY, {
+      id: resolved.id,
+      first: limit,
+      includeArchived,
+    });
+
+    if (!data?.issue) {
+      throw new Error(`Issue not found: ${issueRef}`);
+    }
+
+    return {
+      issue: {
+        id: data.issue.id,
+        identifier: data.issue.identifier,
+        title: data.issue.title,
+        url: data.issue.url ?? null,
+      },
+      activity: (data.issue.history?.nodes || []).map((entry) => ({
+        id: entry.id,
+        createdAt: entry.createdAt ?? null,
+        updatedAt: entry.updatedAt ?? null,
+        actor: entry.actor ? {
+          id: entry.actor.id,
+          name: entry.actor.name,
+          displayName: entry.actor.displayName,
+        } : null,
+        fromState: entry.fromState ? { id: entry.fromState.id, name: entry.fromState.name } : null,
+        toState: entry.toState ? { id: entry.toState.id, name: entry.toState.name } : null,
+        fromAssignee: entry.fromAssignee ? {
+          id: entry.fromAssignee.id,
+          name: entry.fromAssignee.name,
+          displayName: entry.fromAssignee.displayName,
+        } : null,
+        toAssignee: entry.toAssignee ? {
+          id: entry.toAssignee.id,
+          name: entry.toAssignee.name,
+          displayName: entry.toAssignee.displayName,
+        } : null,
+        fromTitle: entry.fromTitle ?? null,
+        toTitle: entry.toTitle ?? null,
+        fromPriority: entry.fromPriority ?? null,
+        toPriority: entry.toPriority ?? null,
+        fromProject: entry.fromProject ? { id: entry.fromProject.id, name: entry.fromProject.name } : null,
+        toProject: entry.toProject ? { id: entry.toProject.id, name: entry.toProject.name } : null,
+        fromProjectMilestone: entry.fromProjectMilestone ? { id: entry.fromProjectMilestone.id, name: entry.fromProjectMilestone.name } : null,
+        toProjectMilestone: entry.toProjectMilestone ? { id: entry.toProjectMilestone.id, name: entry.toProjectMilestone.name } : null,
+        addedLabels: (entry.addedLabels || []).map((label) => ({ id: label.id, name: label.name })),
+        removedLabels: (entry.removedLabels || []).map((label) => ({ id: label.id, name: label.name })),
+        relationChanges: (entry.relationChanges || []).map((relation) => ({
+          identifier: relation.identifier,
+          type: relation.type,
+        })),
+        attachment: entry.attachment ? {
+          id: entry.attachment.id,
+          title: entry.attachment.title,
+          url: entry.attachment.url,
+        } : null,
+        archived: entry.archived ?? null,
+        archivedAt: entry.archivedAt ?? null,
+        autoArchived: entry.autoArchived ?? false,
+        autoClosed: entry.autoClosed ?? false,
+        trashed: entry.trashed ?? null,
+        updatedDescription: entry.updatedDescription ?? false,
+      })),
+    };
+  }, 'fetchIssueActivity');
 }
 
 // ===== MUTATION FUNCTIONS =====
@@ -2738,6 +3027,34 @@ export function formatIssueAsMarkdown(issueData, options = {}) {
         lines.push('');
       }
     }
+  }
+
+  return lines.join('\n');
+}
+
+export function formatIssueActivityAsMarkdown(issueData, options = {}) {
+  const { limit } = options;
+  const lines = [`# Activity for ${issueData.issue.identifier}: ${issueData.issue.title}`];
+
+  if (issueData.issue.url) {
+    lines.push('');
+    lines.push(`**URL:** ${issueData.issue.url}`);
+  }
+
+  if (!issueData.activity || issueData.activity.length === 0) {
+    lines.push('');
+    lines.push('No activity entries found.');
+    return lines.join('\n');
+  }
+
+  lines.push('');
+  lines.push(`Showing ${issueData.activity.length}${limit ? ` of up to ${limit}` : ''} activity entries.`);
+  lines.push('');
+
+  for (const entry of issueData.activity) {
+    const actor = entry.actor ? getUserDisplayName(entry.actor) : 'System';
+    const timestamp = entry.createdAt ? formatRelativeTime(entry.createdAt) : 'unknown time';
+    lines.push(`- **${actor}** ${summarizeIssueHistoryEntry(entry)} _(${timestamp})_`);
   }
 
   return lines.join('\n');

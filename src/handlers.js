@@ -19,7 +19,9 @@ import {
   resolveTeamRef,
   getTeamWorkflowStates,
   fetchIssueDetails,
+  fetchIssueActivity,
   formatIssueAsMarkdown,
+  formatIssueActivityAsMarkdown,
   fetchIssuesByProject,
   fetchProjectMilestones,
   fetchMilestoneDetails,
@@ -245,6 +247,28 @@ export async function executeIssueView(client, params) {
       title: issueData.title,
       state: issueData.state,
       url: issueData.url,
+    },
+  };
+}
+
+export async function executeIssueActivity(client, params) {
+  const issue = ensureNonEmpty(params.issue, 'issue');
+  const activityData = await fetchIssueActivity(client, issue, {
+    limit: params.limit,
+    includeArchived: params.includeArchived === true,
+  });
+  const markdown = formatIssueActivityAsMarkdown(activityData, {
+    limit: params.limit,
+  });
+
+  return {
+    content: [{ type: 'text', text: markdown }],
+    details: {
+      issueId: activityData.issue.id,
+      identifier: activityData.issue.identifier,
+      title: activityData.issue.title,
+      activityCount: activityData.activity.length,
+      url: activityData.issue.url,
     },
   };
 }

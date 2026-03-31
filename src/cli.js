@@ -12,6 +12,7 @@ import {
 import {
   executeIssueList,
   executeIssueView,
+  executeIssueActivity,
   executeIssueCreate,
   executeIssueUpdate,
   executeIssueComment,
@@ -166,6 +167,7 @@ Auth Actions:
 Issue Actions:
   list [--project X] [--states X,Y] [--assignee me|all] [--team X] [--limit N]
   view <issue> [--no-comments]
+  activity <issue> [--limit N] [--include-archived true|false]
   create --title X [--team X] [--project X] [--description X] [--priority 0-4] [--assignee me|ID]
   update <issue> [--title X] [--description X] [--state X] [--priority 0-4]
          [--assignee me|ID] [--milestone X] [--sub-issue-of X]
@@ -235,6 +237,7 @@ Common Flags:
 Examples:
   pi-linear-tools auth login
   pi-linear-tools auth status
+  pi-linear-tools issue activity ENG-123 --limit 20
   pi-linear-tools project view "Roadmap Refresh"
   pi-linear-tools project-update create --project "Roadmap Refresh" --body "Weekly update" --health onTrack
   pi-linear-tools sync-doc list
@@ -265,6 +268,7 @@ Usage:
 Actions:
   list      List issues in a project
   view      View issue details
+  activity  View issue activity/history
   create    Create a new issue
   update    Update an existing issue
   comment   Add a comment to an issue
@@ -281,6 +285,11 @@ List Options:
 View Options:
   <issue>          Issue key (e.g., ENG-123) or ID
   --no-comments    Exclude comments from output
+
+Activity Options:
+  <issue>          Issue key or ID
+  --limit N        Max activity entries to fetch (default: 20)
+  --include-archived X  true or false
 
 Create Options:
   --title X        Issue title (required)
@@ -739,6 +748,24 @@ async function handleIssueView(args) {
   console.log(result.content[0].text);
 }
 
+async function handleIssueActivity(args) {
+  const client = await createAuthenticatedClient();
+
+  const positional = args.filter((a) => !a.startsWith('-'));
+  if (positional.length === 0) {
+    throw new Error('Missing required argument: issue key or ID');
+  }
+
+  const params = {
+    issue: positional[0],
+    limit: parseNumber(readFlag(args, '--limit')),
+    includeArchived: parseBoolean(readFlag(args, '--include-archived')),
+  };
+
+  const result = await executeIssueActivity(client, params);
+  console.log(result.content[0].text);
+}
+
 async function handleIssueCreate(args) {
   const client = await createAuthenticatedClient();
 
@@ -852,6 +879,8 @@ async function handleIssue(args) {
       return handleIssueList(rest);
     case 'view':
       return handleIssueView(rest);
+    case 'activity':
+      return handleIssueActivity(rest);
     case 'create':
       return handleIssueCreate(rest);
     case 'update':

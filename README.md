@@ -91,6 +91,7 @@ pi-linear-tools issue list --project "My Project" --assignee me
 # View issue details
 pi-linear-tools issue view ENG-123
 pi-linear-tools issue view ENG-123 --no-comments
+pi-linear-tools issue activity ENG-123 --limit 20
 
 # Create issue
 pi-linear-tools issue create --title "Fix login bug" --team ENG

@@ -71,6 +71,10 @@ async function testRegistrationIncludesMilestoneWithDefaultApiKeyMode() {
     assert.ok(pi.tools.has('linear_team'));
     assert.ok(pi.tools.has('linear_milestone'));
     assert.ok(!pi.tools.has('linear_reload_runtime'));
+
+    const issueTool = pi.tools.get('linear_issue');
+    assert.ok(issueTool);
+    assert.ok(issueTool.parameters.properties.action.enum.includes('activity'));
   });
 }
 
