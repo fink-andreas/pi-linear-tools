@@ -203,9 +203,7 @@ Milestone Actions:
 Sync Doc Actions:
   list [--config X]
   run [--target X] [--config X]
-  run --all [--config X]
   check [--target X] [--config X]
-  check --all [--config X]
   run --file X --project X [--field content|description] [--marker X]
   run --file X --issue X [--field description] [--marker X]
 
@@ -359,12 +357,11 @@ Config:
 
 Actions:
   list     Show resolved sync targets from config
-  run      Update Linear if the managed block differs
-  check    Show whether a sync would change Linear
+  run      Update Linear if the managed block differs. Defaults to all configured targets.
+  check    Show whether a sync would change Linear. Defaults to all configured targets.
 
 Target Options:
   --target X              Target name from config
-  --all                   Run every configured target from config
   --config X              Explicit path to .linear-tools.json
 
 One-off Options:
@@ -381,10 +378,10 @@ Managed Block:
 
 Examples:
   pi-linear-tools sync-doc list
+  pi-linear-tools sync-doc run
+  pi-linear-tools sync-doc check
   pi-linear-tools sync-doc run --target package-readme
-  pi-linear-tools sync-doc run --all
   pi-linear-tools sync-doc check --target package-readme
-  pi-linear-tools sync-doc check --all
   pi-linear-tools sync-doc run --file README.md --project "Roadmap Refresh" --field content
 `);
 }
@@ -1052,7 +1049,13 @@ async function handleSyncDocCommand(args) {
   const action = !maybeAction || maybeAction.startsWith('-') ? 'run' : maybeAction;
   const commandArgs = !maybeAction || maybeAction.startsWith('-') ? args : restArgs;
 
-  if (action === '--help' || action === '-h' || action === 'help') {
+  if (
+    action === '--help'
+    || action === '-h'
+    || action === 'help'
+    || hasFlag(commandArgs, '--help')
+    || hasFlag(commandArgs, '-h')
+  ) {
     printSyncDocHelp();
     return;
   }
@@ -1070,13 +1073,11 @@ async function handleSyncDocCommand(args) {
     return;
   }
 
-  if (hasFlag(commandArgs, '--all') && (readFlag(commandArgs, '--target') || readFlag(commandArgs, '--file'))) {
-    throw new Error('The --all flag cannot be combined with --target or one-off --file/--project/--issue options');
-  }
-
   const client = await createAuthenticatedClient();
+  const hasOneOffFlags = Boolean(readFlag(commandArgs, '--file') && (readFlag(commandArgs, '--project') || readFlag(commandArgs, '--issue')));
+  const hasNamedTarget = Boolean(readFlag(commandArgs, '--target'));
 
-  if (hasFlag(commandArgs, '--all')) {
+  if (!hasOneOffFlags && !hasNamedTarget) {
     const result = await runAllSyncDocs(client, {
       mode: action,
       cwd: process.cwd(),

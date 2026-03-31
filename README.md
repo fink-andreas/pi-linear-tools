@@ -125,10 +125,10 @@ pi-linear-tools project-update unarchive 22222222-2222-4222-8222-222222222222
 
 ```bash
 pi-linear-tools sync-doc list
+pi-linear-tools sync-doc run
+pi-linear-tools sync-doc check
 pi-linear-tools sync-doc run --target package-readme
-pi-linear-tools sync-doc run --all
 pi-linear-tools sync-doc check --target package-readme
-pi-linear-tools sync-doc check --all
 pi-linear-tools sync-doc run --file README.md --project "Roadmap Refresh" --field content
 ```
 
@@ -138,8 +138,8 @@ The simplest setup is to keep `.linear-tools.json` at your monorepo or repo root
 
 For repos with multiple sync targets, the normal workflow is:
 - define them in the repo-root `.linear-tools.json`
-- run `pi-linear-tools sync-doc run --all` to push everything
-- run `pi-linear-tools sync-doc check --all` in CI or before updates if you want drift visibility
+- run `pi-linear-tools sync-doc run` to push everything
+- run `pi-linear-tools sync-doc check` in CI or before updates if you want drift visibility
 
 Example:
 
