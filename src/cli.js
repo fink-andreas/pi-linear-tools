@@ -1,6 +1,7 @@
 import { loadSettings, saveSettings } from './settings.js';
 import { createLinearClient } from './linear-client.js';
 import { resolveProjectRef } from './linear.js';
+import { runSyncDoc } from './sync-doc.js';
 import {
   authenticate,
   logout,
@@ -146,6 +147,7 @@ Commands:
   issue <action> [options]      Manage issues
   project <action> [options]    Manage projects
   project-update <action> [options]  Manage project updates
+  sync-doc [action] [options]   Sync local markdown into Linear
   team <action> [options]       Manage teams
   milestone <action> [options]  Manage milestones
 
@@ -197,6 +199,12 @@ Milestone Actions:
   create --project X --name X [--description X] [--target-date YYYY-MM-DD] [--status X]
   update <milestone-id> [--name X] [--description X] [--target-date X] [--status X]
   delete <milestone-id>
+
+Sync Doc Actions:
+  run [--target X] [--config X]
+  check [--target X] [--config X]
+  run --file X --project X [--field content|description] [--marker X]
+  run --file X --issue X [--field description] [--marker X]
 
 Common Flags:
   --project     Project name or ID
@@ -333,6 +341,42 @@ Archive Options:
 
 Unarchive Options:
   <project>        Project name or ID
+`);
+}
+
+function printSyncDocHelp() {
+  console.log(`pi-linear-tools sync-doc - Sync markdown files into Linear
+
+Usage:
+  pi-linear-tools sync-doc [run|check] [options]
+
+Config:
+  Reads targets from .linear-tools.json in the current project tree and ~/.linear-tools.json.
+
+Actions:
+  run      Update Linear if the managed block differs
+  check    Show whether a sync would change Linear
+
+Target Options:
+  --target X              Target name from config
+  --config X              Explicit path to .linear-tools.json
+
+One-off Options:
+  --file X                Markdown file to sync
+  --project X             Linear project name, id, slug, or project URL
+  --issue X               Linear issue key or id
+  --field X               For projects: content or description. For issues: description
+  --marker X              Managed block marker (default: file basename without extension)
+
+Managed Block:
+  <!-- linear-tools:sync-start MARKER -->
+  ...generated content...
+  <!-- linear-tools:sync-end MARKER -->
+
+Examples:
+  pi-linear-tools sync-doc run --target skiptracer-readme
+  pi-linear-tools sync-doc check --target skiptracer-readme
+  pi-linear-tools sync-doc run --file README.md --project "Roadmap Refresh" --field content
 `);
 }
 
@@ -951,6 +995,50 @@ async function handleProjectUpdateListCli(args) {
   console.log(result.content[0].text);
 }
 
+function printSyncDocResult(result) {
+  if (!result.changed) {
+    console.log(`No sync changes needed for ${result.entityType} "${result.entityName}" field "${result.field}" from ${result.file}`);
+    return;
+  }
+
+  if (result.mode === 'check') {
+    console.log(`Sync needed for ${result.entityType} "${result.entityName}" field "${result.field}" from ${result.file}`);
+    return;
+  }
+
+  console.log(`Synced ${result.file} to ${result.entityType} "${result.entityName}" field "${result.field}" using marker "${result.marker}"`);
+}
+
+async function handleSyncDocCommand(args) {
+  const client = await createAuthenticatedClient();
+  const [maybeAction, ...restArgs] = args;
+  const action = !maybeAction || maybeAction.startsWith('-') ? 'run' : maybeAction;
+  const commandArgs = !maybeAction || maybeAction.startsWith('-') ? args : restArgs;
+
+  if (action === '--help' || action === '-h' || action === 'help') {
+    printSyncDocHelp();
+    return;
+  }
+
+  if (!['run', 'check'].includes(action)) {
+    throw new Error(`Unknown sync-doc action: ${action}`);
+  }
+
+  const result = await runSyncDoc(client, {
+    mode: action,
+    cwd: process.cwd(),
+    configPath: readFlag(commandArgs, '--config'),
+    targetName: readFlag(commandArgs, '--target'),
+    file: readFlag(commandArgs, '--file'),
+    project: readFlag(commandArgs, '--project'),
+    issue: readFlag(commandArgs, '--issue'),
+    field: readFlag(commandArgs, '--field'),
+    marker: readFlag(commandArgs, '--marker'),
+  });
+
+  printSyncDocResult(result);
+}
+
 async function handleProjectUpdateViewCli(args) {
   const client = await createAuthenticatedClient();
   const positional = args.filter((a) => !a.startsWith('-'));
@@ -1220,6 +1308,11 @@ export async function runCli(argv = process.argv.slice(2)) {
 
   if (command === 'project-update') {
     await handleProjectUpdateCommand(rest);
+    return;
+  }
+
+  if (command === 'sync-doc') {
+    await handleSyncDocCommand(rest);
     return;
   }
 

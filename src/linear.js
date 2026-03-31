@@ -619,6 +619,34 @@ function normalizeIssueLookupInput(issue) {
   return value;
 }
 
+function extractProjectLookupValue(projectRef) {
+  const ref = String(projectRef || '').trim();
+  if (!ref) {
+    return '';
+  }
+
+  const projectUrlMatch = ref.match(/\/project\/([^/?#]+)/i);
+  if (projectUrlMatch?.[1]) {
+    return projectUrlMatch[1];
+  }
+
+  return ref;
+}
+
+function getProjectLookupCandidates(projectRef) {
+  const lookupValue = extractProjectLookupValue(projectRef);
+  const candidates = new Set([lookupValue]);
+
+  if (lookupValue.includes('-')) {
+    const slugSuffix = lookupValue.split('-').pop();
+    if (slugSuffix) {
+      candidates.add(slugSuffix);
+    }
+  }
+
+  return Array.from(candidates).filter(Boolean);
+}
+
 const PROJECT_UPDATE_HEALTH_VALUES = ['onTrack', 'atRisk', 'offTrack'];
 
 function normalizePositiveInteger(value, fieldName, defaultValue) {
@@ -960,16 +988,16 @@ export async function fetchIssuesByProject(client, projectId, states, options = 
  */
 export async function fetchProjects(client, options = {}) {
   return withLinearErrorHandling(async () => {
-    const { includeArchived = false } = options;
+    const { includeArchived = false, forceGraphql = false } = options;
     const cacheKey = getClientCacheKey(client);
-    const scopedCacheKey = `${cacheKey}::projects::${includeArchived ? 'all' : 'active'}`;
+    const scopedCacheKey = `${cacheKey}::projects::${includeArchived ? 'all' : 'active'}::${forceGraphql ? 'graphql' : 'sdk'}`;
     const cached = getCache(projectsCache, scopedCacheKey);
     if (cached) return cached;
 
     let nodes = [];
-    if (includeArchived) {
+    if (includeArchived || forceGraphql) {
       const data = await executeGraphQL(client, PROJECTS_LOOKUP_QUERY, {
-        includeArchived: true,
+        includeArchived,
       });
       nodes = data?.projects?.nodes ?? [];
     } else {
@@ -1206,7 +1234,13 @@ export async function resolveProjectRef(client, projectRef, options = {}) {
     throw new Error(`Project not found with ID: ${ref}`);
   }
 
-  const projects = await fetchProjects(client, { includeArchived });
+  const lookupCandidates = getProjectLookupCandidates(ref);
+  const lookupValue = lookupCandidates[0] || ref;
+  const shouldUseGraphqlLookup = lookupValue !== ref;
+  const projects = await fetchProjects(client, {
+    includeArchived,
+    forceGraphql: shouldUseGraphqlLookup,
+  });
 
   // Try exact name match
   const exactName = projects.find((p) => p.name === ref);
@@ -1214,11 +1248,24 @@ export async function resolveProjectRef(client, projectRef, options = {}) {
     return exactName;
   }
 
+  // Try exact slug match
+  const exactSlug = projects.find((p) => lookupCandidates.includes(p.slugId));
+  if (exactSlug) {
+    return exactSlug;
+  }
+
   // Try case-insensitive name match
   const lowerRef = ref.toLowerCase();
   const insensitiveName = projects.find((p) => p.name?.toLowerCase() === lowerRef);
   if (insensitiveName) {
     return insensitiveName;
+  }
+
+  // Try case-insensitive slug match
+  const lowerLookupValues = lookupCandidates.map((candidate) => candidate.toLowerCase());
+  const insensitiveSlug = projects.find((p) => p.slugId && lowerLookupValues.includes(p.slugId.toLowerCase()));
+  if (insensitiveSlug) {
+    return insensitiveSlug;
   }
 
   throw new Error(`Project not found: ${ref}. Available projects: ${projects.map((p) => p.name).join(', ')}`);
@@ -1272,7 +1319,7 @@ export async function updateProject(client, projectRef, patch = {}) {
     const resolved = await resolveProjectRef(client, projectRef);
     const updateInput = {};
 
-    for (const field of ['name', 'description', 'color', 'icon', 'startDate', 'targetDate']) {
+    for (const field of ['name', 'description', 'content', 'color', 'icon', 'startDate', 'targetDate']) {
       if (patch[field] !== undefined) {
         updateInput[field] = patch[field];
       }

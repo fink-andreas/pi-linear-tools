@@ -612,6 +612,15 @@ export async function executeProjectView(client, params) {
       lines.push(project.description);
     }
 
+    if (project.content) {
+      lines.push('');
+      if (project.description) {
+        lines.push('## Content');
+        lines.push('');
+      }
+      lines.push(project.content);
+    }
+
     if (project.projectMilestones.length > 0) {
       lines.push('');
       lines.push(`## Milestones (${project.projectMilestones.length})`);

@@ -121,6 +121,41 @@ pi-linear-tools project-update archive 22222222-2222-4222-8222-222222222222
 pi-linear-tools project-update unarchive 22222222-2222-4222-8222-222222222222
 ```
 
+### Sync doc commands
+
+```bash
+pi-linear-tools sync-doc run --target skiptracer-readme
+pi-linear-tools sync-doc check --target skiptracer-readme
+pi-linear-tools sync-doc run --file README.md --project "Roadmap Refresh" --field content
+```
+
+Config is read from `.linear-tools.json` in the current project tree and `~/.linear-tools.json`.
+
+Example:
+
+```json
+{
+  "syncDocs": {
+    "targets": [
+      {
+        "name": "skiptracer-readme",
+        "file": "packages/skiptracer/README.md",
+        "project": "https://linear.app/avm/project/skiptracing-185cf7975d8d",
+        "field": "content"
+      }
+    ]
+  }
+}
+```
+
+Managed content is wrapped in marker comments inside the target Linear field so manual content above or below the managed block is preserved:
+
+```md
+<!-- linear-tools:sync-start README -->
+...synced markdown...
+<!-- linear-tools:sync-end README -->
+```
+
 ### Team commands
 
 ```bash
