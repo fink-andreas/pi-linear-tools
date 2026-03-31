@@ -2,6 +2,11 @@
 
 `pi-linear-tools` is a Pi extension for the [Pi coding agent](https://github.com/badlogic/pi-mono) that lets you manage [Linear](https://linear.app/about) issues, projects, and milestones via LLM tools and CLI commands.
 
+Useful mental model:
+- `project-update` maps to Linear project updates in the Updates tab
+- `sync-doc run` and `sync-doc check` default to all configured targets in `.linear-tools.json`
+- `sync-doc --target X` narrows the operation to one configured target
+
 ## Install
 
 ### As a pi package (recommended)
@@ -60,6 +65,9 @@ If installed globally via ```npm install -g @fink-andreas/pi-linear-tools```, CL
 
 ```bash
 pi-linear-tools --help
+pi-linear-tools project --help
+pi-linear-tools project-update --help
+pi-linear-tools sync-doc --help
 pi-linear-tools config
 pi-linear-tools config --api-key lin_xxx
 pi-linear-tools config --default-team ENG
@@ -111,6 +119,8 @@ pi-linear-tools project unarchive 11111111-1111-4111-8111-111111111111
 ```
 
 ### Project update commands
+
+This maps to the Updates tab inside a Linear project.
 
 ```bash
 pi-linear-tools project-update list --project "My Project"

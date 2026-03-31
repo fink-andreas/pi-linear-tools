@@ -146,8 +146,8 @@ Usage:
 Commands:
   issue <action> [options]      Manage issues
   project <action> [options]    Manage projects
-  project-update <action> [options]  Manage project updates
-  sync-doc [action] [options]   Sync local markdown into Linear
+  project-update <action> [options]  Manage project updates (Linear Updates tab)
+  sync-doc [action] [options]   Sync local markdown into Linear fields
   team <action> [options]       Manage teams
   milestone <action> [options]  Manage milestones
 
@@ -176,8 +176,8 @@ Issue Actions:
 Project Actions:
   list
   view <project>
-  create --name X --teams ENG,OPS [--description X] [--lead me|ID] [--priority 0-4]
-  update <project> [--name X] [--description X] [--teams X,Y] [--lead me|none|ID]
+  create --name X --teams ENG,OPS [--description X] [--lead me|ID] [--priority 0-4] [--target-date YYYY-MM-DD]
+  update <project> [--name X] [--description X] [--teams X,Y] [--lead me|none|ID] [--target-date YYYY-MM-DD]
   delete <project>
   archive <project>
   unarchive <project>
@@ -207,6 +207,17 @@ Sync Doc Actions:
   run --file X --project X [--field content|description] [--marker X]
   run --file X --issue X [--field description] [--marker X]
 
+Command Notes:
+  project-update maps to Linear project updates in the Updates tab.
+  sync-doc run/check defaults to all configured targets in .linear-tools.json.
+  sync-doc --target X narrows the operation to one configured target.
+
+More Help:
+  pi-linear-tools project --help
+  pi-linear-tools project-update --help
+  pi-linear-tools sync-doc --help
+  pi-linear-tools milestone --help
+
 Common Flags:
   --project     Project name or ID
   --team        Team key (e.g., ENG)
@@ -218,6 +229,11 @@ Common Flags:
 Examples:
   pi-linear-tools auth login
   pi-linear-tools auth status
+  pi-linear-tools project view "Roadmap Refresh"
+  pi-linear-tools project-update create --project "Roadmap Refresh" --body "Weekly update" --health onTrack
+  pi-linear-tools sync-doc list
+  pi-linear-tools sync-doc run
+  pi-linear-tools sync-doc check
   pi-linear-tools issue list --project MyProject --states "In Progress,Backlog"
   pi-linear-tools issue view ENG-123
   pi-linear-tools issue create --title "Fix bug" --team ENG --priority 2
