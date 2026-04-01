@@ -6,7 +6,7 @@ Useful mental model:
 - `issue update` changes issue fields; `issue comment` adds discussion; `issue activity` reads the Activity timeline
 - `project update` changes project fields; `project-update` manages Updates tab entries
 - `project-update` maps to Linear project updates in the Updates tab
-- `sync-doc run` and `sync-doc check` default to all configured targets in `.linear-tools.json`
+- `sync-doc run` and `sync-doc check` default to all configured targets in `.linear-tools/config.json`
 - `sync-doc --target X` narrows the operation to one configured target
 
 Reference conventions:
@@ -160,14 +160,22 @@ pi-linear-tools sync-doc check
 pi-linear-tools sync-doc run --target package-readme
 pi-linear-tools sync-doc check --target package-readme
 pi-linear-tools sync-doc run --file README.md --project "Roadmap Refresh" --field content
+pi-linear-tools sync-doc run --file providers/foo/README.md --project "Roadmap Refresh" --target-type document --document-title "Provider Foo"
 ```
 
-The simplest setup is to keep `.linear-tools.json` at your monorepo or repo root so the targets live with the code they sync.
+Use one project overview target for the project body, then sync deeper docs as separate Linear documents.
 
-`~/.linear-tools.json` is also supported for personal defaults, but it should be treated as an override layer, not the main source of truth for repo-owned sync targets.
+The simplest setup is to keep `.linear-tools/config.json` at your monorepo or repo root so the targets live with the code they sync.
+
+`~/.linear-tools/config.json` is also supported for personal defaults, but it should be treated as an override layer, not the main source of truth for repo-owned sync targets.
+
+Recommended pattern for multiple docs:
+- one `projectField` target syncs the project overview into `project.content` or `project.description`
+- deeper docs use `targetType: "document"` so each file gets its own Linear document
+- the project overview target can set `documentIndexMarker` to maintain a managed list of links to those documents
 
 For repos with multiple sync targets, the normal workflow is:
-- define them in the repo-root `.linear-tools.json`
+- define them in the repo-root `.linear-tools/config.json`
 - run `pi-linear-tools sync-doc run` to push everything
 - run `pi-linear-tools sync-doc check` in CI or before updates if you want drift visibility
 
@@ -178,15 +186,29 @@ Example:
   "syncDocs": {
     "targets": [
       {
-        "name": "package-readme",
-        "file": "packages/example-package/README.md",
-        "project": "https://linear.app/example/project/example-project-abc123def456",
-        "field": "content"
+        "name": "project-overview",
+        "file": "README.md",
+        "project": "Roadmap Refresh",
+        "field": "content",
+        "marker": "project-overview",
+        "documentIndexMarker": "project-doc-links"
+      },
+      {
+        "name": "provider-foo",
+        "targetType": "document",
+        "file": "providers/foo/README.md",
+        "project": "Roadmap Refresh",
+        "title": "Provider Foo",
+        "marker": "provider-foo",
+        "documentId": "optional-existing-document-id"
       }
     ]
   }
 }
 ```
+
+Store that config at `.linear-tools/config.json`. Sync state is written to `.linear-tools/sync-state.json`.
+If `documentId` is omitted on a document target, the first sync creates a new Linear document and stores the created ID in sync state.
 
 Managed content is wrapped in marker comments inside the target Linear field so manual content above or below the managed block is preserved:
 
@@ -195,6 +217,8 @@ Managed content is wrapped in marker comments inside the target Linear field so 
 ...synced markdown...
 <!-- linear-tools:sync-end README -->
 ```
+
+When `documentIndexMarker` is configured on the overview target, the project field also gets a second managed block containing links to the synced Linear documents.
 
 ### Team commands
 

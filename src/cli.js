@@ -213,7 +213,7 @@ Command Notes:
   issue update changes issue fields; issue activity reads the Activity timeline.
   project update changes project fields; project-update manages Updates tab entries.
   project-update maps to Linear project updates in the Updates tab.
-  sync-doc run/check defaults to all configured targets in .linear-tools.json.
+  sync-doc run/check defaults to all configured targets in .linear-tools/config.json.
   sync-doc --target X narrows the operation to one configured target.
 
 More Help:
@@ -412,8 +412,8 @@ Usage:
   pi-linear-tools sync-doc [list|run|check] [options]
 
 Config:
-  Reads targets from .linear-tools.json in the current project tree and ~/.linear-tools.json.
-  Prefer a repo or monorepo-root .linear-tools.json for shared targets. Use ~/.linear-tools.json for personal defaults.
+  Reads targets from .linear-tools/config.json in the current project tree and ~/.linear-tools/config.json.
+  Prefer a repo or monorepo-root .linear-tools/config.json for shared targets. Use ~/.linear-tools/config.json for personal defaults.
 
 Actions:
   list     Show resolved sync targets from config
@@ -422,12 +422,15 @@ Actions:
 
 Target Options:
   --target X              Target name from config
-  --config X              Explicit path to .linear-tools.json
+  --config X              Explicit path to config.json or .linear-tools/
 
 One-off Options:
   --file X                Markdown file to sync
   --project X             Linear project name, id, slug, or project URL
   --issue X               Linear issue key or id
+  --target-type X         projectField, issueField, or document
+  --document-title X      Required for one-off document targets unless inferred from file name
+  --document-id X         Existing Linear document ID or URL identifier
   --field X               For projects: content or description. For issues: description
   --marker X              Managed block marker (default: file basename without extension)
 
@@ -436,6 +439,10 @@ Managed Block:
   ...generated content...
   <!-- linear-tools:sync-end MARKER -->
 
+Project Document Index:
+  A projectField target can set documentIndexMarker to maintain a managed list of synced document targets.
+  Use this for one overview doc in the project body plus separate linked Linear documents for deeper docs.
+
 Examples:
   pi-linear-tools sync-doc list
   pi-linear-tools sync-doc run
@@ -443,6 +450,7 @@ Examples:
   pi-linear-tools sync-doc run --target package-readme
   pi-linear-tools sync-doc check --target package-readme
   pi-linear-tools sync-doc run --file README.md --project "Roadmap Refresh" --field content
+  pi-linear-tools sync-doc run --file providers/foo/README.md --project "Roadmap Refresh" --target-type document --document-title "Provider Foo"
 `);
 }
 
@@ -1093,12 +1101,28 @@ async function handleProjectUpdateListCli(args) {
 
 function printSyncDocResult(result) {
   if (!result.changed) {
+    if (result.targetType === 'document') {
+      console.log(`No sync changes needed for document "${result.entityName}" from ${result.file}`);
+      return;
+    }
     console.log(`No sync changes needed for ${result.entityType} "${result.entityName}" field "${result.field}" from ${result.file}`);
     return;
   }
 
   if (result.mode === 'check') {
+    if (result.targetType === 'document') {
+      console.log(`Sync needed for document "${result.entityName}" from ${result.file}`);
+      return;
+    }
     console.log(`Sync needed for ${result.entityType} "${result.entityName}" field "${result.field}" from ${result.file}`);
+    return;
+  }
+
+  if (result.targetType === 'document') {
+    console.log(`Synced ${result.file} to document "${result.entityName}" using marker "${result.marker}"`);
+    if (result.documentUrl) {
+      console.log(result.documentUrl);
+    }
     return;
   }
 
@@ -1112,8 +1136,14 @@ function printSyncDocTargets(result) {
   }
 
   const lines = result.targets.map((target) => {
-    const entityLabel = `${target.entityType}:${target.entityRef}`;
-    return `- ${target.name} -> ${entityLabel} field "${target.field}" from ${target.file} (marker: ${target.marker})`;
+    if (target.targetType === 'document') {
+      const entityLabel = `${target.issue ? 'issue' : 'project'}:${target.entityRef}`;
+      return `- ${target.name} -> document "${target.title}" linked to ${entityLabel} from ${target.file} (marker: ${target.marker})`;
+    }
+
+    const entityLabel = `${target.targetType === 'issueField' ? 'issue' : 'project'}:${target.entityRef}`;
+    const extra = target.documentIndexMarker ? `, document index: ${target.documentIndexMarker}` : '';
+    return `- ${target.name} -> ${entityLabel} field "${target.field}" from ${target.file} (marker: ${target.marker}${extra})`;
   });
 
   if (result.configPath) {
@@ -1128,6 +1158,9 @@ function printSyncDocBatchResult(result) {
     : `Ran ${result.total} sync-doc target(s): ${result.changedCount} updated, ${result.unchangedCount} unchanged`;
   const lines = result.results.map((entry) => {
     const status = entry.changed ? (result.mode === 'check' ? 'needs-sync' : 'synced') : 'unchanged';
+    if (entry.targetType === 'document') {
+      return `- [${status}] ${entry.targetName} -> document "${entry.entityName}" from ${entry.file}`;
+    }
     return `- [${status}] ${entry.targetName} -> ${entry.entityType} "${entry.entityName}" field "${entry.field}" from ${entry.file}`;
   });
 
@@ -1164,7 +1197,10 @@ async function handleSyncDocCommand(args) {
   }
 
   const client = await createAuthenticatedClient();
-  const hasOneOffFlags = Boolean(readFlag(commandArgs, '--file') && (readFlag(commandArgs, '--project') || readFlag(commandArgs, '--issue')));
+  const hasOneOffFlags = Boolean(
+    readFlag(commandArgs, '--file')
+    && (readFlag(commandArgs, '--project') || readFlag(commandArgs, '--issue'))
+  );
   const hasNamedTarget = Boolean(readFlag(commandArgs, '--target'));
 
   if (!hasOneOffFlags && !hasNamedTarget) {
@@ -1185,6 +1221,9 @@ async function handleSyncDocCommand(args) {
     file: readFlag(commandArgs, '--file'),
     project: readFlag(commandArgs, '--project'),
     issue: readFlag(commandArgs, '--issue'),
+    targetType: readFlag(commandArgs, '--target-type'),
+    documentTitle: readFlag(commandArgs, '--document-title'),
+    documentId: readFlag(commandArgs, '--document-id'),
     field: readFlag(commandArgs, '--field'),
     marker: readFlag(commandArgs, '--marker'),
   });

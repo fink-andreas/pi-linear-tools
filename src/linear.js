@@ -312,6 +312,54 @@ const PROJECT_UPDATE_UNARCHIVE_MUTATION = `
   }
 `;
 
+const DOCUMENT_DETAILS_QUERY = `
+  query DocumentDetails($id: String!) {
+    document(id: $id) {
+      id
+      title
+      content
+      icon
+      color
+      slugId
+      url
+      archivedAt
+      createdAt
+      updatedAt
+      project {
+        id
+        name
+      }
+      issue {
+        id
+        identifier
+        title
+      }
+    }
+  }
+`;
+
+const DOCUMENT_CREATE_MUTATION = `
+  mutation DocumentCreate($input: DocumentCreateInput!) {
+    documentCreate(input: $input) {
+      success
+      document {
+        id
+      }
+    }
+  }
+`;
+
+const DOCUMENT_UPDATE_MUTATION = `
+  mutation DocumentUpdate($id: String!, $input: DocumentUpdateInput!) {
+    documentUpdate(id: $id, input: $input) {
+      success
+      document {
+        id
+      }
+    }
+  }
+`;
+
 const ISSUE_ACTIVITY_QUERY = `
   query IssueActivity($id: String!, $first: Int!, $includeArchived: Boolean!) {
     issue(id: $id) {
@@ -1784,6 +1832,91 @@ export async function unarchiveProjectUpdate(client, projectUpdateId) {
   }, 'unarchiveProjectUpdate');
 }
 
+export async function fetchDocumentDetails(client, documentRef) {
+  return withLinearErrorHandling(async () => {
+    const id = String(documentRef || '').trim();
+    if (!id) {
+      throw new Error('Missing required field: document');
+    }
+
+    const data = await executeGraphQL(client, DOCUMENT_DETAILS_QUERY, { id });
+
+    if (!data?.document) {
+      throw new Error(`Document not found: ${id}`);
+    }
+
+    return transformDocument(data.document);
+  }, 'fetchDocumentDetails');
+}
+
+export async function createDocument(client, input = {}) {
+  return withLinearErrorHandling(async () => {
+    const title = String(input.title || '').trim();
+    if (!title) {
+      throw new Error('Missing required field: title');
+    }
+
+    const createInput = { title };
+    if (input.projectId !== undefined) createInput.projectId = input.projectId;
+    if (input.issueId !== undefined) createInput.issueId = input.issueId;
+
+    if (!createInput.projectId && !createInput.issueId) {
+      throw new Error('Document create requires either projectId or issueId');
+    }
+
+    for (const field of ['content', 'icon', 'color']) {
+      if (input[field] !== undefined) {
+        createInput[field] = input[field];
+      }
+    }
+
+    const payload = await executeGraphQL(client, DOCUMENT_CREATE_MUTATION, {
+      input: createInput,
+    });
+
+    if (!payload?.documentCreate?.success || !payload?.documentCreate?.document?.id) {
+      throw new Error('Failed to create document');
+    }
+
+    return fetchDocumentDetails(client, payload.documentCreate.document.id);
+  }, 'createDocument');
+}
+
+export async function updateDocument(client, documentRef, patch = {}) {
+  return withLinearErrorHandling(async () => {
+    const id = String(documentRef || '').trim();
+    if (!id) {
+      throw new Error('Missing required field: document');
+    }
+
+    const updateInput = {};
+    for (const field of ['title', 'content', 'icon', 'color', 'projectId', 'issueId']) {
+      if (patch[field] !== undefined) {
+        updateInput[field] = patch[field];
+      }
+    }
+
+    if (Object.keys(updateInput).length === 0) {
+      throw new Error('No update fields provided');
+    }
+
+    const payload = await executeGraphQL(client, DOCUMENT_UPDATE_MUTATION, {
+      id,
+      input: updateInput,
+    });
+
+    if (!payload?.documentUpdate?.success || !payload?.documentUpdate?.document?.id) {
+      throw new Error('Failed to update document');
+    }
+
+    const document = await fetchDocumentDetails(client, payload.documentUpdate.document.id);
+    return {
+      document,
+      changed: Object.keys(updateInput),
+    };
+  }, 'updateDocument');
+}
+
 /**
  * Fetch detailed issue information including comments, parent, children, and attachments
  * @param {LinearClient} client - Linear SDK client
@@ -2527,6 +2660,32 @@ function transformProjectUpdate(rawUpdate) {
       id: rawUpdate.user.id,
       name: rawUpdate.user.name,
       displayName: rawUpdate.user.displayName,
+    } : null,
+  };
+}
+
+function transformDocument(rawDocument) {
+  if (!rawDocument) return null;
+
+  return {
+    id: rawDocument.id,
+    title: rawDocument.title ?? '',
+    content: rawDocument.content ?? '',
+    icon: rawDocument.icon ?? null,
+    color: rawDocument.color ?? null,
+    slugId: rawDocument.slugId ?? null,
+    url: rawDocument.url ?? null,
+    archivedAt: rawDocument.archivedAt ?? null,
+    createdAt: rawDocument.createdAt ?? null,
+    updatedAt: rawDocument.updatedAt ?? null,
+    project: rawDocument.project ? {
+      id: rawDocument.project.id,
+      name: rawDocument.project.name,
+    } : null,
+    issue: rawDocument.issue ? {
+      id: rawDocument.issue.id,
+      identifier: rawDocument.issue.identifier,
+      title: rawDocument.issue.title,
     } : null,
   };
 }

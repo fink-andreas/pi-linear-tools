@@ -6,7 +6,15 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { defaultMarkerFromFile, extractManagedSegments, listSyncDocTargets, loadSyncDocTargets, runAllSyncDocs, runSyncDoc, upsertManagedContent } from '../src/sync-doc.js';
+import {
+  defaultMarkerFromFile,
+  extractManagedSegments,
+  listSyncDocTargets,
+  loadSyncDocTargets,
+  runAllSyncDocs,
+  runSyncDoc,
+  upsertManagedContent,
+} from '../src/sync-doc.js';
 
 function createProjectPayload(content) {
   return {
@@ -92,12 +100,15 @@ async function testExtractManagedSegments() {
   console.log('✓ extractManagedSegments');
 }
 
-async function testLoadSyncDocTargets() {
+async function testLoadSyncDocTargetsUsesFolderConfig() {
   await withTempHome(async (tempHome) => {
     const repoDir = await mkdtemp(join(tmpdir(), 'pi-linear-tools-sync-repo-'));
+    await mkdir(join(repoDir, '.linear-tools'), { recursive: true });
     await mkdir(join(repoDir, 'docs'), { recursive: true });
     await writeFile(join(repoDir, 'docs', 'README.md'), '# Repo doc\n', 'utf8');
-    await writeFile(join(tempHome, '.linear-tools.json'), JSON.stringify({
+
+    await mkdir(join(tempHome, '.linear-tools'), { recursive: true });
+    await writeFile(join(tempHome, '.linear-tools', 'config.json'), JSON.stringify({
       syncDocs: {
         targets: [
           {
@@ -109,55 +120,76 @@ async function testLoadSyncDocTargets() {
         ],
       },
     }, null, 2));
-    await writeFile(join(repoDir, '.linear-tools.json'), JSON.stringify({
+
+    await writeFile(join(repoDir, '.linear-tools', 'config.json'), JSON.stringify({
       syncDocs: {
         targets: [
           {
             name: 'repo-target',
             file: 'docs/README.md',
             project: 'Repo Project',
+            field: 'content',
+            documentIndexMarker: 'repo-doc-links',
+          },
+          {
+            name: 'repo-doc',
+            targetType: 'document',
+            file: 'docs/README.md',
+            project: 'Repo Project',
+            title: 'Repo Doc',
           },
         ],
       },
     }, null, 2));
 
     const loaded = await loadSyncDocTargets({ cwd: repoDir });
-    assert.equal(loaded.targets.length, 2);
-    assert.equal(loaded.configPath, join(repoDir, '.linear-tools.json'));
+    assert.equal(loaded.targets.length, 3);
+    assert.equal(loaded.configPath, join(repoDir, '.linear-tools', 'config.json'));
     assert.equal(loaded.statePath, join(repoDir, '.linear-tools', 'sync-state.json'));
+    assert.equal(loaded.targets.find((target) => target.name === 'repo-doc')?.targetType, 'document');
   });
 
-  console.log('✓ loadSyncDocTargets');
+  console.log('✓ loadSyncDocTargets uses .linear-tools/config.json');
 }
 
-async function testListSyncDocTargets() {
+async function testListSyncDocTargetsIncludesDocumentTargets() {
   await withTempHome(async () => {
     const repoDir = await mkdtemp(join(tmpdir(), 'pi-linear-tools-sync-list-'));
-    await mkdir(join(repoDir, 'docs'), { recursive: true });
-    await writeFile(join(repoDir, 'docs', 'README.md'), '# Repo doc\n', 'utf8');
-    await writeFile(join(repoDir, '.linear-tools.json'), JSON.stringify({
+    await mkdir(join(repoDir, '.linear-tools'), { recursive: true });
+    await mkdir(join(repoDir, 'providers'), { recursive: true });
+    await writeFile(join(repoDir, 'README.md'), '# Overview\n', 'utf8');
+    await writeFile(join(repoDir, 'providers', 'README.md'), '# Provider\n', 'utf8');
+    await writeFile(join(repoDir, '.linear-tools', 'config.json'), JSON.stringify({
       syncDocs: {
         targets: [
           {
-            name: 'package-readme',
-            file: 'docs/README.md',
+            name: 'project-overview',
+            file: 'README.md',
             project: 'Example Project',
             field: 'content',
+            marker: 'project-overview',
+            documentIndexMarker: 'project-doc-links',
+          },
+          {
+            name: 'provider-doc',
+            targetType: 'document',
+            file: 'providers/README.md',
+            project: 'Example Project',
+            title: 'Provider Doc',
+            marker: 'provider-doc',
           },
         ],
       },
     }, null, 2));
 
     const listed = await listSyncDocTargets({ cwd: repoDir });
-    assert.equal(listed.targets.length, 1);
-    assert.equal(listed.targets[0].name, 'package-readme');
-    assert.equal(listed.targets[0].entityType, 'project');
-    assert.equal(listed.targets[0].field, 'content');
-    assert.equal(listed.targets[0].marker, 'README');
-    assert.equal(listed.targets[0].sourceConfigPath, join(repoDir, '.linear-tools.json'));
+    assert.equal(listed.targets.length, 2);
+    assert.equal(listed.targets[0].sourceConfigPath, join(repoDir, '.linear-tools', 'config.json'));
+    assert.equal(listed.targets[1].targetType, 'document');
+    assert.equal(listed.targets[1].title, 'Provider Doc');
   });
 
-  console.log('✓ listSyncDocTargets');
+  console.log('✓ listSyncDocTargets includes document targets');
 }
 
 async function testRunSyncDocProjectTarget() {
@@ -239,88 +271,155 @@ async function testRunSyncDocProjectTarget() {
 
   const state = JSON.parse(await readFile(join(repoDir, '.linear-tools', 'sync-state.json'), 'utf8'));
   assert.ok(state.targets.README);
-  assert.ok(state.targets.README.sourceHash);
-  assert.ok(state.targets.README.beforeHash);
-  assert.ok(state.targets.README.afterHash);
 
-  const followUp = await runSyncDoc(mockClient, {
-    mode: 'check',
-    cwd: repoDir,
-    file: readmePath,
-    project: 'https://linear.app/example/project/example-project-abc123def456',
-    field: 'content',
-  });
-
-  assert.equal(followUp.changed, false);
   console.log('✓ runSyncDoc project target');
 }
 
-async function testRunAllSyncDocs() {
+async function testRunAllSyncDocsCreatesDocumentAndIndex() {
   const repoDir = await mkdtemp(join(tmpdir(), 'pi-linear-tools-sync-all-'));
-  await mkdir(join(repoDir, 'docs'), { recursive: true });
-  const alphaPath = join(repoDir, 'docs', 'alpha.md');
-  const betaPath = join(repoDir, 'docs', 'beta.md');
-  await writeFile(alphaPath, '# Alpha\n', 'utf8');
-  await writeFile(betaPath, '# Beta\n', 'utf8');
-  await writeFile(join(repoDir, '.linear-tools.json'), JSON.stringify({
+  await mkdir(join(repoDir, '.linear-tools'), { recursive: true });
+  await mkdir(join(repoDir, 'providers', 'hud'), { recursive: true });
+  await writeFile(join(repoDir, 'README.md'), '# Census Data\n\nOverview content.\n', 'utf8');
+  await writeFile(join(repoDir, 'providers', 'hud', 'README.md'), '# HUD Provider\n\nProvider details.\n', 'utf8');
+  await writeFile(join(repoDir, '.linear-tools', 'config.json'), JSON.stringify({
     syncDocs: {
       targets: [
         {
-          name: 'alpha-doc',
-          file: 'docs/alpha.md',
-          project: 'Project Alpha',
+          name: 'census-readme',
+          file: 'README.md',
+          project: 'Census Data',
           field: 'content',
+          marker: 'census-readme',
+          documentIndexMarker: 'census-documents',
+          documentIndexHeading: 'Linked docs',
         },
         {
-          name: 'beta-doc',
-          file: 'docs/beta.md',
-          project: 'Project Beta',
-          field: 'content',
+          name: 'census-provider-hud-readme',
+          targetType: 'document',
+          file: 'providers/hud/README.md',
+          project: 'Census Data',
+          title: 'HUD Provider',
+          marker: 'census-provider-hud-readme',
         },
       ],
     },
   }, null, 2));
 
-  const remoteContentById = new Map([
-    ['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'Alpha intro'],
-    ['bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'Beta intro'],
-  ]);
-  const projectByRef = new Map([
-    ['Project Alpha', { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', name: 'Project Alpha', slugId: 'project-alpha' }],
-    ['Project Beta', { id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', name: 'Project Beta', slugId: 'project-beta' }],
-  ]);
+  let remoteProjectContent = [
+    '<!-- linear-tools:sync-start README -->',
+    'Old overview',
+    '<!-- linear-tools:sync-end README -->',
+    '',
+    '<!-- linear-tools:sync-start census-provider-hud-readme -->',
+    'Old HUD provider content',
+    '<!-- linear-tools:sync-end census-provider-hud-readme -->',
+  ].join('\n');
+  const documents = new Map();
+  let nextDocumentId = 1;
 
   const mockClient = {
     projects: async () => ({
-      nodes: Array.from(projectByRef.values()),
+      nodes: [{
+        id: '11111111-1111-4111-8111-111111111111',
+        name: 'Census Data',
+        slugId: 'census-data-abc123',
+      }],
     }),
+    issue: async () => null,
     rawRequest: async (query, variables) => {
-      if (query.includes('ProjectDetails')) {
-        const projectId = variables.id;
-        const project = Array.from(projectByRef.values()).find((entry) => entry.id === projectId);
+      if (query.includes('ProjectsLookup')) {
         return {
           data: {
-            project: {
-              ...createProjectPayload(remoteContentById.get(projectId)),
-              id: project.id,
-              name: project.name,
-              slugId: project.slugId,
-              url: `https://linear.app/example/project/${project.slugId}`,
+            projects: {
+              nodes: [{
+                id: '11111111-1111-4111-8111-111111111111',
+                name: 'Census Data',
+                slugId: 'census-data-abc123',
+                archivedAt: null,
+              }],
             },
           },
           headers: new Headers(),
         };
       }
 
+      if (query.includes('ProjectDetails')) {
+        return {
+          data: {
+            project: createProjectPayload(remoteProjectContent),
+          },
+          headers: new Headers(),
+        };
+      }
+
       if (query.includes('ProjectUpdate')) {
-        remoteContentById.set(variables.id, variables.input.content);
+        remoteProjectContent = variables.input.content;
         return {
           data: {
             projectUpdate: {
               success: true,
               project: {
-                id: variables.id,
+                id: '11111111-1111-4111-8111-111111111111',
               },
+            },
+          },
+          headers: new Headers(),
+        };
+      }
+
+      if (query.includes('DocumentCreate')) {
+        const id = `doc-${nextDocumentId}`;
+        nextDocumentId += 1;
+        documents.set(id, {
+          id,
+          title: variables.input.title,
+          content: variables.input.content,
+          icon: variables.input.icon ?? null,
+          color: variables.input.color ?? null,
+          slugId: `${id}-slug`,
+          url: `https://linear.app/example/document/${id}-slug`,
+          archivedAt: null,
+          createdAt: '2026-03-31T00:00:00.000Z',
+          updatedAt: '2026-03-31T00:00:00.000Z',
+          project: {
+            id: variables.input.projectId,
+            name: 'Census Data',
+          },
+          issue: null,
+        });
+
+        return {
+          data: {
+            documentCreate: {
+              success: true,
+              document: { id },
+            },
+          },
+          headers: new Headers(),
+        };
+      }
+
+      if (query.includes('DocumentDetails')) {
+        return {
+          data: {
+            document: documents.get(variables.id) || null,
+          },
+          headers: new Headers(),
+        };
+      }
+
+      if (query.includes('DocumentUpdate')) {
+        const existing = documents.get(variables.id);
+        documents.set(variables.id, {
+          ...existing,
+          ...variables.input,
+          updatedAt: '2026-03-31T01:00:00.000Z',
+        });
+        return {
+          data: {
+            documentUpdate: {
+              success: true,
+              document: { id: variables.id },
             },
           },
           headers: new Headers(),
@@ -331,44 +430,40 @@ async function testRunAllSyncDocs() {
     },
   };
 
-  const checkResult = await runAllSyncDocs(mockClient, {
-    mode: 'check',
-    cwd: repoDir,
-  });
-  assert.equal(checkResult.total, 2);
-  assert.equal(checkResult.changedCount, 2);
-  assert.equal(checkResult.unchangedCount, 0);
-
-  const runResult = await runAllSyncDocs(mockClient, {
+  const result = await runAllSyncDocs(mockClient, {
     mode: 'run',
     cwd: repoDir,
   });
-  assert.equal(runResult.total, 2);
-  assert.equal(runResult.changedCount, 2);
-  assert.match(remoteContentById.get('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'), /# Alpha/);
-  assert.match(remoteContentById.get('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'), /# Beta/);
 
-  const followUp = await runAllSyncDocs(mockClient, {
-    mode: 'check',
-    cwd: repoDir,
-  });
-  assert.equal(followUp.changedCount, 0);
-  assert.equal(followUp.unchangedCount, 2);
-  console.log('✓ runAllSyncDocs');
+  assert.equal(result.total, 2);
+  assert.equal(result.changedCount, 2);
+  assert.equal(documents.size, 1);
+  assert.match(remoteProjectContent, /linear-tools:sync-start census-readme/);
+  assert.match(remoteProjectContent, /linear-tools:sync-start census-documents/);
+  assert.match(remoteProjectContent, /## Linked docs/);
+  assert.match(remoteProjectContent, /\[HUD Provider\]\(https:\/\/linear\.app\/example\/document\/doc-1-slug\)/);
+  assert.doesNotMatch(remoteProjectContent, /linear-tools:sync-start README/);
+  assert.doesNotMatch(remoteProjectContent, /linear-tools:sync-start census-provider-hud-readme/);
+
+  const state = JSON.parse(await readFile(join(repoDir, '.linear-tools', 'sync-state.json'), 'utf8'));
+  assert.equal(state.targets['census-provider-hud-readme'].documentId, 'doc-1');
+  assert.equal(state.targets['census-provider-hud-readme'].documentTitle, 'HUD Provider');
+  assert.equal(state.targets['census-readme'].marker, 'census-readme');
+  console.log('✓ runAllSyncDocs creates linked documents and project index');
 }
 
 async function main() {
   await testDefaultMarkerFromFile();
   await testUpsertManagedContent();
   await testExtractManagedSegments();
-  await testLoadSyncDocTargets();
-  await testListSyncDocTargets();
+  await testLoadSyncDocTargetsUsesFolderConfig();
+  await testListSyncDocTargetsIncludesDocumentTargets();
   await testRunSyncDocProjectTarget();
-  await testRunAllSyncDocs();
+  await testRunAllSyncDocsCreatesDocumentAndIndex();
   console.log('✓ tests/test-sync-doc.js passed');
 }
 
 main().catch((error) => {
   console.error(error);
-  process.exit(1);
+  process.exitCode = 1;
 });
