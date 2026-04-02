@@ -143,21 +143,8 @@ export function upsertManagedContentWithPosition(currentValue, marker, incomingC
     throw new Error(`Unbalanced sync markers for marker "${marker}"`);
   }
 
-  const secondStartIndex = currentText.indexOf(start, startIndex + start.length);
-  const secondEndIndex = currentText.indexOf(end, endIndex + end.length);
-  if (secondStartIndex !== -1 || secondEndIndex !== -1) {
-    throw new Error(`Multiple sync marker blocks found for marker "${marker}"`);
-  }
-
-  const before = currentText.slice(0, startIndex).trimEnd();
-  const after = currentText.slice(endIndex + end.length).trimStart();
-  const remainder = [before, after].filter(Boolean).join('\n\n');
-
-  if (!remainder) {
-    return managedBlock;
-  }
-
-  return `${managedBlock}\n\n${remainder}`;
+  // If markers already exist, update them in place without relocating
+  return upsertManagedContent(currentValue, marker, incomingContent);
 }
 
 export function extractManagedSegments(currentValue, marker) {

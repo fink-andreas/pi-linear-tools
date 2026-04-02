@@ -16,6 +16,7 @@ import {
   runAllSyncDocs,
   runSyncDoc,
   upsertManagedContent,
+  upsertManagedContentWithPosition,
 } from '../src/sync-doc.js';
 
 function createProjectPayload(content) {
@@ -993,6 +994,58 @@ async function testRunAllSyncDocsCheckMatchesRunForExistingDocuments() {
   console.log('✓ runAllSyncDocs check matches run for existing documents');
 }
 
+async function testUpsertManagedContentWithPositionPreservesExistingLocation() {
+  const marker = 'overview';
+  const incoming = '# New overview content';
+
+  // When markers already exist in the middle, position: 'top' should NOT move them
+  const existingInMiddle = [
+    '# Manual Header',
+    '',
+    '<!-- linear-tools:sync-start overview -->',
+    'Old overview',
+    '<!-- linear-tools:sync-end overview -->',
+    '',
+    '## Manual Footer',
+  ].join('\n');
+
+  const preservedResult = upsertManagedContentWithPosition(existingInMiddle, marker, incoming, 'top');
+  const preservedLines = preservedResult.split('\n');
+  const overviewLineIndex = preservedLines.findIndex((line) => line.includes('linear-tools:sync-start overview'));
+  const headerLineIndex = preservedLines.findIndex((line) => line === '# Manual Header');
+  const footerLineIndex = preservedLines.findIndex((line) => line === '## Manual Footer');
+
+  // The block should stay in its original position (between header and footer)
+  assert.ok(headerLineIndex < overviewLineIndex, 'Header should be before the block');
+  assert.ok(overviewLineIndex < footerLineIndex, 'Block should be before footer');
+  assert.match(preservedResult, /# Manual Header/);
+  assert.match(preservedResult, /## Manual Footer/);
+  assert.match(preservedResult, /# New overview content/);
+  assert.doesNotMatch(preservedResult, /Old overview/);
+
+  // When markers don't exist, position: 'top' should place new block at top
+  const noMarkers = [
+    '# Intro',
+    '',
+    'Some content in the middle',
+    '',
+    '---',
+  ].join('\n');
+
+  const insertedAtTop = upsertManagedContentWithPosition(noMarkers, marker, incoming, 'top');
+  assert.ok(insertedAtTop.startsWith('<!-- linear-tools:sync-start overview -->'), 'New block should be at the top');
+  assert.match(insertedAtTop, /# Intro/);
+  assert.match(insertedAtTop, /Some content in the middle/);
+
+  // Empty document should just contain the block
+  const emptyDoc = '';
+  const insertedEmpty = upsertManagedContentWithPosition(emptyDoc, marker, incoming, 'top');
+  assert.match(insertedEmpty, /# New overview content/);
+  assert.ok(!insertedEmpty.includes('# Intro'));
+
+  console.log('✓ upsertManagedContentWithPosition preserves existing marker location');
+}
+
 async function testLoadSyncDocTargetsRejectsEscapedFiles() {
   const repoDir = await mkdtemp(join(tmpdir(), 'pi-linear-tools-sync-path-'));
   await mkdir(join(repoDir, '.linear-tools'), { recursive: true });
@@ -1020,6 +1073,7 @@ async function main() {
   await testDefaultMarkerFromFile();
   await testUpsertManagedContent();
   await testExtractManagedSegments();
+  await testUpsertManagedContentWithPositionPreservesExistingLocation();
   await testLoadSyncDocTargetsUsesFolderConfig();
   await testListSyncDocTargetsIncludesDocumentTargets();
   await testInitSyncDocConfigCreatesStarterConfig();
