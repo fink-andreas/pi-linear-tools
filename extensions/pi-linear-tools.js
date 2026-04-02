@@ -817,6 +817,7 @@ async function registerLinearTools(pi) {
     name: 'linear_project_update',
     label: 'Linear Project Update',
     description: 'Interact with Linear project updates. Actions: list, view, create, update, archive, unarchive',
+    promptSnippet: 'Interact with Linear project updates (list, view, create, update, archive, unarchive)',
     parameters: {
       type: 'object',
       properties: {
