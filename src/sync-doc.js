@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, statSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { basename, dirname, extname, isAbsolute, join, resolve } from 'node:path';
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 
 import {
   createDocument,
@@ -24,6 +24,10 @@ function getHomeDir() {
 
 function getConfigDisplayPath() {
   return `${CONFIG_DIRNAME}/${CONFIG_FILENAME}`;
+}
+
+function toPortablePath(value) {
+  return String(value || '').replace(/\\/g, '/');
 }
 
 function normalizeNewlines(value) {
@@ -265,6 +269,42 @@ function getFallbackStatePath(cwd) {
   return join(resolve(cwd || process.cwd()), CONFIG_DIRNAME, STATE_FILENAME);
 }
 
+function getConfigDirPath(cwd) {
+  return join(resolve(cwd || process.cwd()), CONFIG_DIRNAME);
+}
+
+function toConfigFileReference(targetDir, filePath) {
+  if (!filePath) {
+    return 'README.md';
+  }
+
+  const resolvedFile = isAbsolute(filePath) ? resolve(filePath) : resolve(targetDir, filePath);
+  const relativePath = relative(targetDir, resolvedFile);
+
+  if (relativePath && !relativePath.startsWith('..') && !isAbsolute(relativePath)) {
+    return toPortablePath(relativePath);
+  }
+
+  return toPortablePath(resolvedFile);
+}
+
+function buildInitTarget(options = {}) {
+  const targetDir = resolve(options.cwd || process.cwd());
+  const fileRef = toConfigFileReference(targetDir, options.file);
+  const marker = options.marker ? String(options.marker).trim() : 'project-overview';
+
+  return {
+    name: options.name ? String(options.name).trim() : 'project-overview',
+    file: fileRef,
+    project: options.project ? String(options.project).trim() : 'Project name or ID',
+    field: options.field ? String(options.field).trim() : 'content',
+    marker,
+    documentIndexMarker: options.documentIndexMarker
+      ? String(options.documentIndexMarker).trim()
+      : 'project-documents',
+  };
+}
+
 async function loadConfigFile(configPath) {
   if (!configPath || !existsSync(configPath)) {
     return { path: configPath, targets: [] };
@@ -460,6 +500,73 @@ async function loadSyncState(statePath) {
 async function saveSyncState(statePath, state) {
   await mkdir(dirname(statePath), { recursive: true });
   await writeFile(statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
+}
+
+export async function initSyncDocConfig(options = {}) {
+  const targetDir = resolve(options.cwd || process.cwd());
+  const configDir = getConfigDirPath(targetDir);
+  const configPath = join(configDir, CONFIG_FILENAME);
+  const statePath = join(configDir, STATE_FILENAME);
+  const force = options.force === true;
+  const existed = existsSync(configPath);
+
+  if (existed && !force) {
+    return {
+      created: false,
+      overwritten: false,
+      configPath,
+      statePath,
+      cwd: targetDir,
+      target: null,
+    };
+  }
+
+  const target = buildInitTarget({
+    cwd: targetDir,
+    file: options.file,
+    project: options.project,
+    field: options.field,
+    marker: options.marker,
+    name: options.name,
+    documentIndexMarker: options.documentIndexMarker,
+  });
+
+  const payload = {
+    syncDocs: {
+      targets: [target],
+    },
+  };
+
+  await mkdir(configDir, { recursive: true });
+  await writeFile(configPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+
+  return {
+    created: true,
+    overwritten: existed && force,
+    configPath,
+    statePath,
+    cwd: targetDir,
+    target,
+  };
+}
+
+export function explainSyncDocSetup() {
+  return [
+    'Sync-doc setup model:',
+    '- Put `.linear-tools/config.json` in the smallest folder that owns the docs you are syncing.',
+    '- The CLI resolves the nearest `.linear-tools/config.json` from the current directory upward.',
+    '- Use repo root only for targets intentionally shared across multiple subprojects.',
+    '- Use one `projectField` target for the project overview in `content` or `description`.',
+    '- Use `targetType: "document"` for deeper docs that should become separate Linear documents.',
+    '- Let the overview target set `documentIndexMarker` so it maintains a managed links block to those documents.',
+    '- `sync-doc run` and `sync-doc check` default to all configured targets.',
+    '- Keep `.linear-tools/sync-state.json` local; it is runtime state, not source config.',
+    '',
+    'Recommended bootstrap:',
+    '- `pi-linear-tools sync-doc init --cwd /path/to/subproject --project "Project name or ID"`',
+    '- `pi-linear-tools sync-doc list --cwd /path/to/subproject`',
+    '- `pi-linear-tools sync-doc run --cwd /path/to/subproject`',
+  ].join('\n');
 }
 
 function selectTarget(targets, targetName) {

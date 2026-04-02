@@ -1,7 +1,13 @@
 import { loadSettings, saveSettings } from './settings.js';
 import { createLinearClient } from './linear-client.js';
 import { resolveProjectRef } from './linear.js';
-import { listSyncDocTargets, runAllSyncDocs, runSyncDoc } from './sync-doc.js';
+import {
+  explainSyncDocSetup,
+  initSyncDocConfig,
+  listSyncDocTargets,
+  runAllSyncDocs,
+  runSyncDoc,
+} from './sync-doc.js';
 import {
   authenticate,
   logout,
@@ -203,6 +209,8 @@ Milestone Actions:
   delete <milestone-id>
 
 Sync Doc Actions:
+  init [--cwd X] [--project X] [--file X]
+  explain
   list [--config X]
   run [--target X] [--config X]
   check [--target X] [--config X]
@@ -213,6 +221,7 @@ Command Notes:
   issue update changes issue fields; issue activity reads the Activity timeline.
   project update changes project fields; project-update manages Updates tab entries.
   project-update maps to Linear project updates in the Updates tab.
+  sync-doc init scaffolds .linear-tools/config.json in the target folder.
   sync-doc run/check defaults to all configured targets in .linear-tools/config.json.
   sync-doc --target X narrows the operation to one configured target.
 
@@ -248,6 +257,8 @@ Examples:
   pi-linear-tools project-update create --project "Roadmap Refresh" --body "Weekly update" --health onTrack
   pi-linear-tools project-update update 12345678-1234-1234-1234-123456789abc --health atRisk
   pi-linear-tools sync-doc list
+  pi-linear-tools sync-doc init --cwd /path/to/subproject --project "Project name or ID"
+  pi-linear-tools sync-doc explain
   pi-linear-tools sync-doc run
   pi-linear-tools sync-doc check
   pi-linear-tools issue list --project MyProject --states "In Progress,Backlog"
@@ -409,13 +420,16 @@ function printSyncDocHelp() {
   console.log(`pi-linear-tools sync-doc - Sync markdown files into Linear
 
 Usage:
-  pi-linear-tools sync-doc [list|run|check] [options]
+  pi-linear-tools sync-doc [init|explain|list|run|check] [options]
 
 Config:
   Reads targets from .linear-tools/config.json in the current project tree and ~/.linear-tools/config.json.
-  Prefer a repo or monorepo-root .linear-tools/config.json for shared targets. Use ~/.linear-tools/config.json for personal defaults.
+  Put config in the smallest folder that owns the docs being synced. The nearest config wins.
+  Use repo root only for targets intentionally shared across multiple subprojects. Use ~/.linear-tools/config.json for personal defaults.
 
 Actions:
+  init     Scaffold a starter .linear-tools/config.json in the target folder
+  explain  Print the recommended config placement and overview/document model
   list     Show resolved sync targets from config
   run      Update Linear if the managed block differs. Defaults to all configured targets.
   check    Show whether a sync would change Linear. Defaults to all configured targets.
@@ -423,8 +437,16 @@ Actions:
 Target Options:
   --target X              Target name from config
   --config X              Explicit path to config.json or .linear-tools/
+  --cwd X                 Resolve config and files relative to X
 
-One-off Options:
+Init Options:
+  --cwd X                 Create .linear-tools/config.json inside X (defaults to current directory)
+  --project X             Fill the starter overview target with a project name or ID
+  --file X                File path for the starter overview target (default: README.md)
+  --field X               content or description (default: content)
+  --force                 Overwrite an existing config.json
+
+One-off Run/Check Options:
   --file X                Markdown file to sync
   --project X             Linear project name, id, slug, or project URL
   --issue X               Linear issue key or id
@@ -444,13 +466,15 @@ Project Document Index:
   Use this for one overview doc in the project body plus separate linked Linear documents for deeper docs.
 
 Examples:
+  pi-linear-tools sync-doc init --cwd /path/to/subproject --project "Project name or ID"
+  pi-linear-tools sync-doc explain
   pi-linear-tools sync-doc list
   pi-linear-tools sync-doc run
   pi-linear-tools sync-doc check
-  pi-linear-tools sync-doc run --target package-readme
-  pi-linear-tools sync-doc check --target package-readme
-  pi-linear-tools sync-doc run --file README.md --project "Roadmap Refresh" --field content
-  pi-linear-tools sync-doc run --file providers/foo/README.md --project "Roadmap Refresh" --target-type document --document-title "Provider Foo"
+  pi-linear-tools sync-doc run --target project-overview
+  pi-linear-tools sync-doc check --target project-overview
+  pi-linear-tools sync-doc run --file README.md --project "Project name or ID" --field content
+  pi-linear-tools sync-doc run --file docs/provider.md --project "Project name or ID" --target-type document --document-title "Provider Doc"
 `);
 }
 
@@ -1167,10 +1191,29 @@ function printSyncDocBatchResult(result) {
   console.log([header, ...lines].join('\n'));
 }
 
+function printSyncDocInitResult(result) {
+  if (!result.created) {
+    console.log(`Sync-doc config already exists at ${result.configPath}`);
+    console.log('Use --force to overwrite it, or edit the existing config manually.');
+    return;
+  }
+
+  console.log(`${result.overwritten ? 'Rewrote' : 'Created'} ${result.configPath}`);
+  console.log(`State will be written to ${result.statePath}`);
+  if (result.target) {
+    console.log(`Starter target: ${result.target.name} -> project:${result.target.project} field "${result.target.field}" from ${result.target.file}`);
+  }
+  console.log('Next steps:');
+  console.log(`- Edit ${result.configPath} to add document targets for deeper docs`);
+  console.log(`- Run pi-linear-tools sync-doc list --cwd ${result.cwd}`);
+  console.log(`- Run pi-linear-tools sync-doc run --cwd ${result.cwd}`);
+}
+
 async function handleSyncDocCommand(args) {
   const [maybeAction, ...restArgs] = args;
   const action = !maybeAction || maybeAction.startsWith('-') ? 'run' : maybeAction;
   const commandArgs = !maybeAction || maybeAction.startsWith('-') ? args : restArgs;
+  const cwd = readFlag(commandArgs, '--cwd') || process.cwd();
 
   if (
     action === '--help'
@@ -1183,13 +1226,33 @@ async function handleSyncDocCommand(args) {
     return;
   }
 
-  if (!['list', 'run', 'check'].includes(action)) {
+  if (!['init', 'explain', 'list', 'run', 'check'].includes(action)) {
     throw new Error(`Unknown sync-doc action: ${action}`);
+  }
+
+  if (action === 'explain') {
+    console.log(explainSyncDocSetup());
+    return;
+  }
+
+  if (action === 'init') {
+    const result = await initSyncDocConfig({
+      cwd,
+      file: readFlag(commandArgs, '--file'),
+      project: readFlag(commandArgs, '--project'),
+      field: readFlag(commandArgs, '--field'),
+      marker: readFlag(commandArgs, '--marker'),
+      name: readFlag(commandArgs, '--name'),
+      documentIndexMarker: readFlag(commandArgs, '--document-index-marker'),
+      force: hasFlag(commandArgs, '--force'),
+    });
+    printSyncDocInitResult(result);
+    return;
   }
 
   if (action === 'list') {
     const result = await listSyncDocTargets({
-      cwd: process.cwd(),
+      cwd,
       configPath: readFlag(commandArgs, '--config'),
     });
     printSyncDocTargets(result);
@@ -1206,7 +1269,7 @@ async function handleSyncDocCommand(args) {
   if (!hasOneOffFlags && !hasNamedTarget) {
     const result = await runAllSyncDocs(client, {
       mode: action,
-      cwd: process.cwd(),
+      cwd,
       configPath: readFlag(commandArgs, '--config'),
     });
     printSyncDocBatchResult(result);
@@ -1215,7 +1278,7 @@ async function handleSyncDocCommand(args) {
 
   const result = await runSyncDoc(client, {
     mode: action,
-    cwd: process.cwd(),
+    cwd,
     configPath: readFlag(commandArgs, '--config'),
     targetName: readFlag(commandArgs, '--target'),
     file: readFlag(commandArgs, '--file'),

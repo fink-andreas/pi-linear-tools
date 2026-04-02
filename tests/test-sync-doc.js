@@ -8,7 +8,9 @@ import { join } from 'node:path';
 
 import {
   defaultMarkerFromFile,
+  explainSyncDocSetup,
   extractManagedSegments,
+  initSyncDocConfig,
   listSyncDocTargets,
   loadSyncDocTargets,
   runAllSyncDocs,
@@ -190,6 +192,44 @@ async function testListSyncDocTargetsIncludesDocumentTargets() {
   });
 
   console.log('✓ listSyncDocTargets includes document targets');
+}
+
+async function testInitSyncDocConfigCreatesStarterConfig() {
+  const repoDir = await mkdtemp(join(tmpdir(), 'pi-linear-tools-sync-init-'));
+  const nestedDir = join(repoDir, 'packages', 'feature');
+  await mkdir(nestedDir, { recursive: true });
+
+  const result = await initSyncDocConfig({
+    cwd: nestedDir,
+    project: 'Project name or ID',
+    file: 'README.md',
+  });
+
+  assert.equal(result.created, true);
+  assert.equal(result.configPath, join(nestedDir, '.linear-tools', 'config.json'));
+  assert.equal(result.statePath, join(nestedDir, '.linear-tools', 'sync-state.json'));
+
+  const config = JSON.parse(await readFile(result.configPath, 'utf8'));
+  assert.equal(config.syncDocs.targets.length, 1);
+  assert.deepEqual(config.syncDocs.targets[0], {
+    name: 'project-overview',
+    file: 'README.md',
+    project: 'Project name or ID',
+    field: 'content',
+    marker: 'project-overview',
+    documentIndexMarker: 'project-documents',
+  });
+
+  console.log('✓ initSyncDocConfig creates starter config');
+}
+
+async function testExplainSyncDocSetupMentionsNearestConfig() {
+  const explanation = explainSyncDocSetup();
+  assert.match(explanation, /nearest `?\.linear-tools\/config\.json`?/i);
+  assert.match(explanation, /smallest folder/i);
+  assert.match(explanation, /projectField/i);
+  assert.match(explanation, /targetType: "document"/i);
+  console.log('✓ explainSyncDocSetup');
 }
 
 async function testRunSyncDocProjectTarget() {
@@ -458,6 +498,8 @@ async function main() {
   await testExtractManagedSegments();
   await testLoadSyncDocTargetsUsesFolderConfig();
   await testListSyncDocTargetsIncludesDocumentTargets();
+  await testInitSyncDocConfigCreatesStarterConfig();
+  await testExplainSyncDocSetupMentionsNearestConfig();
   await testRunSyncDocProjectTarget();
   await testRunAllSyncDocsCreatesDocumentAndIndex();
   console.log('✓ tests/test-sync-doc.js passed');

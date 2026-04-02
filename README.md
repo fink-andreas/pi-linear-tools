@@ -6,6 +6,7 @@ Useful mental model:
 - `issue update` changes issue fields; `issue comment` adds discussion; `issue activity` reads the Activity timeline
 - `project update` changes project fields; `project-update` manages Updates tab entries
 - `project-update` maps to Linear project updates in the Updates tab
+- `sync-doc init` scaffolds `.linear-tools/config.json` in the folder you point at
 - `sync-doc run` and `sync-doc check` default to all configured targets in `.linear-tools/config.json`
 - `sync-doc --target X` narrows the operation to one configured target
 
@@ -77,6 +78,8 @@ pi-linear-tools issue --help
 pi-linear-tools project --help
 pi-linear-tools project-update --help
 pi-linear-tools sync-doc --help
+pi-linear-tools sync-doc init --cwd /path/to/subproject --project "Project name or ID"
+pi-linear-tools sync-doc explain
 pi-linear-tools config
 pi-linear-tools config --api-key lin_xxx
 pi-linear-tools config --default-team ENG
@@ -154,20 +157,26 @@ pi-linear-tools project-update unarchive 22222222-2222-4222-8222-222222222222
 ### Sync doc commands
 
 ```bash
+pi-linear-tools sync-doc init --cwd /path/to/subproject --project "Project name or ID"
+pi-linear-tools sync-doc explain
 pi-linear-tools sync-doc list
 pi-linear-tools sync-doc run
 pi-linear-tools sync-doc check
-pi-linear-tools sync-doc run --target package-readme
-pi-linear-tools sync-doc check --target package-readme
-pi-linear-tools sync-doc run --file README.md --project "Roadmap Refresh" --field content
-pi-linear-tools sync-doc run --file providers/foo/README.md --project "Roadmap Refresh" --target-type document --document-title "Provider Foo"
+pi-linear-tools sync-doc run --target project-overview
+pi-linear-tools sync-doc check --target project-overview
+pi-linear-tools sync-doc run --file README.md --project "Project name or ID" --field content
+pi-linear-tools sync-doc run --file docs/provider.md --project "Project name or ID" --target-type document --document-title "Provider Doc"
 ```
 
 Use one project overview target for the project body, then sync deeper docs as separate Linear documents.
 
-The simplest setup is to keep `.linear-tools/config.json` at your monorepo or repo root so the targets live with the code they sync.
+Use `pi-linear-tools sync-doc init --cwd /path/to/subproject --project "Project name or ID"` to scaffold a starter config.
 
-`~/.linear-tools/config.json` is also supported for personal defaults, but it should be treated as an override layer, not the main source of truth for repo-owned sync targets.
+Placement rule:
+- put `.linear-tools/config.json` in the smallest folder that owns the docs you are syncing
+- the CLI resolves the nearest `.linear-tools/config.json` upward from the current directory
+- use repo root only for targets intentionally shared across multiple subprojects
+- `~/.linear-tools/config.json` is supported for personal defaults, but it should be treated as an override layer, not the main source of truth for repo-owned sync targets
 
 Recommended pattern for multiple docs:
 - one `projectField` target syncs the project overview into `project.content` or `project.description`
@@ -188,7 +197,7 @@ Example:
       {
         "name": "project-overview",
         "file": "README.md",
-        "project": "Roadmap Refresh",
+        "project": "Project name or ID",
         "field": "content",
         "marker": "project-overview",
         "documentIndexMarker": "project-doc-links"
@@ -196,9 +205,9 @@ Example:
       {
         "name": "provider-foo",
         "targetType": "document",
-        "file": "providers/foo/README.md",
-        "project": "Roadmap Refresh",
-        "title": "Provider Foo",
+        "file": "docs/provider.md",
+        "project": "Project name or ID",
+        "title": "Provider Doc",
         "marker": "provider-foo",
         "documentId": "optional-existing-document-id"
       }
