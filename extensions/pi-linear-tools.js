@@ -492,6 +492,7 @@ async function registerLinearTools(pi) {
     name: 'linear_issue',
     label: 'Linear Issue',
     description: 'Interact with Linear issues. Actions: list, view, activity, create, update, comment, start, delete',
+    promptSnippet: 'Interact with Linear issues (list, view, activity, create, update, comment, start, delete)',
     parameters: {
       type: 'object',
       properties: {
@@ -712,6 +713,7 @@ async function registerLinearTools(pi) {
     name: 'linear_project',
     label: 'Linear Project',
     description: 'Interact with Linear projects. Actions: list, view, create, update, delete, archive, unarchive',
+    promptSnippet: 'Interact with Linear projects (list, view, create, update, delete, archive, unarchive)',
     parameters: {
       type: 'object',
       properties: {
@@ -908,6 +910,7 @@ async function registerLinearTools(pi) {
     name: 'linear_team',
     label: 'Linear Team',
     description: 'Interact with Linear teams. Actions: list',
+    promptSnippet: 'Interact with Linear teams (list)',
     parameters: {
       type: 'object',
       properties: {
@@ -959,6 +962,7 @@ async function registerLinearTools(pi) {
       name: 'linear_milestone',
       label: 'Linear Milestone',
       description: 'Interact with Linear project milestones. Actions: list, view, create, update, delete',
+      promptSnippet: 'Interact with Linear milestones (list, view, create, update, delete)',
       parameters: {
         type: 'object',
         properties: {
