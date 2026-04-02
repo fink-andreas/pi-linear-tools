@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 
 import extension from '../extensions/pi-linear-tools.js';
 import { setTestClientFactory, resetTestClientFactory } from '../src/linear-client.js';
+import { fetchProjectUpdates } from '../src/linear.js';
 
 function createMockPi() {
   const tools = new Map();
@@ -347,10 +348,88 @@ async function testProjectUpdateValidation() {
   }
 }
 
+async function testProjectUpdateListIncludesArchivedProjectLookup() {
+  let sawArchivedLookup = false;
+
+  const mockClient = {
+    apiKey: 'archived-project-updates-test',
+    projects: async () => ({
+      nodes: [],
+    }),
+    rawRequest: async (query, variables) => {
+      if (query.includes('ProjectsLookup')) {
+        sawArchivedLookup = true;
+        assert.equal(variables.includeArchived, true);
+        return {
+          data: {
+            projects: {
+              nodes: [{
+                id: '11111111-1111-4111-8111-111111111111',
+                name: 'Archived Project',
+                slugId: 'archived-project',
+                archivedAt: '2026-03-30T00:00:00.000Z',
+              }],
+            },
+          },
+          headers: new Headers(),
+        };
+      }
+
+      if (query.includes('ProjectUpdatesByProject')) {
+        assert.equal(variables.id, '11111111-1111-4111-8111-111111111111');
+        assert.equal(variables.includeArchived, true);
+        return {
+          data: {
+            project: {
+              id: '11111111-1111-4111-8111-111111111111',
+              name: 'Archived Project',
+              projectUpdates: {
+                nodes: [
+                  {
+                    id: '22222222-2222-4222-8222-222222222222',
+                    body: 'Archived weekly update',
+                    health: 'atRisk',
+                    createdAt: '2026-03-30T00:00:00.000Z',
+                    updatedAt: '2026-03-30T00:00:00.000Z',
+                    archivedAt: null,
+                    url: 'https://linear.app/acme/update/archived',
+                    slugId: 'archived-weekly-update',
+                    isDiffHidden: false,
+                    isStale: false,
+                    user: {
+                      id: 'u1',
+                      name: 'Test User',
+                      displayName: 'Test User',
+                    },
+                  },
+                ],
+              },
+            },
+          },
+          headers: new Headers(),
+        };
+      }
+
+      throw new Error(`Unexpected query: ${query}`);
+    },
+  };
+
+  const result = await fetchProjectUpdates(mockClient, 'Archived Project', {
+    includeArchived: true,
+    limit: 10,
+  });
+
+  assert.equal(sawArchivedLookup, true);
+  assert.equal(result.project.name, 'Archived Project');
+  assert.equal(result.updates.length, 1);
+  assert.equal(result.updates[0].body, 'Archived weekly update');
+}
+
 async function main() {
   await testProjectArchiveAndUnarchive();
   await testProjectUpdateTool();
   await testProjectUpdateValidation();
+  await testProjectUpdateListIncludesArchivedProjectLookup();
   console.log('✓ tests/test-project-lifecycle.js passed');
 }
 

@@ -1697,7 +1697,7 @@ export async function fetchProjectUpdates(client, projectRef, options = {}) {
   return withLinearErrorHandling(async () => {
     const includeArchived = options.includeArchived === true;
     const limit = normalizePositiveInteger(options.limit, 'limit', 10);
-    const resolved = await resolveProjectRef(client, projectRef);
+    const resolved = await resolveProjectRef(client, projectRef, { includeArchived });
     const data = await executeGraphQL(client, PROJECT_UPDATES_BY_PROJECT_QUERY, {
       id: resolved.id,
       first: limit,
