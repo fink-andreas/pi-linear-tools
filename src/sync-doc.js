@@ -706,10 +706,13 @@ function getDocumentIndexEntries(state, targets, projectTarget) {
     ))
     .map((target) => {
       const stateEntry = state.targets[target.name] || {};
+      const url = Object.prototype.hasOwnProperty.call(stateEntry, 'documentIndexUrl')
+        ? stateEntry.documentIndexUrl || null
+        : stateEntry.documentUrl || null;
       return {
         name: target.name,
         title: stateEntry.documentTitle || target.title,
-        url: stateEntry.documentUrl || null,
+        url,
       };
     })
     .sort((left, right) => left.title.localeCompare(right.title));
@@ -1014,6 +1017,7 @@ async function runDocumentTarget(client, target, loaded, context) {
       documentId: existingDocument.id,
       documentTitle: existingDocument.title,
       documentUrl: existingDocument.url,
+      documentIndexUrl: existingDocument.url,
       changed: false,
     };
     await saveExecutionState(statePath, state, context);
@@ -1039,6 +1043,7 @@ async function runDocumentTarget(client, target, loaded, context) {
       documentId: existingDocument?.id || target.documentId || previousState.documentId || null,
       documentTitle: existingDocument?.title || target.title,
       documentUrl: existingDocument?.url || previousState.documentUrl || null,
+      documentIndexUrl: existingDocument?.url || null,
       changed: true,
     };
     await saveExecutionState(statePath, state, context);
@@ -1090,6 +1095,7 @@ async function runDocumentTarget(client, target, loaded, context) {
     documentId: document.id,
     documentTitle: document.title,
     documentUrl: document.url,
+    documentIndexUrl: existingDocument ? document.url : null,
     changed: true,
   };
   await saveExecutionState(statePath, state, context);
