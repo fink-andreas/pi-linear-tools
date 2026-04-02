@@ -115,7 +115,7 @@ async function testLoadSyncDocTargetsUsesFolderConfig() {
         targets: [
           {
             name: 'global-target',
-            file: '/tmp/global.md',
+            file: 'global.md',
             project: 'Global Project',
             field: 'description',
           },
@@ -315,6 +315,91 @@ async function testRunSyncDocProjectTarget() {
   console.log('✓ runSyncDoc project target');
 }
 
+async function testRunSyncDocDetectsManagedBlockDrift() {
+  const repoDir = await mkdtemp(join(tmpdir(), 'pi-linear-tools-sync-drift-'));
+  const readmePath = join(repoDir, 'README.md');
+  await writeFile(readmePath, '# Example Package\n\nActive runtime surface.\n', 'utf8');
+
+  let remoteContent = 'Manual intro above.\n\nManual tail below.';
+
+  const mockClient = {
+    projects: async () => ({
+      nodes: [{
+        id: '11111111-1111-4111-8111-111111111111',
+        name: 'Example Project',
+        slugId: 'example-project-abc123def456',
+      }],
+    }),
+    rawRequest: async (query, variables) => {
+      if (query.includes('ProjectsLookup')) {
+        return {
+          data: {
+            projects: {
+              nodes: [{
+                id: '11111111-1111-4111-8111-111111111111',
+                name: 'Example Project',
+                slugId: 'abc123def456',
+                archivedAt: null,
+              }],
+            },
+          },
+          headers: new Headers(),
+        };
+      }
+
+      if (query.includes('ProjectDetails')) {
+        return {
+          data: {
+            project: createProjectPayload(remoteContent),
+          },
+          headers: new Headers(),
+        };
+      }
+
+      if (query.includes('ProjectUpdate')) {
+        remoteContent = variables.input.content;
+        return {
+          data: {
+            projectUpdate: {
+              success: true,
+              project: {
+                id: '11111111-1111-4111-8111-111111111111',
+              },
+            },
+          },
+          headers: new Headers(),
+        };
+      }
+
+      throw new Error(`Unexpected query: ${query}`);
+    },
+  };
+
+  const first = await runSyncDoc(mockClient, {
+    mode: 'run',
+    cwd: repoDir,
+    file: readmePath,
+    project: 'Example Project',
+    field: 'content',
+  });
+  assert.equal(first.changed, true);
+
+  remoteContent = remoteContent.replace('Active runtime surface.', 'Manual remote drift inside managed block.');
+
+  const second = await runSyncDoc(mockClient, {
+    mode: 'run',
+    cwd: repoDir,
+    file: readmePath,
+    project: 'Example Project',
+    field: 'content',
+  });
+
+  assert.equal(second.changed, true);
+  assert.match(remoteContent, /Active runtime surface\./);
+  assert.doesNotMatch(remoteContent, /Manual remote drift inside managed block\./);
+  console.log('✓ runSyncDoc detects managed block drift');
+}
+
 async function testRunAllSyncDocsCreatesDocumentAndIndex() {
   const repoDir = await mkdtemp(join(tmpdir(), 'pi-linear-tools-sync-all-'));
   await mkdir(join(repoDir, '.linear-tools'), { recursive: true });
@@ -327,7 +412,7 @@ async function testRunAllSyncDocsCreatesDocumentAndIndex() {
         {
           name: 'census-readme',
           file: 'README.md',
-          project: 'Census Data',
+          project: 'https://linear.app/example/project/census-data-abc123',
           field: 'content',
           marker: 'census-readme',
           documentIndexMarker: 'census-documents',
@@ -337,7 +422,7 @@ async function testRunAllSyncDocsCreatesDocumentAndIndex() {
           name: 'census-provider-hud-readme',
           targetType: 'document',
           file: 'providers/hud/README.md',
-          project: 'Census Data',
+          project: 'https://linear.app/example/project/census-data-abc123',
           title: 'HUD Provider',
           marker: 'census-provider-hud-readme',
         },
@@ -358,6 +443,7 @@ async function testRunAllSyncDocsCreatesDocumentAndIndex() {
   let nextDocumentId = 1;
 
   const mockClient = {
+    apiKey: 'sync-doc-all',
     projects: async () => ({
       nodes: [{
         id: '11111111-1111-4111-8111-111111111111',
@@ -492,6 +578,303 @@ async function testRunAllSyncDocsCreatesDocumentAndIndex() {
   console.log('✓ runAllSyncDocs creates linked documents and project index');
 }
 
+async function testRunAllSyncDocsMatchesProjectsByResolvedIdentity() {
+  const repoDir = await mkdtemp(join(tmpdir(), 'pi-linear-tools-sync-identity-'));
+  await mkdir(join(repoDir, '.linear-tools'), { recursive: true });
+  await mkdir(join(repoDir, 'docs'), { recursive: true });
+  await writeFile(join(repoDir, 'README.md'), '# Census Data\n\nOverview content.\n', 'utf8');
+  await writeFile(join(repoDir, 'docs', 'provider.md'), '# Provider\n\nProvider details.\n', 'utf8');
+  await writeFile(join(repoDir, '.linear-tools', 'config.json'), JSON.stringify({
+    syncDocs: {
+      targets: [
+        {
+          name: 'census-readme',
+          file: 'README.md',
+          project: 'https://linear.app/example/project/census-data-abc123',
+          field: 'content',
+          marker: 'census-readme',
+          documentIndexMarker: 'census-documents',
+          documentIndexHeading: 'Linked docs',
+        },
+        {
+          name: 'provider-doc',
+          targetType: 'document',
+          file: 'docs/provider.md',
+          project: '11111111-1111-4111-8111-111111111111',
+          title: 'Provider Doc',
+          marker: 'provider-doc',
+        },
+      ],
+    },
+  }, null, 2));
+
+  let remoteProjectContent = '## Linked docs\n\n_No linked documents yet._';
+  const documents = new Map();
+
+  const mockClient = {
+    apiKey: 'sync-doc-identity',
+    projects: async () => ({
+      nodes: [{
+        id: '11111111-1111-4111-8111-111111111111',
+        name: 'Census Data',
+        slugId: 'census-data-abc123',
+      }],
+    }),
+    issue: async () => null,
+    rawRequest: async (query, variables) => {
+      if (query.includes('ProjectsLookup')) {
+        return {
+          data: {
+            projects: {
+              nodes: [{
+                id: '11111111-1111-4111-8111-111111111111',
+                name: 'Census Data',
+                slugId: 'census-data-abc123',
+                archivedAt: null,
+              }],
+            },
+          },
+          headers: new Headers(),
+        };
+      }
+
+      if (query.includes('ProjectDetails')) {
+        return {
+          data: {
+            project: createProjectPayload(remoteProjectContent),
+          },
+          headers: new Headers(),
+        };
+      }
+
+      if (query.includes('ProjectUpdate')) {
+        remoteProjectContent = variables.input.content;
+        return {
+          data: {
+            projectUpdate: {
+              success: true,
+              project: { id: '11111111-1111-4111-8111-111111111111' },
+            },
+          },
+          headers: new Headers(),
+        };
+      }
+
+      if (query.includes('DocumentCreate')) {
+        documents.set('doc-identity', {
+          id: 'doc-identity',
+          title: variables.input.title,
+          content: variables.input.content,
+          icon: null,
+          color: null,
+          slugId: 'doc-identity-slug',
+          url: 'https://linear.app/example/document/doc-identity-slug',
+          archivedAt: null,
+          createdAt: '2026-03-31T00:00:00.000Z',
+          updatedAt: '2026-03-31T00:00:00.000Z',
+          project: { id: variables.input.projectId, name: 'Census Data' },
+          issue: null,
+        });
+        return {
+          data: {
+            documentCreate: {
+              success: true,
+              document: { id: 'doc-identity' },
+            },
+          },
+          headers: new Headers(),
+        };
+      }
+
+      if (query.includes('DocumentDetails')) {
+        return {
+          data: {
+            document: documents.get(variables.id) || null,
+          },
+          headers: new Headers(),
+        };
+      }
+
+      throw new Error(`Unexpected query: ${query}`);
+    },
+  };
+
+  const result = await runAllSyncDocs(mockClient, {
+    mode: 'run',
+    cwd: repoDir,
+  });
+
+  assert.equal(result.changedCount, 2);
+  assert.match(remoteProjectContent, /\[Provider Doc\]\(https:\/\/linear\.app\/example\/document\/doc-identity-slug\)/);
+  console.log('✓ runAllSyncDocs matches projects by resolved identity');
+}
+
+async function testRunAllSyncDocsCheckMatchesRunForExistingDocuments() {
+  const repoDir = await mkdtemp(join(tmpdir(), 'pi-linear-tools-sync-check-'));
+  await mkdir(join(repoDir, '.linear-tools'), { recursive: true });
+  await mkdir(join(repoDir, 'docs'), { recursive: true });
+  await writeFile(join(repoDir, 'README.md'), '# Census Data\n\nOverview content.\n', 'utf8');
+  await writeFile(join(repoDir, 'docs', 'provider.md'), '# Provider\n\nProvider details updated.\n', 'utf8');
+  await writeFile(join(repoDir, '.linear-tools', 'config.json'), JSON.stringify({
+    syncDocs: {
+      targets: [
+        {
+          name: 'census-readme',
+          file: 'README.md',
+          project: 'https://linear.app/example/project/census-data-abc123',
+          field: 'content',
+          marker: 'census-readme',
+          documentIndexMarker: 'census-documents',
+        },
+        {
+          name: 'provider-doc',
+          targetType: 'document',
+          file: 'docs/provider.md',
+          project: '11111111-1111-4111-8111-111111111111',
+          title: 'Provider Doc',
+          marker: 'provider-doc',
+          documentId: 'doc-existing',
+        },
+      ],
+    },
+  }, null, 2));
+
+  let remoteProjectContent = 'Old overview';
+  const documents = new Map([
+    ['doc-existing', {
+      id: 'doc-existing',
+      title: 'Provider Doc',
+      content: 'Old provider content',
+      icon: null,
+      color: null,
+      slugId: 'doc-existing-slug',
+      url: 'https://linear.app/example/document/doc-existing-slug',
+      archivedAt: null,
+      createdAt: '2026-03-31T00:00:00.000Z',
+      updatedAt: '2026-03-31T00:00:00.000Z',
+      project: { id: '11111111-1111-4111-8111-111111111111', name: 'Census Data' },
+      issue: null,
+    }],
+  ]);
+
+  const mockClient = {
+    apiKey: 'sync-doc-check',
+    projects: async () => ({
+      nodes: [{
+        id: '11111111-1111-4111-8111-111111111111',
+        name: 'Census Data',
+        slugId: 'census-data-abc123',
+      }],
+    }),
+    issue: async () => null,
+    rawRequest: async (query, variables) => {
+      if (query.includes('ProjectsLookup')) {
+        return {
+          data: {
+            projects: {
+              nodes: [{
+                id: '11111111-1111-4111-8111-111111111111',
+                name: 'Census Data',
+                slugId: 'census-data-abc123',
+                archivedAt: null,
+              }],
+            },
+          },
+          headers: new Headers(),
+        };
+      }
+
+      if (query.includes('ProjectDetails')) {
+        return {
+          data: {
+            project: createProjectPayload(remoteProjectContent),
+          },
+          headers: new Headers(),
+        };
+      }
+
+      if (query.includes('ProjectUpdate')) {
+        remoteProjectContent = variables.input.content;
+        return {
+          data: {
+            projectUpdate: {
+              success: true,
+              project: { id: '11111111-1111-4111-8111-111111111111' },
+            },
+          },
+          headers: new Headers(),
+        };
+      }
+
+      if (query.includes('DocumentDetails')) {
+        return {
+          data: {
+            document: documents.get(variables.id) || null,
+          },
+          headers: new Headers(),
+        };
+      }
+
+      if (query.includes('DocumentUpdate')) {
+        const existing = documents.get(variables.id);
+        documents.set(variables.id, {
+          ...existing,
+          ...variables.input,
+          updatedAt: '2026-03-31T01:00:00.000Z',
+        });
+        return {
+          data: {
+            documentUpdate: {
+              success: true,
+              document: { id: variables.id },
+            },
+          },
+          headers: new Headers(),
+        };
+      }
+
+      throw new Error(`Unexpected query: ${query}`);
+    },
+  };
+
+  const checkResult = await runAllSyncDocs(mockClient, {
+    mode: 'check',
+    cwd: repoDir,
+  });
+  const runResult = await runAllSyncDocs(mockClient, {
+    mode: 'run',
+    cwd: repoDir,
+  });
+
+  const checkOverview = checkResult.results.find((result) => result.targetName === 'census-readme');
+  const runOverview = runResult.results.find((result) => result.targetName === 'census-readme');
+  assert.equal(checkOverview.afterHash, runOverview.afterHash);
+  console.log('✓ runAllSyncDocs check matches run for existing documents');
+}
+
+async function testLoadSyncDocTargetsRejectsEscapedFiles() {
+  const repoDir = await mkdtemp(join(tmpdir(), 'pi-linear-tools-sync-path-'));
+  await mkdir(join(repoDir, '.linear-tools'), { recursive: true });
+  await writeFile(join(repoDir, '.linear-tools', 'config.json'), JSON.stringify({
+    syncDocs: {
+      targets: [
+        {
+          name: 'escaped',
+          file: '../outside.md',
+          project: 'Example Project',
+          field: 'content',
+        },
+      ],
+    },
+  }, null, 2));
+
+  await assert.rejects(
+    () => loadSyncDocTargets({ cwd: repoDir }),
+    /must stay within/
+  );
+  console.log('✓ loadSyncDocTargets rejects escaped files');
+}
+
 async function main() {
   await testDefaultMarkerFromFile();
   await testUpsertManagedContent();
@@ -501,7 +884,11 @@ async function main() {
   await testInitSyncDocConfigCreatesStarterConfig();
   await testExplainSyncDocSetupMentionsNearestConfig();
   await testRunSyncDocProjectTarget();
+  await testRunSyncDocDetectsManagedBlockDrift();
   await testRunAllSyncDocsCreatesDocumentAndIndex();
+  await testRunAllSyncDocsMatchesProjectsByResolvedIdentity();
+  await testRunAllSyncDocsCheckMatchesRunForExistingDocuments();
+  await testLoadSyncDocTargetsRejectsEscapedFiles();
   console.log('✓ tests/test-sync-doc.js passed');
 }
 

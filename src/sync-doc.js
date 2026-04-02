@@ -38,6 +38,11 @@ function sha256(value) {
   return createHash('sha256').update(String(value || ''), 'utf8').digest('hex');
 }
 
+function isPathWithinBaseDir(baseDir, targetPath) {
+  const relativePath = relative(resolve(baseDir), resolve(targetPath));
+  return relativePath === '' || (!relativePath.startsWith('..') && !isAbsolute(relativePath));
+}
+
 function defaultDocumentTitleFromFile(filePath) {
   const baseName = basename(filePath, extname(filePath)).trim();
   return baseName || 'Document';
@@ -337,6 +342,10 @@ function normalizeTargetConfig(target, baseDir, sourceLabel, sourceConfigPath) {
   }
 
   const filePath = isAbsolute(target.file) ? resolve(target.file) : resolve(baseDir, target.file);
+  if (!isPathWithinBaseDir(baseDir, filePath)) {
+    throw new Error(`Sync target file must stay within ${baseDir}: ${target.file}`);
+  }
+
   const marker = target.marker ? String(target.marker).trim() : defaultMarkerFromFile(filePath);
   const explicitType = target.targetType ? String(target.targetType).trim() : null;
   const allowedTypes = ['projectField', 'issueField', 'document'];
@@ -502,6 +511,57 @@ async function saveSyncState(statePath, state) {
   await writeFile(statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
 }
 
+async function getExecutionState(statePath, context = {}) {
+  if (context.sharedState) {
+    return context.sharedState;
+  }
+
+  return loadSyncState(statePath);
+}
+
+async function saveExecutionState(statePath, state, context = {}) {
+  if (context.sharedState) {
+    context.sharedState = state;
+    if (context.persistState === true) {
+      await saveSyncState(statePath, state);
+    }
+    return;
+  }
+
+  if (context.persistState === false) {
+    return;
+  }
+
+  await saveSyncState(statePath, state);
+}
+
+async function prepareTargetsForExecution(client, targets = []) {
+  const projectCache = new Map();
+  const issueCache = new Map();
+
+  return Promise.all(targets.map(async (target) => {
+    const prepared = { ...target };
+
+    if (target.project) {
+      const cacheKey = normalizeRefKey(target.project);
+      if (!projectCache.has(cacheKey)) {
+        projectCache.set(cacheKey, await resolveProjectRef(client, target.project));
+      }
+      prepared.resolvedProjectId = projectCache.get(cacheKey)?.id || null;
+    }
+
+    if (target.issue) {
+      const cacheKey = normalizeRefKey(target.issue);
+      if (!issueCache.has(cacheKey)) {
+        issueCache.set(cacheKey, await resolveIssue(client, target.issue));
+      }
+      prepared.resolvedIssueId = issueCache.get(cacheKey)?.id || null;
+    }
+
+    return prepared;
+  }));
+}
+
 export async function initSyncDocConfig(options = {}) {
   const targetDir = resolve(options.cwd || process.cwd());
   const configDir = getConfigDirPath(targetDir);
@@ -608,18 +668,41 @@ function buildDocumentIndexContent(entries, heading) {
   return lines.join('\n');
 }
 
+function getProjectIdentityKey(target) {
+  if (!target?.project) {
+    return null;
+  }
+
+  if (target.resolvedProjectId) {
+    return `project:${target.resolvedProjectId}`;
+  }
+
+  return `project-ref:${normalizeRefKey(target.project)}`;
+}
+
+function getIssueIdentityKey(target) {
+  if (!target?.issue) {
+    return null;
+  }
+
+  if (target.resolvedIssueId) {
+    return `issue:${target.resolvedIssueId}`;
+  }
+
+  return `issue-ref:${normalizeRefKey(target.issue)}`;
+}
+
 function getDocumentIndexEntries(state, targets, projectTarget) {
-  if (!projectTarget.project) {
+  const projectKey = getProjectIdentityKey(projectTarget);
+  if (!projectKey) {
     return [];
   }
 
-  const projectKey = normalizeRefKey(projectTarget.project);
   return targets
     .filter((target) => (
       target.targetType === 'document'
       && target.includeInProjectIndex !== false
-      && target.project
-      && normalizeRefKey(target.project) === projectKey
+      && getProjectIdentityKey(target) === projectKey
     ))
     .map((target) => {
       const stateEntry = state.targets[target.name] || {};
@@ -658,6 +741,7 @@ function buildHashes(currentSegments, sourceContent, auxiliaryContent, metadataP
   return {
     sourceHash: sha256(sourceContent),
     beforeHash: sha256(currentSegments.before),
+    managedHash: sha256(currentSegments.managed),
     afterHash: sha256(currentSegments.after),
     auxiliaryHash: sha256(auxiliaryContent || ''),
     metadataHash: sha256(serializeHashPayload(metadataPayload)),
@@ -681,26 +765,26 @@ function getAutomaticCleanupMarkers(target, allTargets = []) {
   }
 
   if (target.targetType === 'projectField' && target.project) {
-    const projectKey = normalizeRefKey(target.project);
+    const projectKey = getProjectIdentityKey(target);
     for (const sibling of allTargets) {
       if (!sibling || sibling.name === target.name) {
         continue;
       }
 
-      if (sibling.targetType === 'document' && sibling.project && normalizeRefKey(sibling.project) === projectKey) {
+      if (sibling.targetType === 'document' && getProjectIdentityKey(sibling) === projectKey) {
         markers.add(sibling.marker);
       }
     }
   }
 
   if (target.targetType === 'issueField' && target.issue) {
-    const issueKey = normalizeRefKey(target.issue);
+    const issueKey = getIssueIdentityKey(target);
     for (const sibling of allTargets) {
       if (!sibling || sibling.name === target.name) {
         continue;
       }
 
-      if (sibling.targetType === 'document' && sibling.issue && normalizeRefKey(sibling.issue) === issueKey) {
+      if (sibling.targetType === 'document' && getIssueIdentityKey(sibling) === issueKey) {
         markers.add(sibling.marker);
       }
     }
@@ -718,6 +802,7 @@ function shouldSkipManagedUpdate(previousState, currentSegments, hashes) {
   return currentSegments.hasManagedBlock
     && previousState.sourceHash === hashes.sourceHash
     && previousState.beforeHash === hashes.beforeHash
+    && previousState.managedHash === hashes.managedHash
     && previousState.afterHash === hashes.afterHash
     && (previousState.auxiliaryHash || sha256('')) === hashes.auxiliaryHash
     && (previousState.metadataHash || sha256('{}')) === hashes.metadataHash;
@@ -737,11 +822,12 @@ function buildBaseResult(target, loaded, statePath, mode) {
   };
 }
 
-async function runFieldTarget(client, target, loaded, { cwd, mode, inlineTarget }) {
+async function runFieldTarget(client, target, loaded, context) {
+  const { cwd, mode, inlineTarget } = context;
   const remoteEntity = await getRemoteFieldEntity(client, target);
   const sourceContent = normalizeNewlines(await readFile(target.file, 'utf8')).trimEnd();
   const statePath = inlineTarget ? getFallbackStatePath(cwd) : loaded.statePath;
-  const state = await loadSyncState(statePath);
+  const state = await getExecutionState(statePath, context);
   const previousState = state.targets[target.name] || {};
   const cleanupMarkers = Array.from(new Set([
     ...getAutomaticCleanupMarkers(target, loaded.targets),
@@ -792,11 +878,26 @@ async function runFieldTarget(client, target, loaded, { cwd, mode, inlineTarget 
       ...hashes,
       changed: false,
     };
-    await saveSyncState(statePath, state);
+    await saveExecutionState(statePath, state, context);
     return baseResult;
   }
 
   if (mode === 'check') {
+    state.targets[target.name] = {
+      ...previousState,
+      lastCheckedAt: new Date().toISOString(),
+      file: target.file,
+      field: target.field,
+      marker: target.marker,
+      sourceHash: hashes.sourceHash,
+      beforeHash: sha256(nextSegments.before),
+      managedHash: sha256(nextSegments.managed),
+      afterHash: sha256(nextSegments.after),
+      auxiliaryHash: hashes.auxiliaryHash,
+      metadataHash: hashes.metadataHash,
+      changed: true,
+    };
+    await saveExecutionState(statePath, state, context);
     return {
       ...baseResult,
       beforeHash: sha256(cleanedCurrentValue),
@@ -815,12 +916,13 @@ async function runFieldTarget(client, target, loaded, { cwd, mode, inlineTarget 
     marker: target.marker,
     sourceHash: hashes.sourceHash,
     beforeHash: sha256(nextSegments.before),
+    managedHash: sha256(nextSegments.managed),
     afterHash: sha256(nextSegments.after),
     auxiliaryHash: hashes.auxiliaryHash,
     metadataHash: hashes.metadataHash,
     changed: true,
   };
-  await saveSyncState(statePath, state);
+  await saveExecutionState(statePath, state, context);
 
   return {
     ...baseResult,
@@ -856,10 +958,11 @@ async function loadExistingDocument(client, target, previousState) {
   }
 }
 
-async function runDocumentTarget(client, target, loaded, { cwd, mode, inlineTarget }) {
+async function runDocumentTarget(client, target, loaded, context) {
+  const { cwd, mode, inlineTarget } = context;
   const sourceContent = normalizeNewlines(await readFile(target.file, 'utf8')).trimEnd();
   const statePath = inlineTarget ? getFallbackStatePath(cwd) : loaded.statePath;
-  const state = await loadSyncState(statePath);
+  const state = await getExecutionState(statePath, context);
   const previousState = state.targets[target.name] || {};
   const existingDocument = await loadExistingDocument(client, target, previousState);
   const ownerIds = await resolveDocumentOwnerIds(client, target);
@@ -913,7 +1016,7 @@ async function runDocumentTarget(client, target, loaded, { cwd, mode, inlineTarg
       documentUrl: existingDocument.url,
       changed: false,
     };
-    await saveSyncState(statePath, state);
+    await saveExecutionState(statePath, state, context);
     return {
       ...baseResult,
       documentTitle: existingDocument.title,
@@ -922,13 +1025,30 @@ async function runDocumentTarget(client, target, loaded, { cwd, mode, inlineTarg
   }
 
   if (mode === 'check') {
+    state.targets[target.name] = {
+      ...previousState,
+      lastCheckedAt: new Date().toISOString(),
+      file: target.file,
+      marker: target.marker,
+      sourceHash: hashes.sourceHash,
+      beforeHash: sha256(nextSegments.before),
+      managedHash: sha256(nextSegments.managed),
+      afterHash: sha256(nextSegments.after),
+      auxiliaryHash: hashes.auxiliaryHash,
+      metadataHash: hashes.metadataHash,
+      documentId: existingDocument?.id || target.documentId || previousState.documentId || null,
+      documentTitle: existingDocument?.title || target.title,
+      documentUrl: existingDocument?.url || previousState.documentUrl || null,
+      changed: true,
+    };
+    await saveExecutionState(statePath, state, context);
     return {
       ...baseResult,
       beforeHash: sha256(currentValue),
       afterHash: sha256(nextValue),
       sourceHash: hashes.sourceHash,
       documentTitle: existingDocument?.title || target.title,
-      documentUrl: existingDocument?.url || null,
+      documentUrl: existingDocument?.url || previousState.documentUrl || null,
     };
   }
 
@@ -965,13 +1085,14 @@ async function runDocumentTarget(client, target, loaded, { cwd, mode, inlineTarg
     marker: target.marker,
     ...hashes,
     beforeHash: sha256(nextSegments.before),
+    managedHash: sha256(nextSegments.managed),
     afterHash: sha256(nextSegments.after),
     documentId: document.id,
     documentTitle: document.title,
     documentUrl: document.url,
     changed: true,
   };
-  await saveSyncState(statePath, state);
+  await saveExecutionState(statePath, state, context);
 
   return {
     ...baseResult,
@@ -1035,20 +1156,31 @@ export async function runAllSyncDocs(client, options = {}) {
     throw new Error(`No sync targets configured. Add ${getConfigDisplayPath()} or pass --file with --project/--issue`);
   }
 
+  const preparedTargets = await prepareTargetsForExecution(client, loaded.targets);
+  const preparedLoaded = {
+    ...loaded,
+    targets: preparedTargets,
+  };
+  const mode = options.mode === 'check' ? 'check' : 'run';
+  const sharedState = await loadSyncState(preparedLoaded.statePath);
+  const context = {
+    cwd,
+    mode,
+    inlineTarget: false,
+    sharedState,
+    persistState: mode !== 'check',
+  };
+
   const results = [];
-  for (const target of orderTargetsForRun(loaded.targets)) {
-    results.push(await runSyncDocTarget(client, target, loaded, {
-      cwd,
-      mode: options.mode === 'check' ? 'check' : 'run',
-      inlineTarget: false,
-    }));
+  for (const target of orderTargetsForRun(preparedLoaded.targets)) {
+    results.push(await runSyncDocTarget(client, target, preparedLoaded, context));
   }
 
   return {
-    mode: options.mode === 'check' ? 'check' : 'run',
+    mode,
     all: true,
-    configPath: loaded.configPath,
-    statePath: loaded.statePath,
+    configPath: preparedLoaded.configPath,
+    statePath: preparedLoaded.statePath,
     total: results.length,
     changedCount: results.filter((result) => result.changed).length,
     unchangedCount: results.filter((result) => !result.changed).length,
@@ -1061,12 +1193,18 @@ export async function runSyncDoc(client, options = {}) {
   const mode = options.mode === 'check' ? 'check' : 'run';
   const inlineTarget = buildInlineTargetFromFlags(options, cwd);
   const loaded = await loadSyncDocTargets({ cwd, configPath: options.configPath });
-  const target = inlineTarget || selectTarget(loaded.targets, options.targetName || options.target);
+  const preparedLoaded = {
+    ...loaded,
+    targets: await prepareTargetsForExecution(client, loaded.targets),
+  };
+  const preparedInlineTargets = inlineTarget ? await prepareTargetsForExecution(client, [inlineTarget]) : [];
+  const target = preparedInlineTargets[0] || selectTarget(preparedLoaded.targets, options.targetName || options.target);
 
-  return runSyncDocTarget(client, target, loaded, {
+  return runSyncDocTarget(client, target, preparedLoaded, {
     cwd,
     mode,
     inlineTarget: Boolean(inlineTarget),
+    persistState: mode !== 'check',
   });
 }
 
