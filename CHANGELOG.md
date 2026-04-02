@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.4.3 (2026-04-02)
+
+Sync-doc parity and tool prompt metadata polish release.
+
+### Bug Fixes
+- Fixed first-run `sync-doc` batch parity so `check` and `run` produce aligned project index planning
+- Preserved existing managed marker location when `position` is `top`
+- Resolved archived projects more reliably during project update flows
+
+### Improvements
+- Added `promptSnippet` metadata consistently across all Linear tools for better in-app tool discoverability/context
+- Added default activity limit handling for issue activity execution paths
+
+### Tests
+- Added/updated sync-doc regression coverage for first-run check/run parity and marker placement stability
+
 ## v0.4.2 (2026-03-26)
 
 Rate-limit resilience and API usage diagnostics release.
