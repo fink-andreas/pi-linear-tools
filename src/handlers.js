@@ -254,7 +254,7 @@ export async function executeIssueView(client, params) {
 export async function executeIssueActivity(client, params) {
   const issue = ensureNonEmpty(params.issue, 'issue');
   const activityData = await fetchIssueActivity(client, issue, {
-    limit: params.limit,
+    limit: params.limit || 25,
     includeArchived: params.includeArchived === true,
   });
   const markdown = formatIssueActivityAsMarkdown(activityData, {
