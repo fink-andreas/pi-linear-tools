@@ -13,18 +13,32 @@ import {
   updateIssue,
   createIssue,
   fetchProjects,
+  fetchProjectDetails,
   fetchTeams,
   resolveProjectRef,
   resolveTeamRef,
   getTeamWorkflowStates,
   fetchIssueDetails,
+  fetchIssueActivity,
   formatIssueAsMarkdown,
+  formatIssueActivityAsMarkdown,
   fetchIssuesByProject,
   fetchProjectMilestones,
   fetchMilestoneDetails,
   createProjectMilestone,
   updateProjectMilestone,
   deleteProjectMilestone,
+  createProject,
+  updateProject,
+  deleteProject,
+  archiveProject,
+  unarchiveProject,
+  fetchProjectUpdates,
+  fetchProjectUpdateDetails,
+  createProjectUpdate,
+  updateProjectUpdate,
+  archiveProjectUpdate,
+  unarchiveProjectUpdate,
   deleteIssue,
   withHandlerErrorHandling,
   getViewer,
@@ -42,6 +56,17 @@ function ensureNonEmpty(value, fieldName) {
   const text = String(value || '').trim();
   if (!text) throw new Error(`Missing required field: ${fieldName}`);
   return text;
+}
+
+function parseRefList(value) {
+  if (value === undefined || value === null) return [];
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || '').trim()).filter(Boolean);
+  }
+  return String(value)
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 // ===== GIT OPERATIONS (for issue start) =====
@@ -222,6 +247,28 @@ export async function executeIssueView(client, params) {
       title: issueData.title,
       state: issueData.state,
       url: issueData.url,
+    },
+  };
+}
+
+export async function executeIssueActivity(client, params) {
+  const issue = ensureNonEmpty(params.issue, 'issue');
+  const activityData = await fetchIssueActivity(client, issue, {
+    limit: params.limit || 25,
+    includeArchived: params.includeArchived === true,
+  });
+  const markdown = formatIssueActivityAsMarkdown(activityData, {
+    limit: params.limit,
+  });
+
+  return {
+    content: [{ type: 'text', text: markdown }],
+    details: {
+      issueId: activityData.issue.id,
+      identifier: activityData.issue.identifier,
+      title: activityData.issue.title,
+      activityCount: activityData.activity.length,
+      url: activityData.issue.url,
     },
   };
 }
@@ -549,6 +596,362 @@ export async function executeProjectList(client) {
     projectCount: projects.length,
     projects: projects.map((p) => ({ id: p.id, name: p.name })),
   });
+}
+
+export async function executeProjectView(client, params) {
+  return withHandlerErrorHandling(async () => {
+    const projectRef = ensureNonEmpty(params.project, 'project');
+    const project = await fetchProjectDetails(client, projectRef);
+
+    const lines = [`# Project: ${project.name}`];
+    const metaParts = [];
+
+    if (project.status?.name) metaParts.push(`**Status:** ${project.status.name}`);
+    if (project.health) metaParts.push(`**Health:** ${project.health}`);
+    if (project.progress !== undefined && project.progress !== null) metaParts.push(`**Progress:** ${project.progress}%`);
+    if (project.priority !== undefined && project.priority !== null) metaParts.push(`**Priority:** ${project.priority}`);
+    if (project.startDate) metaParts.push(`**Start:** ${project.startDate}`);
+    if (project.targetDate) metaParts.push(`**Target:** ${project.targetDate}`);
+
+    if (metaParts.length > 0) {
+      lines.push('');
+      lines.push(metaParts.join(' | '));
+    }
+
+    const teamLabel = project.teams.length > 0
+      ? project.teams.map((team) => `\`${team.key}\``).join(', ')
+      : 'None';
+    const leadLabel = project.lead?.displayName || project.lead?.name || 'Unassigned';
+
+    lines.push('');
+    lines.push(`**Teams:** ${teamLabel}`);
+    lines.push(`**Lead:** ${leadLabel}`);
+
+    if (project.url) {
+      lines.push(`**URL:** ${project.url}`);
+    }
+
+    if (project.description) {
+      lines.push('');
+      lines.push(project.description);
+    }
+
+    if (project.content) {
+      lines.push('');
+      if (project.description) {
+        lines.push('## Content');
+        lines.push('');
+      }
+      lines.push(project.content);
+    }
+
+    if (project.projectMilestones.length > 0) {
+      lines.push('');
+      lines.push(`## Milestones (${project.projectMilestones.length})`);
+      lines.push('');
+
+      for (const milestone of project.projectMilestones) {
+        const progressLabel = milestone.progress !== undefined && milestone.progress !== null
+          ? `${milestone.progress}%`
+          : 'N/A';
+        const targetLabel = milestone.targetDate ? ` → ${milestone.targetDate}` : '';
+        lines.push(`- **${milestone.name}** _[${milestone.status}]_ (${progressLabel})${targetLabel}`);
+      }
+    }
+
+    return toTextResult(lines.join('\n'), {
+      projectId: project.id,
+      name: project.name,
+      status: project.status,
+      teamCount: project.teams.length,
+      milestoneCount: project.projectMilestones.length,
+      url: project.url,
+    });
+  }, 'executeProjectView');
+}
+
+export async function executeProjectCreate(client, params) {
+  return withHandlerErrorHandling(async () => {
+    const name = ensureNonEmpty(params.name, 'name');
+    const teamRefs = parseRefList(params.teams ?? params.team);
+
+    if (teamRefs.length === 0) {
+      throw new Error('Missing required field: teams');
+    }
+
+    const teams = await Promise.all(teamRefs.map((teamRef) => resolveTeamRef(client, teamRef)));
+
+    let leadId;
+    if (params.lead === 'me') {
+      const viewer = await getViewer(client);
+      leadId = viewer.id;
+    } else if (params.lead) {
+      leadId = params.lead;
+    }
+
+    const project = await createProject(client, {
+      name,
+      teamIds: teams.map((team) => team.id),
+      description: params.description,
+      leadId,
+      priority: params.priority,
+      color: params.color,
+      icon: params.icon,
+      startDate: params.startDate,
+      targetDate: params.targetDate,
+    });
+
+    return toTextResult(
+      `Created project **${project.name}** for ${teams.map((team) => team.key).join(', ')}`,
+      {
+        projectId: project.id,
+        name: project.name,
+        teams: project.teams,
+        status: project.status,
+        url: project.url,
+      }
+    );
+  }, 'executeProjectCreate');
+}
+
+export async function executeProjectUpdate(client, params) {
+  return withHandlerErrorHandling(async () => {
+    const projectRef = ensureNonEmpty(params.project, 'project');
+    const patch = {
+      name: params.name,
+      description: params.description,
+      priority: params.priority,
+      color: params.color,
+      icon: params.icon,
+      startDate: params.startDate,
+      targetDate: params.targetDate,
+    };
+
+    if (params.lead === 'me') {
+      const viewer = await getViewer(client);
+      patch.leadId = viewer.id;
+    } else if (params.lead === 'none') {
+      patch.leadId = null;
+    } else if (params.lead !== undefined) {
+      patch.leadId = params.lead;
+    }
+
+    if (params.teams !== undefined || params.team !== undefined) {
+      const teamRefs = parseRefList(params.teams ?? params.team);
+      if (teamRefs.length === 0) {
+        throw new Error('At least one team is required when updating teams');
+      }
+      const teams = await Promise.all(teamRefs.map((teamRef) => resolveTeamRef(client, teamRef)));
+      patch.teamIds = teams.map((team) => team.id);
+    }
+
+    const result = await updateProject(client, projectRef, patch);
+
+    return toTextResult(
+      `Updated project **${result.project.name}** (${result.changed.join(', ')})`,
+      {
+        projectId: result.project.id,
+        name: result.project.name,
+        changed: result.changed,
+        status: result.project.status,
+      }
+    );
+  }, 'executeProjectUpdate');
+}
+
+export async function executeProjectDelete(client, params) {
+  return withHandlerErrorHandling(async () => {
+    const projectRef = ensureNonEmpty(params.project, 'project');
+    const result = await deleteProject(client, projectRef);
+
+    return toTextResult(
+      `Deleted project **${result.name}** \`${result.projectId}\``,
+      {
+        projectId: result.projectId,
+        name: result.name,
+        success: result.success,
+      }
+    );
+  }, 'executeProjectDelete');
+}
+
+export async function executeProjectArchive(client, params) {
+  return withHandlerErrorHandling(async () => {
+    const projectRef = ensureNonEmpty(params.project, 'project');
+    const result = await archiveProject(client, projectRef);
+
+    return toTextResult(
+      `Archived project **${result.name || result.entity?.name || result.projectId}**`,
+      {
+        projectId: result.projectId,
+        name: result.name || result.entity?.name || null,
+        success: result.success,
+      }
+    );
+  }, 'executeProjectArchive');
+}
+
+export async function executeProjectUnarchive(client, params) {
+  return withHandlerErrorHandling(async () => {
+    const projectRef = ensureNonEmpty(params.project, 'project');
+    const result = await unarchiveProject(client, projectRef);
+
+    return toTextResult(
+      `Unarchived project **${result.project.name}**`,
+      {
+        projectId: result.project.id,
+        name: result.project.name,
+        success: result.success,
+      }
+    );
+  }, 'executeProjectUnarchive');
+}
+
+// ===== PROJECT UPDATE HANDLERS =====
+
+export async function executeProjectUpdateList(client, params) {
+  return withHandlerErrorHandling(async () => {
+    const projectRef = ensureNonEmpty(params.project, 'project');
+    const { project, updates } = await fetchProjectUpdates(client, projectRef, {
+      limit: params.limit ?? 10,
+      includeArchived: params.includeArchived === true,
+    });
+
+    if (updates.length === 0) {
+      return toTextResult(`No project updates found for "${project.name}"`, {
+        projectId: project.id,
+        projectName: project.name,
+        updateCount: 0,
+      });
+    }
+
+    const lines = [`## Project updates for "${project.name}" (${updates.length})`, ''];
+    for (const update of updates) {
+      const author = update.user?.displayName || update.user?.name || 'Unknown';
+      const createdAt = update.createdAt ? String(update.createdAt).slice(0, 10) : 'unknown date';
+      const healthLabel = update.health ? ` [${update.health}]` : '';
+      const archivedLabel = update.archivedAt ? ' [archived]' : '';
+      const preview = update.body.replace(/\s+/g, ' ').trim().slice(0, 120);
+      lines.push(`- **${update.id}**${healthLabel}${archivedLabel} by ${author} on ${createdAt}`);
+      if (preview) {
+        lines.push(`  ${preview}${update.body.length > 120 ? '...' : ''}`);
+      }
+    }
+
+    return toTextResult(lines.join('\n'), {
+      projectId: project.id,
+      projectName: project.name,
+      updateCount: updates.length,
+    });
+  }, 'executeProjectUpdateList');
+}
+
+export async function executeProjectUpdateView(client, params) {
+  return withHandlerErrorHandling(async () => {
+    const projectUpdateId = ensureNonEmpty(params.projectUpdate, 'projectUpdate');
+    const projectUpdate = await fetchProjectUpdateDetails(client, projectUpdateId);
+
+    const lines = [`# Project update ${projectUpdate.id}`];
+    const meta = [];
+    if (projectUpdate.project?.name) meta.push(`**Project:** ${projectUpdate.project.name}`);
+    if (projectUpdate.health) meta.push(`**Health:** ${projectUpdate.health}`);
+    if (projectUpdate.user?.displayName || projectUpdate.user?.name) meta.push(`**Author:** ${projectUpdate.user?.displayName || projectUpdate.user?.name}`);
+    if (projectUpdate.createdAt) meta.push(`**Created:** ${String(projectUpdate.createdAt).slice(0, 10)}`);
+    if (projectUpdate.archivedAt) meta.push(`**Archived:** ${String(projectUpdate.archivedAt).slice(0, 10)}`);
+    if (meta.length > 0) {
+      lines.push('');
+      lines.push(meta.join(' | '));
+    }
+    if (projectUpdate.url) {
+      lines.push('');
+      lines.push(`**URL:** ${projectUpdate.url}`);
+    }
+    if (projectUpdate.body) {
+      lines.push('');
+      lines.push(projectUpdate.body);
+    }
+
+    return toTextResult(lines.join('\n'), {
+      projectUpdateId: projectUpdate.id,
+      projectId: projectUpdate.project?.id || null,
+      projectName: projectUpdate.project?.name || null,
+      health: projectUpdate.health,
+      archivedAt: projectUpdate.archivedAt,
+    });
+  }, 'executeProjectUpdateView');
+}
+
+export async function executeProjectUpdateCreate(client, params) {
+  return withHandlerErrorHandling(async () => {
+    const projectRef = ensureNonEmpty(params.project, 'project');
+    const resolved = await resolveProjectRef(client, projectRef);
+    const projectUpdate = await createProjectUpdate(client, {
+      projectId: resolved.id,
+      body: params.body,
+      health: params.health,
+      isDiffHidden: params.isDiffHidden,
+    });
+
+    return toTextResult(
+      `Created project update **${projectUpdate.id}** for "${resolved.name}"`,
+      {
+        projectUpdateId: projectUpdate.id,
+        projectId: resolved.id,
+        projectName: resolved.name,
+        health: projectUpdate.health,
+      }
+    );
+  }, 'executeProjectUpdateCreate');
+}
+
+export async function executeProjectUpdateUpdate(client, params) {
+  return withHandlerErrorHandling(async () => {
+    const projectUpdateId = ensureNonEmpty(params.projectUpdate, 'projectUpdate');
+    const result = await updateProjectUpdate(client, projectUpdateId, {
+      body: params.body,
+      health: params.health,
+      isDiffHidden: params.isDiffHidden,
+    });
+
+    return toTextResult(
+      `Updated project update **${result.projectUpdate.id}** (${result.changed.join(', ')})`,
+      {
+        projectUpdateId: result.projectUpdate.id,
+        changed: result.changed,
+        health: result.projectUpdate.health,
+      }
+    );
+  }, 'executeProjectUpdateUpdate');
+}
+
+export async function executeProjectUpdateArchive(client, params) {
+  return withHandlerErrorHandling(async () => {
+    const projectUpdateId = ensureNonEmpty(params.projectUpdate, 'projectUpdate');
+    const result = await archiveProjectUpdate(client, projectUpdateId);
+
+    return toTextResult(
+      `Archived project update **${projectUpdateId}**`,
+      {
+        projectUpdateId,
+        success: result.success,
+      }
+    );
+  }, 'executeProjectUpdateArchive');
+}
+
+export async function executeProjectUpdateUnarchive(client, params) {
+  return withHandlerErrorHandling(async () => {
+    const projectUpdateId = ensureNonEmpty(params.projectUpdate, 'projectUpdate');
+    const result = await unarchiveProjectUpdate(client, projectUpdateId);
+
+    return toTextResult(
+      `Unarchived project update **${result.projectUpdate.id}**`,
+      {
+        projectUpdateId: result.projectUpdate.id,
+        success: result.success,
+      }
+    );
+  }, 'executeProjectUpdateUnarchive');
 }
 
 // ===== TEAM HANDLERS =====

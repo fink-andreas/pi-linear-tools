@@ -90,6 +90,360 @@ const ISSUES_WITH_RELATIONS_QUERY = `
   }
 `;
 
+const PROJECT_DETAILS_QUERY = `
+  query ProjectDetails($id: String!, $milestoneLimit: Int!) {
+    project(id: $id) {
+      id
+      name
+      description
+      content
+      color
+      icon
+      priority
+      progress
+      health
+      startDate
+      targetDate
+      slugId
+      url
+      archivedAt
+      completedAt
+      canceledAt
+      status {
+        id
+        name
+        type
+        color
+      }
+      lead {
+        id
+        name
+        displayName
+      }
+      teams {
+        nodes {
+          id
+          key
+          name
+        }
+      }
+      projectMilestones(first: $milestoneLimit) {
+        nodes {
+          id
+          name
+          status
+          progress
+          targetDate
+        }
+      }
+    }
+  }
+`;
+
+const PROJECTS_LOOKUP_QUERY = `
+  query ProjectsLookup($includeArchived: Boolean!) {
+    projects(first: 250, includeArchived: $includeArchived) {
+      nodes {
+        id
+        name
+        slugId
+        archivedAt
+      }
+    }
+  }
+`;
+
+const PROJECT_CREATE_MUTATION = `
+  mutation ProjectCreate($input: ProjectCreateInput!) {
+    projectCreate(input: $input) {
+      success
+      project {
+        id
+        name
+      }
+    }
+  }
+`;
+
+const PROJECT_UPDATE_MUTATION = `
+  mutation ProjectUpdate($id: String!, $input: ProjectUpdateInput!) {
+    projectUpdate(id: $id, input: $input) {
+      success
+      project {
+        id
+        name
+      }
+    }
+  }
+`;
+
+const PROJECT_DELETE_MUTATION = `
+  mutation ProjectDelete($id: String!) {
+    projectDelete(id: $id) {
+      success
+      entity {
+        id
+        name
+      }
+    }
+  }
+`;
+
+const PROJECT_ARCHIVE_MUTATION = `
+  mutation ProjectArchive($id: String!) {
+    projectArchiveResult: projectDelete(id: $id) {
+      success
+      entity {
+        id
+        name
+      }
+    }
+  }
+`;
+
+const PROJECT_UNARCHIVE_MUTATION = `
+  mutation ProjectUnarchive($id: String!) {
+    projectUnarchive(id: $id) {
+      success
+      entity {
+        id
+        name
+      }
+    }
+  }
+`;
+
+const PROJECT_UPDATES_BY_PROJECT_QUERY = `
+  query ProjectUpdatesByProject($id: String!, $first: Int!, $includeArchived: Boolean!) {
+    project(id: $id) {
+      id
+      name
+      projectUpdates(first: $first, includeArchived: $includeArchived) {
+        nodes {
+          id
+          body
+          health
+          createdAt
+          updatedAt
+          archivedAt
+          url
+          slugId
+          isDiffHidden
+          isStale
+          user {
+            id
+            name
+            displayName
+          }
+        }
+      }
+    }
+  }
+`;
+
+const PROJECT_UPDATE_DETAILS_QUERY = `
+  query ProjectUpdateDetails($id: String!) {
+    projectUpdate(id: $id) {
+      id
+      body
+      health
+      createdAt
+      updatedAt
+      archivedAt
+      editedAt
+      url
+      slugId
+      isDiffHidden
+      isStale
+      project {
+        id
+        name
+      }
+      user {
+        id
+        name
+        displayName
+      }
+    }
+  }
+`;
+
+const PROJECT_UPDATE_CREATE_MUTATION = `
+  mutation ProjectUpdateCreate($input: ProjectUpdateCreateInput!) {
+    projectUpdateCreate(input: $input) {
+      success
+      projectUpdate {
+        id
+      }
+    }
+  }
+`;
+
+const PROJECT_UPDATE_UPDATE_MUTATION = `
+  mutation ProjectUpdateUpdate($id: String!, $input: ProjectUpdateUpdateInput!) {
+    projectUpdateUpdate(id: $id, input: $input) {
+      success
+      projectUpdate {
+        id
+      }
+    }
+  }
+`;
+
+const PROJECT_UPDATE_ARCHIVE_MUTATION = `
+  mutation ProjectUpdateArchive($id: String!) {
+    projectUpdateArchive(id: $id) {
+      success
+      entity {
+        id
+      }
+    }
+  }
+`;
+
+const PROJECT_UPDATE_UNARCHIVE_MUTATION = `
+  mutation ProjectUpdateUnarchive($id: String!) {
+    projectUpdateUnarchive(id: $id) {
+      success
+      entity {
+        id
+      }
+    }
+  }
+`;
+
+const DOCUMENT_DETAILS_QUERY = `
+  query DocumentDetails($id: String!) {
+    document(id: $id) {
+      id
+      title
+      content
+      icon
+      color
+      slugId
+      url
+      archivedAt
+      createdAt
+      updatedAt
+      project {
+        id
+        name
+      }
+      issue {
+        id
+        identifier
+        title
+      }
+    }
+  }
+`;
+
+const DOCUMENT_CREATE_MUTATION = `
+  mutation DocumentCreate($input: DocumentCreateInput!) {
+    documentCreate(input: $input) {
+      success
+      document {
+        id
+      }
+    }
+  }
+`;
+
+const DOCUMENT_UPDATE_MUTATION = `
+  mutation DocumentUpdate($id: String!, $input: DocumentUpdateInput!) {
+    documentUpdate(id: $id, input: $input) {
+      success
+      document {
+        id
+      }
+    }
+  }
+`;
+
+const ISSUE_ACTIVITY_QUERY = `
+  query IssueActivity($id: String!, $first: Int!, $includeArchived: Boolean!) {
+    issue(id: $id) {
+      id
+      identifier
+      title
+      url
+      history(first: $first, includeArchived: $includeArchived) {
+        nodes {
+          id
+          createdAt
+          updatedAt
+          archived
+          archivedAt
+          autoArchived
+          autoClosed
+          trashed
+          updatedDescription
+          fromTitle
+          toTitle
+          fromPriority
+          toPriority
+          fromState {
+            id
+            name
+          }
+          toState {
+            id
+            name
+          }
+          fromAssignee {
+            id
+            name
+            displayName
+          }
+          toAssignee {
+            id
+            name
+            displayName
+          }
+          fromProject {
+            id
+            name
+          }
+          toProject {
+            id
+            name
+          }
+          fromProjectMilestone {
+            id
+            name
+          }
+          toProjectMilestone {
+            id
+            name
+          }
+          addedLabels {
+            id
+            name
+          }
+          removedLabels {
+            id
+            name
+          }
+          relationChanges {
+            identifier
+            type
+          }
+          attachment {
+            id
+            title
+            url
+          }
+          actor {
+            id
+            name
+            displayName
+          }
+        }
+      }
+    }
+  }
+`;
+
 /**
  * Execute an optimized GraphQL query using rawRequest
  * Falls back to SDK method if rawRequest is not available (e.g., in tests)
@@ -134,6 +488,21 @@ async function executeOptimizedQuery(client, query, variables) {
     },
     headers: new Headers(),
   };
+}
+
+async function executeGraphQL(client, query, variables = {}) {
+  const rawRequest =
+    (typeof client.client?.rawRequest === 'function' ? client.client.rawRequest.bind(client.client) : null) ||
+    (typeof client.rawRequest === 'function' ? client.rawRequest.bind(client) : null);
+
+  if (!rawRequest) {
+    throw new Error('GraphQL rawRequest is unavailable on this Linear client');
+  }
+
+  const response = await rawRequest(query, variables);
+  updateRateLimitState(response);
+  checkRateLimitWarning();
+  return response.data;
 }
 
 /**
@@ -379,7 +748,199 @@ function isLinearId(value) {
 function normalizeIssueLookupInput(issue) {
   const value = String(issue || '').trim();
   if (!value) throw new Error('Missing required issue identifier');
+
+  const issueUrlMatch = value.match(/\/issue\/([A-Za-z0-9]+-\d+)(?:[/?#]|$)/i);
+  if (issueUrlMatch?.[1]) {
+    return issueUrlMatch[1].toUpperCase();
+  }
+
   return value;
+}
+
+function extractProjectLookupValue(projectRef) {
+  const ref = String(projectRef || '').trim();
+  if (!ref) {
+    return '';
+  }
+
+  const projectUrlMatch = ref.match(/\/project\/([^/?#]+)/i);
+  if (projectUrlMatch?.[1]) {
+    return projectUrlMatch[1];
+  }
+
+  return ref;
+}
+
+function getProjectLookupCandidates(projectRef) {
+  const lookupValue = extractProjectLookupValue(projectRef);
+  const candidates = new Set([lookupValue]);
+
+  if (lookupValue.includes('-')) {
+    const slugSuffix = lookupValue.split('-').pop();
+    if (slugSuffix) {
+      candidates.add(slugSuffix);
+    }
+  }
+
+  return Array.from(candidates).filter(Boolean);
+}
+
+const PROJECT_UPDATE_HEALTH_VALUES = ['onTrack', 'atRisk', 'offTrack'];
+
+function normalizePositiveInteger(value, fieldName, defaultValue) {
+  if (value === undefined || value === null) {
+    return defaultValue;
+  }
+
+  const parsed = typeof value === 'number' ? value : Number(String(value).trim());
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(`${fieldName} must be a positive integer`);
+  }
+
+  return parsed;
+}
+
+function normalizeProjectUpdateHealth(value) {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const normalized = String(value).trim();
+  if (!normalized) {
+    throw new Error(`health must be one of: ${PROJECT_UPDATE_HEALTH_VALUES.join(', ')}`);
+  }
+
+  if (!PROJECT_UPDATE_HEALTH_VALUES.includes(normalized)) {
+    throw new Error(`health must be one of: ${PROJECT_UPDATE_HEALTH_VALUES.join(', ')}`);
+  }
+
+  return normalized;
+}
+
+function formatPriorityLabel(value) {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return String(value);
+  }
+
+  const priorityNames = ['No priority', 'Urgent', 'High', 'Medium', 'Low'];
+  return priorityNames[numeric] || `Priority ${numeric}`;
+}
+
+function getUserDisplayName(user) {
+  return user?.displayName || user?.name || 'Unknown';
+}
+
+function summarizeIssueHistoryEntry(entry) {
+  if (entry.fromState?.name || entry.toState?.name) {
+    if (entry.fromState?.name && entry.toState?.name) {
+      return `moved state from ${entry.fromState.name} to ${entry.toState.name}`;
+    }
+    if (entry.toState?.name) {
+      return `set state to ${entry.toState.name}`;
+    }
+    return `cleared state ${entry.fromState.name}`;
+  }
+
+  if (entry.fromAssignee || entry.toAssignee) {
+    const fromAssignee = entry.fromAssignee ? getUserDisplayName(entry.fromAssignee) : null;
+    const toAssignee = entry.toAssignee ? getUserDisplayName(entry.toAssignee) : null;
+    if (fromAssignee && toAssignee) {
+      return `reassigned from ${fromAssignee} to ${toAssignee}`;
+    }
+    if (toAssignee) {
+      return `assigned to ${toAssignee}`;
+    }
+    return `unassigned from ${fromAssignee}`;
+  }
+
+  if (entry.fromTitle || entry.toTitle) {
+    if (entry.fromTitle && entry.toTitle) {
+      return `renamed issue from "${entry.fromTitle}" to "${entry.toTitle}"`;
+    }
+    if (entry.toTitle) {
+      return `set title to "${entry.toTitle}"`;
+    }
+  }
+
+  if (entry.fromPriority !== undefined || entry.toPriority !== undefined) {
+    const fromPriority = formatPriorityLabel(entry.fromPriority);
+    const toPriority = formatPriorityLabel(entry.toPriority);
+    if (fromPriority && toPriority) {
+      return `changed priority from ${fromPriority} to ${toPriority}`;
+    }
+    if (toPriority) {
+      return `set priority to ${toPriority}`;
+    }
+  }
+
+  if (entry.fromProject?.name || entry.toProject?.name) {
+    if (entry.fromProject?.name && entry.toProject?.name) {
+      return `moved project from ${entry.fromProject.name} to ${entry.toProject.name}`;
+    }
+    if (entry.toProject?.name) {
+      return `added to project ${entry.toProject.name}`;
+    }
+    return `removed from project ${entry.fromProject.name}`;
+  }
+
+  if (entry.fromProjectMilestone?.name || entry.toProjectMilestone?.name) {
+    if (entry.fromProjectMilestone?.name && entry.toProjectMilestone?.name) {
+      return `moved milestone from ${entry.fromProjectMilestone.name} to ${entry.toProjectMilestone.name}`;
+    }
+    if (entry.toProjectMilestone?.name) {
+      return `set milestone to ${entry.toProjectMilestone.name}`;
+    }
+    return `cleared milestone ${entry.fromProjectMilestone.name}`;
+  }
+
+  if ((entry.addedLabels?.length || 0) > 0 || (entry.removedLabels?.length || 0) > 0) {
+    const labelChanges = [];
+    if ((entry.addedLabels?.length || 0) > 0) {
+      labelChanges.push(`added labels ${entry.addedLabels.map((label) => label.name).join(', ')}`);
+    }
+    if ((entry.removedLabels?.length || 0) > 0) {
+      labelChanges.push(`removed labels ${entry.removedLabels.map((label) => label.name).join(', ')}`);
+    }
+    return labelChanges.join('; ');
+  }
+
+  if ((entry.relationChanges?.length || 0) > 0) {
+    const relationSummary = entry.relationChanges
+      .map((relation) => `${relation.type} ${relation.identifier}`)
+      .join(', ');
+    return `updated relations: ${relationSummary}`;
+  }
+
+  if (entry.updatedDescription) {
+    return 'updated description';
+  }
+
+  if (entry.attachment?.title || entry.attachment?.url) {
+    return `linked attachment ${entry.attachment.title ? `"${entry.attachment.title}"` : entry.attachment.url}`;
+  }
+
+  if (entry.archivedAt || entry.archived === true) {
+    return entry.autoArchived ? 'auto-archived issue' : 'archived issue';
+  }
+
+  if (entry.autoClosed) {
+    return 'auto-closed issue';
+  }
+
+  if (entry.trashed === true) {
+    return 'trashed issue';
+  }
+
+  if (entry.trashed === false) {
+    return 'restored issue from trash';
+  }
+
+  return 'updated issue';
 }
 
 /**
@@ -686,26 +1247,63 @@ export async function fetchIssuesByProject(client, projectId, states, options = 
 /**
  * Fetch all accessible projects from Linear API
  * @param {LinearClient} client - Linear SDK client
+ * @param {{ includeArchived?: boolean }} options - Fetch options
  * @returns {Promise<Array<{id: string, name: string}>>}
  */
-export async function fetchProjects(client) {
+export async function fetchProjects(client, options = {}) {
   return withLinearErrorHandling(async () => {
+    const { includeArchived = false, forceGraphql = false } = options;
     const cacheKey = getClientCacheKey(client);
-    const cached = getCache(projectsCache, cacheKey);
+    const scopedCacheKey = `${cacheKey}::projects::${includeArchived ? 'all' : 'active'}::${forceGraphql ? 'graphql' : 'sdk'}`;
+    const cached = getCache(projectsCache, scopedCacheKey);
     if (cached) return cached;
 
-    const result = await client.projects();
-    const nodes = result.nodes ?? [];
+    let nodes = [];
+    if (includeArchived || forceGraphql) {
+      const data = await executeGraphQL(client, PROJECTS_LOOKUP_QUERY, {
+        includeArchived,
+      });
+      nodes = data?.projects?.nodes ?? [];
+    } else {
+      const result = await client.projects();
+      nodes = result.nodes ?? [];
+    }
 
     debug('Fetched Linear projects', {
       projectCount: nodes.length,
+      includeArchived,
       projects: nodes.map((p) => ({ id: p.id, name: p.name })),
     });
 
-    const projects = nodes.map(p => ({ id: p.id, name: p.name }));
-    setCache(projectsCache, cacheKey, projects, CACHE_TTL_MS.projects);
+    const projects = nodes.map((p) => ({
+      id: p.id,
+      name: p.name,
+      slugId: p.slugId ?? null,
+      archivedAt: p.archivedAt ?? null,
+    }));
+    setCache(projectsCache, scopedCacheKey, projects, CACHE_TTL_MS.projects);
     return projects;
   }, 'fetchProjects');
+}
+
+export async function fetchProjectDetails(client, projectRef, options = {}) {
+  return withLinearErrorHandling(async () => {
+    const { milestoneLimit = 10 } = options;
+    const ref = String(projectRef || '').trim();
+    const projectId = isLinearId(ref)
+      ? ref
+      : (await resolveProjectRef(client, ref)).id;
+    const data = await executeGraphQL(client, PROJECT_DETAILS_QUERY, {
+      id: projectId,
+      milestoneLimit,
+    });
+
+    if (!data?.project) {
+      throw new Error(`Project not found: ${projectRef}`);
+    }
+
+    return transformProject(data.project);
+  }, 'fetchProjectDetails');
 }
 
 /**
@@ -871,10 +1469,12 @@ export async function getTeamWorkflowStates(client, teamRef) {
  * Resolve a project reference (name or ID) to a project object
  * @param {LinearClient} client - Linear SDK client
  * @param {string} projectRef - Project name or ID
+ * @param {{ includeArchived?: boolean }} options - Lookup options
  * @returns {Promise<{id: string, name: string}>}
  */
-export async function resolveProjectRef(client, projectRef) {
+export async function resolveProjectRef(client, projectRef, options = {}) {
   const ref = String(projectRef || '').trim();
+  const { includeArchived = false } = options;
   if (!ref) {
     throw new Error('Missing project reference');
   }
@@ -890,7 +1490,7 @@ export async function resolveProjectRef(client, projectRef) {
       // fall back to cached/full-project lookup below
     }
 
-    const projectsById = await fetchProjects(client);
+    const projectsById = await fetchProjects(client, { includeArchived });
     const byId = projectsById.find((p) => p.id === ref);
     if (byId) {
       return byId;
@@ -898,12 +1498,24 @@ export async function resolveProjectRef(client, projectRef) {
     throw new Error(`Project not found with ID: ${ref}`);
   }
 
-  const projects = await fetchProjects(client);
+  const lookupCandidates = getProjectLookupCandidates(ref);
+  const lookupValue = lookupCandidates[0] || ref;
+  const shouldUseGraphqlLookup = lookupValue !== ref;
+  const projects = await fetchProjects(client, {
+    includeArchived,
+    forceGraphql: shouldUseGraphqlLookup,
+  });
 
   // Try exact name match
   const exactName = projects.find((p) => p.name === ref);
   if (exactName) {
     return exactName;
+  }
+
+  // Try exact slug match
+  const exactSlug = projects.find((p) => lookupCandidates.includes(p.slugId));
+  if (exactSlug) {
+    return exactSlug;
   }
 
   // Try case-insensitive name match
@@ -913,7 +1525,396 @@ export async function resolveProjectRef(client, projectRef) {
     return insensitiveName;
   }
 
+  // Try case-insensitive slug match
+  const lowerLookupValues = lookupCandidates.map((candidate) => candidate.toLowerCase());
+  const insensitiveSlug = projects.find((p) => p.slugId && lowerLookupValues.includes(p.slugId.toLowerCase()));
+  if (insensitiveSlug) {
+    return insensitiveSlug;
+  }
+
   throw new Error(`Project not found: ${ref}. Available projects: ${projects.map((p) => p.name).join(', ')}`);
+}
+
+export async function createProject(client, input) {
+  return withLinearErrorHandling(async () => {
+    const name = String(input.name || '').trim();
+    if (!name) {
+      throw new Error('Missing required field: name');
+    }
+
+    const teamIds = Array.isArray(input.teamIds)
+      ? input.teamIds.map((value) => String(value || '').trim()).filter(Boolean)
+      : [];
+
+    if (teamIds.length === 0) {
+      throw new Error('Missing required field: teamIds');
+    }
+
+    const createInput = {
+      name,
+      teamIds,
+    };
+
+    for (const field of ['description', 'color', 'icon', 'leadId', 'startDate', 'targetDate']) {
+      if (input[field] !== undefined) {
+        createInput[field] = input[field];
+      }
+    }
+
+    if (input.priority !== undefined) {
+      createInput.priority = input.priority;
+    }
+
+    const payload = await executeGraphQL(client, PROJECT_CREATE_MUTATION, {
+      input: createInput,
+    });
+
+    if (!payload?.projectCreate?.success || !payload?.projectCreate?.project?.id) {
+      throw new Error('Failed to create project');
+    }
+
+    invalidateProjectsCache(client);
+    return fetchProjectDetails(client, payload.projectCreate.project.id);
+  }, 'createProject');
+}
+
+export async function updateProject(client, projectRef, patch = {}) {
+  return withLinearErrorHandling(async () => {
+    const resolved = await resolveProjectRef(client, projectRef);
+    const updateInput = {};
+
+    for (const field of ['name', 'description', 'content', 'color', 'icon', 'startDate', 'targetDate']) {
+      if (patch[field] !== undefined) {
+        updateInput[field] = patch[field];
+      }
+    }
+
+    if (patch.priority !== undefined) {
+      updateInput.priority = patch.priority;
+    }
+
+    if (patch.leadId !== undefined) {
+      updateInput.leadId = patch.leadId;
+    }
+
+    if (patch.teamIds !== undefined) {
+      updateInput.teamIds = patch.teamIds;
+    }
+
+    if (Object.keys(updateInput).length === 0) {
+      throw new Error('No update fields provided');
+    }
+
+    const payload = await executeGraphQL(client, PROJECT_UPDATE_MUTATION, {
+      id: resolved.id,
+      input: updateInput,
+    });
+
+    if (!payload?.projectUpdate?.success || !payload?.projectUpdate?.project?.id) {
+      throw new Error('Failed to update project');
+    }
+
+    invalidateProjectsCache(client);
+    const project = await fetchProjectDetails(client, payload.projectUpdate.project.id);
+
+    return {
+      project,
+      changed: Object.keys(updateInput),
+    };
+  }, 'updateProject');
+}
+
+export async function deleteProject(client, projectRef) {
+  return withLinearErrorHandling(async () => {
+    const resolved = await resolveProjectRef(client, projectRef);
+    const payload = await executeGraphQL(client, PROJECT_DELETE_MUTATION, {
+      id: resolved.id,
+    });
+
+    if (!payload?.projectDelete?.success) {
+      throw new Error('Failed to delete project');
+    }
+
+    invalidateProjectsCache(client);
+
+    return {
+      success: true,
+      projectId: resolved.id,
+      name: resolved.name,
+      entity: transformProject(payload.projectDelete.entity),
+    };
+  }, 'deleteProject');
+}
+
+export async function archiveProject(client, projectRef) {
+  return withLinearErrorHandling(async () => {
+    const resolved = await resolveProjectRef(client, projectRef);
+    const payload = await executeGraphQL(client, PROJECT_ARCHIVE_MUTATION, {
+      id: resolved.id,
+    });
+
+    if (!payload?.projectArchiveResult?.success) {
+      throw new Error('Failed to archive project');
+    }
+
+    invalidateProjectsCache(client);
+
+    return {
+      success: true,
+      projectId: resolved.id,
+      name: resolved.name,
+      entity: transformProject(payload.projectArchiveResult.entity),
+    };
+  }, 'archiveProject');
+}
+
+export async function unarchiveProject(client, projectRef) {
+  return withLinearErrorHandling(async () => {
+    const ref = String(projectRef || '').trim();
+    const resolved = isLinearId(ref)
+      ? { id: ref, name: null }
+      : await resolveProjectRef(client, ref, { includeArchived: true });
+
+    const payload = await executeGraphQL(client, PROJECT_UNARCHIVE_MUTATION, {
+      id: resolved.id,
+    });
+
+    if (!payload?.projectUnarchive?.success) {
+      throw new Error('Failed to unarchive project');
+    }
+
+    invalidateProjectsCache(client);
+    const project = await fetchProjectDetails(client, resolved.id);
+
+    return {
+      success: true,
+      project,
+    };
+  }, 'unarchiveProject');
+}
+
+export async function fetchProjectUpdates(client, projectRef, options = {}) {
+  return withLinearErrorHandling(async () => {
+    const includeArchived = options.includeArchived === true;
+    const limit = normalizePositiveInteger(options.limit, 'limit', 10);
+    const resolved = await resolveProjectRef(client, projectRef, { includeArchived });
+    const data = await executeGraphQL(client, PROJECT_UPDATES_BY_PROJECT_QUERY, {
+      id: resolved.id,
+      first: limit,
+      includeArchived,
+    });
+
+    const nodes = data?.project?.projectUpdates?.nodes || [];
+    return {
+      project: {
+        id: data?.project?.id || resolved.id,
+        name: data?.project?.name || resolved.name,
+      },
+      updates: nodes.map(transformProjectUpdate),
+    };
+  }, 'fetchProjectUpdates');
+}
+
+export async function fetchProjectUpdateDetails(client, projectUpdateId) {
+  return withLinearErrorHandling(async () => {
+    const id = String(projectUpdateId || '').trim();
+    if (!id) {
+      throw new Error('Missing required field: projectUpdate');
+    }
+
+    const data = await executeGraphQL(client, PROJECT_UPDATE_DETAILS_QUERY, { id });
+
+    if (!data?.projectUpdate) {
+      throw new Error(`Project update not found: ${id}`);
+    }
+
+    return transformProjectUpdate(data.projectUpdate);
+  }, 'fetchProjectUpdateDetails');
+}
+
+export async function createProjectUpdate(client, input) {
+  return withLinearErrorHandling(async () => {
+    const projectId = String(input.projectId || '').trim();
+    if (!projectId) {
+      throw new Error('Missing required field: projectId');
+    }
+
+    const createInput = { projectId };
+    if (input.body !== undefined) createInput.body = String(input.body);
+    if (input.health !== undefined) createInput.health = normalizeProjectUpdateHealth(input.health);
+    if (input.isDiffHidden !== undefined) createInput.isDiffHidden = input.isDiffHidden;
+
+    if (createInput.body === undefined && createInput.health === undefined) {
+      throw new Error('At least one of body or health is required');
+    }
+
+    const payload = await executeGraphQL(client, PROJECT_UPDATE_CREATE_MUTATION, {
+      input: createInput,
+    });
+
+    if (!payload?.projectUpdateCreate?.success || !payload?.projectUpdateCreate?.projectUpdate?.id) {
+      throw new Error('Failed to create project update');
+    }
+
+    return fetchProjectUpdateDetails(client, payload.projectUpdateCreate.projectUpdate.id);
+  }, 'createProjectUpdate');
+}
+
+export async function updateProjectUpdate(client, projectUpdateId, patch = {}) {
+  return withLinearErrorHandling(async () => {
+    const id = String(projectUpdateId || '').trim();
+    if (!id) {
+      throw new Error('Missing required field: projectUpdate');
+    }
+
+    const updateInput = {};
+    if (patch.body !== undefined) updateInput.body = String(patch.body);
+    if (patch.health !== undefined) updateInput.health = normalizeProjectUpdateHealth(patch.health);
+    if (patch.isDiffHidden !== undefined) updateInput.isDiffHidden = patch.isDiffHidden;
+
+    if (Object.keys(updateInput).length === 0) {
+      throw new Error('No update fields provided');
+    }
+
+    const payload = await executeGraphQL(client, PROJECT_UPDATE_UPDATE_MUTATION, {
+      id,
+      input: updateInput,
+    });
+
+    if (!payload?.projectUpdateUpdate?.success || !payload?.projectUpdateUpdate?.projectUpdate?.id) {
+      throw new Error('Failed to update project update');
+    }
+
+    const projectUpdate = await fetchProjectUpdateDetails(client, payload.projectUpdateUpdate.projectUpdate.id);
+    return {
+      projectUpdate,
+      changed: Object.keys(updateInput),
+    };
+  }, 'updateProjectUpdate');
+}
+
+export async function archiveProjectUpdate(client, projectUpdateId) {
+  return withLinearErrorHandling(async () => {
+    const id = String(projectUpdateId || '').trim();
+    if (!id) {
+      throw new Error('Missing required field: projectUpdate');
+    }
+
+    const payload = await executeGraphQL(client, PROJECT_UPDATE_ARCHIVE_MUTATION, { id });
+    if (!payload?.projectUpdateArchive?.success) {
+      throw new Error('Failed to archive project update');
+    }
+
+    return {
+      success: true,
+      projectUpdateId: id,
+    };
+  }, 'archiveProjectUpdate');
+}
+
+export async function unarchiveProjectUpdate(client, projectUpdateId) {
+  return withLinearErrorHandling(async () => {
+    const id = String(projectUpdateId || '').trim();
+    if (!id) {
+      throw new Error('Missing required field: projectUpdate');
+    }
+
+    const payload = await executeGraphQL(client, PROJECT_UPDATE_UNARCHIVE_MUTATION, { id });
+    if (!payload?.projectUpdateUnarchive?.success) {
+      throw new Error('Failed to unarchive project update');
+    }
+
+    const projectUpdate = await fetchProjectUpdateDetails(client, id);
+    return {
+      success: true,
+      projectUpdate,
+    };
+  }, 'unarchiveProjectUpdate');
+}
+
+export async function fetchDocumentDetails(client, documentRef) {
+  return withLinearErrorHandling(async () => {
+    const id = String(documentRef || '').trim();
+    if (!id) {
+      throw new Error('Missing required field: document');
+    }
+
+    const data = await executeGraphQL(client, DOCUMENT_DETAILS_QUERY, { id });
+
+    if (!data?.document) {
+      throw new Error(`Document not found: ${id}`);
+    }
+
+    return transformDocument(data.document);
+  }, 'fetchDocumentDetails');
+}
+
+export async function createDocument(client, input = {}) {
+  return withLinearErrorHandling(async () => {
+    const title = String(input.title || '').trim();
+    if (!title) {
+      throw new Error('Missing required field: title');
+    }
+
+    const createInput = { title };
+    if (input.projectId !== undefined) createInput.projectId = input.projectId;
+    if (input.issueId !== undefined) createInput.issueId = input.issueId;
+
+    if (!createInput.projectId && !createInput.issueId) {
+      throw new Error('Document create requires either projectId or issueId');
+    }
+
+    for (const field of ['content', 'icon', 'color']) {
+      if (input[field] !== undefined) {
+        createInput[field] = input[field];
+      }
+    }
+
+    const payload = await executeGraphQL(client, DOCUMENT_CREATE_MUTATION, {
+      input: createInput,
+    });
+
+    if (!payload?.documentCreate?.success || !payload?.documentCreate?.document?.id) {
+      throw new Error('Failed to create document');
+    }
+
+    return fetchDocumentDetails(client, payload.documentCreate.document.id);
+  }, 'createDocument');
+}
+
+export async function updateDocument(client, documentRef, patch = {}) {
+  return withLinearErrorHandling(async () => {
+    const id = String(documentRef || '').trim();
+    if (!id) {
+      throw new Error('Missing required field: document');
+    }
+
+    const updateInput = {};
+    for (const field of ['title', 'content', 'icon', 'color', 'projectId', 'issueId']) {
+      if (patch[field] !== undefined) {
+        updateInput[field] = patch[field];
+      }
+    }
+
+    if (Object.keys(updateInput).length === 0) {
+      throw new Error('No update fields provided');
+    }
+
+    const payload = await executeGraphQL(client, DOCUMENT_UPDATE_MUTATION, {
+      id,
+      input: updateInput,
+    });
+
+    if (!payload?.documentUpdate?.success || !payload?.documentUpdate?.document?.id) {
+      throw new Error('Failed to update document');
+    }
+
+    const document = await fetchDocumentDetails(client, payload.documentUpdate.document.id);
+    return {
+      document,
+      changed: Object.keys(updateInput),
+    };
+  }, 'updateDocument');
 }
 
 /**
@@ -1028,6 +2029,79 @@ export async function fetchIssueDetails(client, issueRef, options = {}) {
       attachments,
     };
   }, 'fetchIssueDetails');
+}
+
+export async function fetchIssueActivity(client, issueRef, options = {}) {
+  return withLinearErrorHandling(async () => {
+    const limit = normalizePositiveInteger(options.limit, 'limit', 20);
+    const includeArchived = options.includeArchived === true;
+    const resolved = await resolveIssue(client, issueRef);
+    const data = await executeGraphQL(client, ISSUE_ACTIVITY_QUERY, {
+      id: resolved.id,
+      first: limit,
+      includeArchived,
+    });
+
+    if (!data?.issue) {
+      throw new Error(`Issue not found: ${issueRef}`);
+    }
+
+    return {
+      issue: {
+        id: data.issue.id,
+        identifier: data.issue.identifier,
+        title: data.issue.title,
+        url: data.issue.url ?? null,
+      },
+      activity: (data.issue.history?.nodes || []).map((entry) => ({
+        id: entry.id,
+        createdAt: entry.createdAt ?? null,
+        updatedAt: entry.updatedAt ?? null,
+        actor: entry.actor ? {
+          id: entry.actor.id,
+          name: entry.actor.name,
+          displayName: entry.actor.displayName,
+        } : null,
+        fromState: entry.fromState ? { id: entry.fromState.id, name: entry.fromState.name } : null,
+        toState: entry.toState ? { id: entry.toState.id, name: entry.toState.name } : null,
+        fromAssignee: entry.fromAssignee ? {
+          id: entry.fromAssignee.id,
+          name: entry.fromAssignee.name,
+          displayName: entry.fromAssignee.displayName,
+        } : null,
+        toAssignee: entry.toAssignee ? {
+          id: entry.toAssignee.id,
+          name: entry.toAssignee.name,
+          displayName: entry.toAssignee.displayName,
+        } : null,
+        fromTitle: entry.fromTitle ?? null,
+        toTitle: entry.toTitle ?? null,
+        fromPriority: entry.fromPriority ?? null,
+        toPriority: entry.toPriority ?? null,
+        fromProject: entry.fromProject ? { id: entry.fromProject.id, name: entry.fromProject.name } : null,
+        toProject: entry.toProject ? { id: entry.toProject.id, name: entry.toProject.name } : null,
+        fromProjectMilestone: entry.fromProjectMilestone ? { id: entry.fromProjectMilestone.id, name: entry.fromProjectMilestone.name } : null,
+        toProjectMilestone: entry.toProjectMilestone ? { id: entry.toProjectMilestone.id, name: entry.toProjectMilestone.name } : null,
+        addedLabels: (entry.addedLabels || []).map((label) => ({ id: label.id, name: label.name })),
+        removedLabels: (entry.removedLabels || []).map((label) => ({ id: label.id, name: label.name })),
+        relationChanges: (entry.relationChanges || []).map((relation) => ({
+          identifier: relation.identifier,
+          type: relation.type,
+        })),
+        attachment: entry.attachment ? {
+          id: entry.attachment.id,
+          title: entry.attachment.title,
+          url: entry.attachment.url,
+        } : null,
+        archived: entry.archived ?? null,
+        archivedAt: entry.archivedAt ?? null,
+        autoArchived: entry.autoArchived ?? false,
+        autoClosed: entry.autoClosed ?? false,
+        trashed: entry.trashed ?? null,
+        updatedDescription: entry.updatedDescription ?? false,
+      })),
+    };
+  }, 'fetchIssueActivity');
 }
 
 // ===== MUTATION FUNCTIONS =====
@@ -1512,6 +2586,113 @@ async function transformMilestone(sdkMilestone) {
     status: sdkMilestone.status,
     project: project ? { id: project.id, name: project.name } : null,
   };
+}
+
+function transformProject(rawProject) {
+  if (!rawProject) return null;
+
+  const milestoneNodes = rawProject.projectMilestones?.nodes || [];
+  const teamNodes = rawProject.teams?.nodes || [];
+
+  return {
+    id: rawProject.id,
+    name: rawProject.name,
+    description: rawProject.description ?? '',
+    content: rawProject.content ?? null,
+    color: rawProject.color ?? null,
+    icon: rawProject.icon ?? null,
+    priority: rawProject.priority ?? null,
+    progress: rawProject.progress ?? null,
+    health: rawProject.health ?? null,
+    startDate: rawProject.startDate ?? null,
+    targetDate: rawProject.targetDate ?? null,
+    slugId: rawProject.slugId ?? null,
+    url: rawProject.url ?? null,
+    archivedAt: rawProject.archivedAt ?? null,
+    completedAt: rawProject.completedAt ?? null,
+    canceledAt: rawProject.canceledAt ?? null,
+    status: rawProject.status ? {
+      id: rawProject.status.id,
+      name: rawProject.status.name,
+      type: rawProject.status.type,
+      color: rawProject.status.color,
+    } : null,
+    lead: rawProject.lead ? {
+      id: rawProject.lead.id,
+      name: rawProject.lead.name,
+      displayName: rawProject.lead.displayName,
+    } : null,
+    teams: teamNodes.map((team) => ({
+      id: team.id,
+      key: team.key,
+      name: team.name,
+    })),
+    projectMilestones: milestoneNodes.map((milestone) => ({
+      id: milestone.id,
+      name: milestone.name,
+      status: milestone.status,
+      progress: milestone.progress ?? null,
+      targetDate: milestone.targetDate ?? null,
+    })),
+  };
+}
+
+function transformProjectUpdate(rawUpdate) {
+  if (!rawUpdate) return null;
+
+  return {
+    id: rawUpdate.id,
+    body: rawUpdate.body ?? '',
+    health: rawUpdate.health ?? null,
+    createdAt: rawUpdate.createdAt ?? null,
+    updatedAt: rawUpdate.updatedAt ?? null,
+    archivedAt: rawUpdate.archivedAt ?? null,
+    editedAt: rawUpdate.editedAt ?? null,
+    url: rawUpdate.url ?? null,
+    slugId: rawUpdate.slugId ?? null,
+    isDiffHidden: rawUpdate.isDiffHidden ?? false,
+    isStale: rawUpdate.isStale ?? false,
+    project: rawUpdate.project ? {
+      id: rawUpdate.project.id,
+      name: rawUpdate.project.name,
+    } : null,
+    user: rawUpdate.user ? {
+      id: rawUpdate.user.id,
+      name: rawUpdate.user.name,
+      displayName: rawUpdate.user.displayName,
+    } : null,
+  };
+}
+
+function transformDocument(rawDocument) {
+  if (!rawDocument) return null;
+
+  return {
+    id: rawDocument.id,
+    title: rawDocument.title ?? '',
+    content: rawDocument.content ?? '',
+    icon: rawDocument.icon ?? null,
+    color: rawDocument.color ?? null,
+    slugId: rawDocument.slugId ?? null,
+    url: rawDocument.url ?? null,
+    archivedAt: rawDocument.archivedAt ?? null,
+    createdAt: rawDocument.createdAt ?? null,
+    updatedAt: rawDocument.updatedAt ?? null,
+    project: rawDocument.project ? {
+      id: rawDocument.project.id,
+      name: rawDocument.project.name,
+    } : null,
+    issue: rawDocument.issue ? {
+      id: rawDocument.issue.id,
+      identifier: rawDocument.issue.identifier,
+      title: rawDocument.issue.title,
+    } : null,
+  };
+}
+
+function invalidateProjectsCache(client) {
+  const cacheKey = getClientCacheKey(client);
+  projectsCache.delete(cacheKey);
 }
 
 /**
@@ -2005,6 +3186,34 @@ export function formatIssueAsMarkdown(issueData, options = {}) {
         lines.push('');
       }
     }
+  }
+
+  return lines.join('\n');
+}
+
+export function formatIssueActivityAsMarkdown(issueData, options = {}) {
+  const { limit } = options;
+  const lines = [`# Activity for ${issueData.issue.identifier}: ${issueData.issue.title}`];
+
+  if (issueData.issue.url) {
+    lines.push('');
+    lines.push(`**URL:** ${issueData.issue.url}`);
+  }
+
+  if (!issueData.activity || issueData.activity.length === 0) {
+    lines.push('');
+    lines.push('No activity entries found.');
+    return lines.join('\n');
+  }
+
+  lines.push('');
+  lines.push(`Showing ${issueData.activity.length}${limit ? ` of up to ${limit}` : ''} activity entries.`);
+  lines.push('');
+
+  for (const entry of issueData.activity) {
+    const actor = entry.actor ? getUserDisplayName(entry.actor) : 'System';
+    const timestamp = entry.createdAt ? formatRelativeTime(entry.createdAt) : 'unknown time';
+    lines.push(`- **${actor}** ${summarizeIssueHistoryEntry(entry)} _(${timestamp})_`);
   }
 
   return lines.join('\n');

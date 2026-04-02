@@ -2,6 +2,20 @@
 
 `pi-linear-tools` is a Pi extension for the [Pi coding agent](https://github.com/badlogic/pi-mono) that lets you manage [Linear](https://linear.app/about) issues, projects, and milestones via LLM tools and CLI commands.
 
+Useful mental model:
+- `issue update` changes issue fields; `issue comment` adds discussion; `issue activity` reads the Activity timeline
+- `project update` changes project fields; `project-update` manages Updates tab entries
+- `project-update` maps to Linear project updates in the Updates tab
+- `sync-doc init` scaffolds `.linear-tools/config.json` in the folder you point at
+- `sync-doc run` and `sync-doc check` default to all configured targets in `.linear-tools/config.json`
+- `sync-doc --target X` narrows the operation to one configured target
+
+Reference conventions:
+- issues use issue key or issue ID
+- projects use project name or project ID
+- project updates use project update ID
+- milestones use milestone ID
+
 ## Install
 
 ### As a pi package (recommended)
@@ -43,10 +57,13 @@ Optional non-interactive commands:
 ## LLM-callable tools
 
 ### `linear_issue`
-Actions: `list`, `view`, `create`, `update`, `comment`, `start`, `delete`
+Actions: `list`, `view`, `activity`, `create`, `update`, `comment`, `start`, `delete`
 
 ### `linear_project`
-Actions: `list`
+Actions: `list`, `view`, `create`, `update`, `delete`, `archive`, `unarchive`
+
+### `linear_project_update`
+Actions: `list`, `view`, `create`, `update`, `archive`, `unarchive`
 
 ### `linear_milestone`
 Actions: `list`, `view`, `create`, `update`, `delete`
@@ -57,6 +74,12 @@ If installed globally via ```npm install -g @fink-andreas/pi-linear-tools```, CL
 
 ```bash
 pi-linear-tools --help
+pi-linear-tools issue --help
+pi-linear-tools project --help
+pi-linear-tools project-update --help
+pi-linear-tools sync-doc --help
+pi-linear-tools sync-doc init --cwd /path/to/subproject --project "Project name or ID"
+pi-linear-tools sync-doc explain
 pi-linear-tools config
 pi-linear-tools config --api-key lin_xxx
 pi-linear-tools config --default-team ENG
@@ -64,6 +87,8 @@ pi-linear-tools config --team ENG --project "My Project"
 ```
 
 ### Issue commands
+
+Use `update` to change the issue itself. Use `comment` to add discussion. Use `activity` to read the Activity timeline shown in Linear.
 
 ```bash
 # List issues
@@ -75,6 +100,10 @@ pi-linear-tools issue list --project "My Project" --assignee me
 pi-linear-tools issue view ENG-123
 pi-linear-tools issue view ENG-123 --no-comments
 
+# Read Activity timeline
+pi-linear-tools issue activity ENG-123 --limit 20
+pi-linear-tools issue activity https://linear.app/workspace/issue/ENG-123/example --limit 20
+
 # Create issue
 pi-linear-tools issue create --title "Fix login bug" --team ENG
 pi-linear-tools issue create --title "New feature" --team ENG --project "My Project" --priority 2 --assignee me
@@ -83,13 +112,15 @@ pi-linear-tools issue create --title "New feature" --team ENG --project "My Proj
 pi-linear-tools issue update ENG-123 --state "In Progress"
 pi-linear-tools issue update ENG-123 --title "Updated title" --assignee me
 pi-linear-tools issue update ENG-123 --milestone "Sprint 1"
+pi-linear-tools issue update ENG-123 --sub-issue-of ENG-100
 
 # Comment on issue
 pi-linear-tools issue comment ENG-123 --body "This is fixed in PR #456"
+pi-linear-tools issue comment ENG-123 --body "Blocked on API review"
 
 # Start working on issue (creates branch, sets state to In Progress)
 pi-linear-tools issue start ENG-123
-pi-linear-tools issue start ENG-123 --branch custom-branch-name
+pi-linear-tools issue start ENG-123 --from-ref main --on-branch-exists suffix
 
 # Delete issue
 pi-linear-tools issue delete ENG-123
@@ -97,9 +128,106 @@ pi-linear-tools issue delete ENG-123
 
 ### Project commands
 
+Use `project update` to change the project record itself: name, teams, dates, lead, description, priority, color, or icon.
+
 ```bash
 pi-linear-tools project list
+pi-linear-tools project view "My Project"
+pi-linear-tools project create --name "Roadmap Refresh" --teams ENG,OPS --lead me
+pi-linear-tools project update "Roadmap Refresh" --description "Updated scope" --target-date 2026-06-30
+pi-linear-tools project update "Roadmap Refresh" --lead me --teams ENG,OPS
+pi-linear-tools project delete "Roadmap Refresh"
+pi-linear-tools project archive "Roadmap Refresh"
+pi-linear-tools project unarchive 11111111-1111-4111-8111-111111111111
 ```
+
+### Project update commands
+
+This maps to the Updates tab inside a Linear project. Create an update by project name or ID, then use the returned project update ID for later view, update, archive, or unarchive actions.
+
+```bash
+pi-linear-tools project-update list --project "My Project"
+pi-linear-tools project-update view 22222222-2222-4222-8222-222222222222
+pi-linear-tools project-update create --project "My Project" --body "Weekly progress update" --health onTrack
+pi-linear-tools project-update update 22222222-2222-4222-8222-222222222222 --body "Revised update" --health atRisk
+pi-linear-tools project-update archive 22222222-2222-4222-8222-222222222222
+pi-linear-tools project-update unarchive 22222222-2222-4222-8222-222222222222
+```
+
+### Sync doc commands
+
+```bash
+pi-linear-tools sync-doc init --cwd /path/to/subproject --project "Project name or ID"
+pi-linear-tools sync-doc explain
+pi-linear-tools sync-doc list
+pi-linear-tools sync-doc run
+pi-linear-tools sync-doc check
+pi-linear-tools sync-doc run --target project-overview
+pi-linear-tools sync-doc check --target project-overview
+pi-linear-tools sync-doc run --file README.md --project "Project name or ID" --field content
+pi-linear-tools sync-doc run --file docs/provider.md --project "Project name or ID" --target-type document --document-title "Provider Doc"
+```
+
+Use one project overview target for the project body, then sync deeper docs as separate Linear documents.
+
+Use `pi-linear-tools sync-doc init --cwd /path/to/subproject --project "Project name or ID"` to scaffold a starter config.
+
+Placement rule:
+- put `.linear-tools/config.json` in the smallest folder that owns the docs you are syncing
+- the CLI resolves the nearest `.linear-tools/config.json` upward from the current directory
+- use repo root only for targets intentionally shared across multiple subprojects
+- `~/.linear-tools/config.json` is supported for personal defaults, but it should be treated as an override layer, not the main source of truth for repo-owned sync targets
+
+Recommended pattern for multiple docs:
+- one `projectField` target syncs the project overview into `project.content` or `project.description`
+- deeper docs use `targetType: "document"` so each file gets its own Linear document
+- the project overview target can set `documentIndexMarker` to maintain a managed list of links to those documents
+
+For repos with multiple sync targets, the normal workflow is:
+- define them in the repo-root `.linear-tools/config.json`
+- run `pi-linear-tools sync-doc run` to push everything
+- run `pi-linear-tools sync-doc check` in CI or before updates if you want drift visibility
+
+Example:
+
+```json
+{
+  "syncDocs": {
+    "targets": [
+      {
+        "name": "project-overview",
+        "file": "README.md",
+        "project": "Project name or ID",
+        "field": "content",
+        "marker": "project-overview",
+        "documentIndexMarker": "project-doc-links"
+      },
+      {
+        "name": "provider-foo",
+        "targetType": "document",
+        "file": "docs/provider.md",
+        "project": "Project name or ID",
+        "title": "Provider Doc",
+        "marker": "provider-foo",
+        "documentId": "optional-existing-document-id"
+      }
+    ]
+  }
+}
+```
+
+Store that config at `.linear-tools/config.json`. Sync state is written to `.linear-tools/sync-state.json`.
+If `documentId` is omitted on a document target, the first sync creates a new Linear document and stores the created ID in sync state.
+
+Managed content is wrapped in marker comments inside the target Linear field so manual content above or below the managed block is preserved:
+
+```md
+<!-- linear-tools:sync-start README -->
+...synced markdown...
+<!-- linear-tools:sync-end README -->
+```
+
+When `documentIndexMarker` is configured on the overview target, the project field also gets a second managed block containing links to the synced Linear documents.
 
 ### Team commands
 

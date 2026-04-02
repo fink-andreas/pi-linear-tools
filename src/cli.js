@@ -2,6 +2,13 @@ import { loadSettings, saveSettings } from './settings.js';
 import { createLinearClient } from './linear-client.js';
 import { resolveProjectRef } from './linear.js';
 import {
+  explainSyncDocSetup,
+  initSyncDocConfig,
+  listSyncDocTargets,
+  runAllSyncDocs,
+  runSyncDoc,
+} from './sync-doc.js';
+import {
   authenticate,
   logout,
   getAuthStatus,
@@ -11,12 +18,25 @@ import {
 import {
   executeIssueList,
   executeIssueView,
+  executeIssueActivity,
   executeIssueCreate,
   executeIssueUpdate,
   executeIssueComment,
   executeIssueStart,
   executeIssueDelete,
   executeProjectList,
+  executeProjectView,
+  executeProjectCreate,
+  executeProjectUpdate,
+  executeProjectDelete,
+  executeProjectArchive,
+  executeProjectUnarchive,
+  executeProjectUpdateList,
+  executeProjectUpdateView,
+  executeProjectUpdateCreate,
+  executeProjectUpdateUpdate,
+  executeProjectUpdateArchive,
+  executeProjectUpdateUnarchive,
   executeTeamList,
   executeMilestoneList,
   executeMilestoneView,
@@ -131,8 +151,10 @@ Usage:
   pi-linear-tools <command> [options]
 
 Commands:
-  issue <action> [options]      Manage issues
-  project <action> [options]    Manage projects
+  issue <action> [options]      Manage issues, comments, and issue activity/history
+  project <action> [options]    Manage projects and project metadata
+  project-update <action> [options]  Manage project updates (Linear Updates tab entries)
+  sync-doc [action] [options]   Sync local markdown into Linear fields
   team <action> [options]       Manage teams
   milestone <action> [options]  Manage milestones
 
@@ -151,6 +173,7 @@ Auth Actions:
 Issue Actions:
   list [--project X] [--states X,Y] [--assignee me|all] [--team X] [--limit N]
   view <issue> [--no-comments]
+  activity <issue> [--limit N] [--include-archived true|false]
   create --title X [--team X] [--project X] [--description X] [--priority 0-4] [--assignee me|ID]
   update <issue> [--title X] [--description X] [--state X] [--priority 0-4]
          [--assignee me|ID] [--milestone X] [--sub-issue-of X]
@@ -160,6 +183,20 @@ Issue Actions:
 
 Project Actions:
   list
+  view <project>
+  create --name X --teams ENG,OPS [--description X] [--lead me|ID] [--priority 0-4] [--target-date YYYY-MM-DD]
+  update <project> [--name X] [--description X] [--teams X,Y] [--lead me|none|ID] [--target-date YYYY-MM-DD]
+  delete <project>
+  archive <project>
+  unarchive <project>
+
+Project Update Actions:
+  list --project X [--limit N] [--include-archived true|false]
+  view <project-update-id>
+  create --project X [--body X] [--health onTrack|atRisk|offTrack]
+  update <project-update-id> [--body X] [--health onTrack|atRisk|offTrack]
+  archive <project-update-id>
+  unarchive <project-update-id>
 
 Team Actions:
   list
@@ -170,6 +207,36 @@ Milestone Actions:
   create --project X --name X [--description X] [--target-date YYYY-MM-DD] [--status X]
   update <milestone-id> [--name X] [--description X] [--target-date X] [--status X]
   delete <milestone-id>
+
+Sync Doc Actions:
+  init [--cwd X] [--project X] [--file X]
+  explain
+  list [--config X]
+  run [--target X] [--config X]
+  check [--target X] [--config X]
+  run --file X --project X [--field content|description] [--marker X]
+  run --file X --issue X [--field description] [--marker X]
+
+Command Notes:
+  issue update changes issue fields; issue activity reads the Activity timeline.
+  project update changes project fields; project-update manages Updates tab entries.
+  project-update maps to Linear project updates in the Updates tab.
+  sync-doc init scaffolds .linear-tools/config.json in the target folder.
+  sync-doc run/check defaults to all configured targets in .linear-tools/config.json.
+  sync-doc --target X narrows the operation to one configured target.
+
+More Help:
+  pi-linear-tools issue --help
+  pi-linear-tools project --help
+  pi-linear-tools project-update --help
+  pi-linear-tools sync-doc --help
+  pi-linear-tools milestone --help
+
+Reference Conventions:
+  issues           issue key (ENG-123) or issue ID
+  projects         project name or project ID
+  project-updates  project update ID
+  milestones       milestone ID
 
 Common Flags:
   --project     Project name or ID
@@ -182,10 +249,21 @@ Common Flags:
 Examples:
   pi-linear-tools auth login
   pi-linear-tools auth status
+  pi-linear-tools issue update ENG-123 --state "In Progress" --assignee me
+  pi-linear-tools issue comment ENG-123 --body "Blocked on API review"
+  pi-linear-tools issue activity ENG-123 --limit 20
+  pi-linear-tools project view "Roadmap Refresh"
+  pi-linear-tools project update "Roadmap Refresh" --target-date 2026-04-15 --lead me
+  pi-linear-tools project-update create --project "Roadmap Refresh" --body "Weekly update" --health onTrack
+  pi-linear-tools project-update update 12345678-1234-1234-1234-123456789abc --health atRisk
+  pi-linear-tools sync-doc list
+  pi-linear-tools sync-doc init --cwd /path/to/subproject --project "Project name or ID"
+  pi-linear-tools sync-doc explain
+  pi-linear-tools sync-doc run
+  pi-linear-tools sync-doc check
   pi-linear-tools issue list --project MyProject --states "In Progress,Backlog"
   pi-linear-tools issue view ENG-123
   pi-linear-tools issue create --title "Fix bug" --team ENG --priority 2
-  pi-linear-tools issue update ENG-123 --state "In Progress" --assignee me
   pi-linear-tools issue start ENG-123
   pi-linear-tools milestone list --project MyProject
   pi-linear-tools config --api-key lin_xxx
@@ -204,9 +282,15 @@ function printIssueHelp() {
 Usage:
   pi-linear-tools issue <action> [options]
 
+Guidance:
+  Use "update" to change the issue itself: title, description, state, assignee, milestone, or parent.
+  Use "comment" to add a discussion entry.
+  Use "activity" to read the Activity timeline shown in Linear.
+
 Actions:
   list      List issues in a project
   view      View issue details
+  activity  View issue activity/history
   create    Create a new issue
   update    Update an existing issue
   comment   Add a comment to an issue
@@ -221,8 +305,13 @@ List Options:
   --limit N        Max results (default: 50)
 
 View Options:
-  <issue>          Issue key (e.g., ENG-123) or ID
+  <issue>          Issue key (e.g., ENG-123), ID, or issue URL
   --no-comments    Exclude comments from output
+
+Activity Options:
+  <issue>          Issue key, ID, or issue URL
+  --limit N        Max activity entries to fetch (default: 20)
+  --include-archived X  true or false
 
 Create Options:
   --title X        Issue title (required)
@@ -254,6 +343,14 @@ Start Options:
 
 Delete Options:
   <issue>          Issue key or ID
+
+Examples:
+  pi-linear-tools issue view ENG-123
+  pi-linear-tools issue update ENG-123 --state "In Progress" --assignee me
+  pi-linear-tools issue update ENG-123 --milestone "Sprint 12" --priority 2
+  pi-linear-tools issue comment ENG-123 --body "Ready for review"
+  pi-linear-tools issue activity ENG-123 --limit 20
+  pi-linear-tools issue activity https://linear.app/workspace/issue/ENG-123/example --limit 20
 `);
 }
 
@@ -261,10 +358,175 @@ function printProjectHelp() {
   console.log(`pi-linear-tools project - Manage Linear projects
 
 Usage:
-  pi-linear-tools project <action>
+  pi-linear-tools project <action> [options]
+
+Guidance:
+  Use "project update" to change the project record itself: name, teams, dates, lead, description, priority.
+  Use "project-update" for the Updates tab entries that appear as weekly or status updates in Linear.
 
 Actions:
-  list    List all accessible projects
+  list      List all accessible projects
+  view      View project details
+  create    Create a new project
+  update    Update an existing project
+  delete    Delete a project
+  archive   Archive a project
+  unarchive Restore an archived project
+
+View Options:
+  <project>        Project name or ID
+
+Create Options:
+  --name X         Project name (required)
+  --teams X,Y      Team keys or IDs (required)
+  --description X  Project description
+  --lead X         "me" or user ID
+  --priority N     Priority 0-4
+  --color X        Project color (hex)
+  --icon X         Project icon
+  --start-date X   Planned start date (YYYY-MM-DD)
+  --target-date X  Planned target date (YYYY-MM-DD)
+
+Update Options:
+  <project>        Project name or ID
+  --name X         New name
+  --teams X,Y      Replace associated teams
+  --description X  New description
+  --lead X         "me", "none", or user ID
+  --priority N     New priority 0-4
+  --color X        New project color (hex)
+  --icon X         New project icon
+  --start-date X   New planned start date
+  --target-date X  New planned target date
+
+Delete Options:
+  <project>        Project name or ID
+
+Archive Options:
+  <project>        Project name or ID
+
+Unarchive Options:
+  <project>        Project name or ID
+
+Examples:
+  pi-linear-tools project view "Roadmap Refresh"
+  pi-linear-tools project update "Roadmap Refresh" --description "New scope" --target-date 2026-04-15
+  pi-linear-tools project update "Roadmap Refresh" --lead me --teams ENG,OPS
+  pi-linear-tools project archive "Roadmap Refresh"
+`);
+}
+
+function printSyncDocHelp() {
+  console.log(`pi-linear-tools sync-doc - Sync markdown files into Linear
+
+Usage:
+  pi-linear-tools sync-doc [init|explain|list|run|check] [options]
+
+Config:
+  Reads targets from .linear-tools/config.json in the current project tree and ~/.linear-tools/config.json.
+  Put config in the smallest folder that owns the docs being synced. The nearest config wins.
+  Use repo root only for targets intentionally shared across multiple subprojects. Use ~/.linear-tools/config.json for personal defaults.
+
+Actions:
+  init     Scaffold a starter .linear-tools/config.json in the target folder
+  explain  Print the recommended config placement and overview/document model
+  list     Show resolved sync targets from config
+  run      Update Linear if the managed block differs. Defaults to all configured targets.
+  check    Show whether a sync would change Linear. Defaults to all configured targets.
+
+Target Options:
+  --target X              Target name from config
+  --config X              Explicit path to config.json or .linear-tools/
+  --cwd X                 Resolve config and files relative to X
+
+Init Options:
+  --cwd X                 Create .linear-tools/config.json inside X (defaults to current directory)
+  --project X             Fill the starter overview target with a project name or ID
+  --file X                File path for the starter overview target (default: README.md)
+  --field X               content or description (default: content)
+  --force                 Overwrite an existing config.json
+
+One-off Run/Check Options:
+  --file X                Markdown file to sync
+  --project X             Linear project name, id, slug, or project URL
+  --issue X               Linear issue key or id
+  --target-type X         projectField, issueField, or document
+  --document-title X      Required for one-off document targets unless inferred from file name
+  --document-id X         Existing Linear document ID or URL identifier
+  --field X               For projects: content or description. For issues: description
+  --marker X              Managed block marker (default: file basename without extension)
+
+Managed Block:
+  <!-- linear-tools:sync-start MARKER -->
+  ...generated content...
+  <!-- linear-tools:sync-end MARKER -->
+
+Project Document Index:
+  A projectField target can set documentIndexMarker to maintain a managed list of synced document targets.
+  Use this for one overview doc in the project body plus separate linked Linear documents for deeper docs.
+
+Examples:
+  pi-linear-tools sync-doc init --cwd /path/to/subproject --project "Project name or ID"
+  pi-linear-tools sync-doc explain
+  pi-linear-tools sync-doc list
+  pi-linear-tools sync-doc run
+  pi-linear-tools sync-doc check
+  pi-linear-tools sync-doc run --target project-overview
+  pi-linear-tools sync-doc check --target project-overview
+  pi-linear-tools sync-doc run --file README.md --project "Project name or ID" --field content
+  pi-linear-tools sync-doc run --file docs/provider.md --project "Project name or ID" --target-type document --document-title "Provider Doc"
+`);
+}
+
+function printProjectUpdateHelp() {
+  console.log(`pi-linear-tools project-update - Manage Linear project updates
+
+Usage:
+  pi-linear-tools project-update <action> [options]
+
+Guidance:
+  This command manages the entries shown in a project's Updates tab.
+  Create an update by project name or ID, then use the returned project update ID for later view/update/archive actions.
+
+Actions:
+  list       List updates for a project
+  view       View project update details
+  create     Create a new project update
+  update     Update an existing project update
+  archive    Archive a project update
+  unarchive  Restore an archived project update
+
+List Options:
+  --project X             Project name or ID (required)
+  --limit N               Max results (default: 10)
+  --include-archived X    true or false
+
+View Options:
+  <project-update-id>     Project update ID
+
+Create Options:
+  --project X             Project name or ID (required)
+  --body X                Update body in markdown
+  --health X              onTrack, atRisk, or offTrack
+  --is-diff-hidden X      true or false
+
+Update Options:
+  <project-update-id>     Project update ID
+  --body X                Updated body in markdown
+  --health X              onTrack, atRisk, or offTrack
+  --is-diff-hidden X      true or false
+
+Archive Options:
+  <project-update-id>     Project update ID
+
+Unarchive Options:
+  <project-update-id>     Project update ID
+
+Examples:
+  pi-linear-tools project-update list --project "Roadmap Refresh"
+  pi-linear-tools project-update create --project "Roadmap Refresh" --body "Weekly update" --health onTrack
+  pi-linear-tools project-update update 12345678-1234-1234-1234-123456789abc --body "Revised update" --health atRisk
+  pi-linear-tools project-update view 12345678-1234-1234-1234-123456789abc
 `);
 }
 
@@ -557,6 +819,24 @@ async function handleIssueView(args) {
   console.log(result.content[0].text);
 }
 
+async function handleIssueActivity(args) {
+  const client = await createAuthenticatedClient();
+
+  const positional = args.filter((a) => !a.startsWith('-'));
+  if (positional.length === 0) {
+    throw new Error('Missing required argument: issue key or ID');
+  }
+
+  const params = {
+    issue: positional[0],
+    limit: parseNumber(readFlag(args, '--limit')),
+    includeArchived: parseBoolean(readFlag(args, '--include-archived')),
+  };
+
+  const result = await executeIssueActivity(client, params);
+  console.log(result.content[0].text);
+}
+
 async function handleIssueCreate(args) {
   const client = await createAuthenticatedClient();
 
@@ -670,6 +950,8 @@ async function handleIssue(args) {
       return handleIssueList(rest);
     case 'view':
       return handleIssueView(rest);
+    case 'activity':
+      return handleIssueActivity(rest);
     case 'create':
       return handleIssueCreate(rest);
     case 'update':
@@ -694,6 +976,107 @@ async function handleProjectList() {
   console.log(result.content[0].text);
 }
 
+async function handleProjectView(args) {
+  const client = await createAuthenticatedClient();
+  const positional = args.filter((a) => !a.startsWith('-'));
+  if (positional.length === 0) {
+    throw new Error('Missing required argument: project name or ID');
+  }
+
+  const result = await executeProjectView(client, {
+    project: positional[0],
+  });
+  console.log(result.content[0].text);
+}
+
+async function handleProjectCreate(args) {
+  const client = await createAuthenticatedClient();
+  const params = {
+    name: readFlag(args, '--name'),
+    teams: parseArrayValue(readFlag(args, '--teams')),
+    description: readFlag(args, '--description'),
+    lead: readFlag(args, '--lead'),
+    priority: parseNumber(readFlag(args, '--priority')),
+    color: readFlag(args, '--color'),
+    icon: readFlag(args, '--icon'),
+    startDate: readFlag(args, '--start-date'),
+    targetDate: readFlag(args, '--target-date'),
+  };
+
+  if (!params.name) {
+    throw new Error('Missing required flag: --name');
+  }
+  if (!params.teams || params.teams.length === 0) {
+    throw new Error('Missing required flag: --teams');
+  }
+
+  const result = await executeProjectCreate(client, params);
+  console.log(result.content[0].text);
+}
+
+async function handleProjectUpdate(args) {
+  const client = await createAuthenticatedClient();
+  const positional = args.filter((a) => !a.startsWith('-'));
+  if (positional.length === 0) {
+    throw new Error('Missing required argument: project name or ID');
+  }
+
+  const params = {
+    project: positional[0],
+    name: readFlag(args, '--name'),
+    teams: parseArrayValue(readFlag(args, '--teams')),
+    description: readFlag(args, '--description'),
+    lead: readFlag(args, '--lead'),
+    priority: parseNumber(readFlag(args, '--priority')),
+    color: readFlag(args, '--color'),
+    icon: readFlag(args, '--icon'),
+    startDate: readFlag(args, '--start-date'),
+    targetDate: readFlag(args, '--target-date'),
+  };
+
+  const result = await executeProjectUpdate(client, params);
+  console.log(result.content[0].text);
+}
+
+async function handleProjectDelete(args) {
+  const client = await createAuthenticatedClient();
+  const positional = args.filter((a) => !a.startsWith('-'));
+  if (positional.length === 0) {
+    throw new Error('Missing required argument: project name or ID');
+  }
+
+  const result = await executeProjectDelete(client, {
+    project: positional[0],
+  });
+  console.log(result.content[0].text);
+}
+
+async function handleProjectArchive(args) {
+  const client = await createAuthenticatedClient();
+  const positional = args.filter((a) => !a.startsWith('-'));
+  if (positional.length === 0) {
+    throw new Error('Missing required argument: project name or ID');
+  }
+
+  const result = await executeProjectArchive(client, {
+    project: positional[0],
+  });
+  console.log(result.content[0].text);
+}
+
+async function handleProjectUnarchive(args) {
+  const client = await createAuthenticatedClient();
+  const positional = args.filter((a) => !a.startsWith('-'));
+  if (positional.length === 0) {
+    throw new Error('Missing required argument: project name or ID');
+  }
+
+  const result = await executeProjectUnarchive(client, {
+    project: positional[0],
+  });
+  console.log(result.content[0].text);
+}
+
 async function handleProject(args) {
   const [action] = args;
 
@@ -705,8 +1088,309 @@ async function handleProject(args) {
   switch (action) {
     case 'list':
       return handleProjectList();
+    case 'view':
+      return handleProjectView(args.slice(1));
+    case 'create':
+      return handleProjectCreate(args.slice(1));
+    case 'update':
+      return handleProjectUpdate(args.slice(1));
+    case 'delete':
+      return handleProjectDelete(args.slice(1));
+    case 'archive':
+      return handleProjectArchive(args.slice(1));
+    case 'unarchive':
+      return handleProjectUnarchive(args.slice(1));
     default:
       throw new Error(`Unknown project action: ${action}`);
+  }
+}
+
+// ===== PROJECT UPDATE HANDLERS =====
+
+async function handleProjectUpdateListCli(args) {
+  const client = await createAuthenticatedClient();
+  const params = {
+    project: readFlag(args, '--project'),
+    limit: parseNumber(readFlag(args, '--limit')),
+    includeArchived: parseBoolean(readFlag(args, '--include-archived')),
+  };
+
+  if (!params.project) {
+    throw new Error('Missing required flag: --project');
+  }
+
+  const result = await executeProjectUpdateList(client, params);
+  console.log(result.content[0].text);
+}
+
+function printSyncDocResult(result) {
+  if (!result.changed) {
+    if (result.targetType === 'document') {
+      console.log(`No sync changes needed for document "${result.entityName}" from ${result.file}`);
+      return;
+    }
+    console.log(`No sync changes needed for ${result.entityType} "${result.entityName}" field "${result.field}" from ${result.file}`);
+    return;
+  }
+
+  if (result.mode === 'check') {
+    if (result.targetType === 'document') {
+      console.log(`Sync needed for document "${result.entityName}" from ${result.file}`);
+      return;
+    }
+    console.log(`Sync needed for ${result.entityType} "${result.entityName}" field "${result.field}" from ${result.file}`);
+    return;
+  }
+
+  if (result.targetType === 'document') {
+    console.log(`Synced ${result.file} to document "${result.entityName}" using marker "${result.marker}"`);
+    if (result.documentUrl) {
+      console.log(result.documentUrl);
+    }
+    return;
+  }
+
+  console.log(`Synced ${result.file} to ${result.entityType} "${result.entityName}" field "${result.field}" using marker "${result.marker}"`);
+}
+
+function printSyncDocTargets(result) {
+  if (!Array.isArray(result.targets) || result.targets.length === 0) {
+    console.log('No sync-doc targets configured.');
+    return;
+  }
+
+  const lines = result.targets.map((target) => {
+    if (target.targetType === 'document') {
+      const entityLabel = `${target.issue ? 'issue' : 'project'}:${target.entityRef}`;
+      return `- ${target.name} -> document "${target.title}" linked to ${entityLabel} from ${target.file} (marker: ${target.marker})`;
+    }
+
+    const entityLabel = `${target.targetType === 'issueField' ? 'issue' : 'project'}:${target.entityRef}`;
+    const extra = target.documentIndexMarker ? `, document index: ${target.documentIndexMarker}` : '';
+    return `- ${target.name} -> ${entityLabel} field "${target.field}" from ${target.file} (marker: ${target.marker}${extra})`;
+  });
+
+  if (result.configPath) {
+    console.log(`Resolved sync-doc targets from ${result.configPath}`);
+  }
+  console.log(lines.join('\n'));
+}
+
+function printSyncDocBatchResult(result) {
+  const header = result.mode === 'check'
+    ? `Checked ${result.total} sync-doc target(s): ${result.changedCount} need updates, ${result.unchangedCount} unchanged`
+    : `Ran ${result.total} sync-doc target(s): ${result.changedCount} updated, ${result.unchangedCount} unchanged`;
+  const lines = result.results.map((entry) => {
+    const status = entry.changed ? (result.mode === 'check' ? 'needs-sync' : 'synced') : 'unchanged';
+    if (entry.targetType === 'document') {
+      return `- [${status}] ${entry.targetName} -> document "${entry.entityName}" from ${entry.file}`;
+    }
+    return `- [${status}] ${entry.targetName} -> ${entry.entityType} "${entry.entityName}" field "${entry.field}" from ${entry.file}`;
+  });
+
+  console.log([header, ...lines].join('\n'));
+}
+
+function printSyncDocInitResult(result) {
+  if (!result.created) {
+    console.log(`Sync-doc config already exists at ${result.configPath}`);
+    console.log('Use --force to overwrite it, or edit the existing config manually.');
+    return;
+  }
+
+  console.log(`${result.overwritten ? 'Rewrote' : 'Created'} ${result.configPath}`);
+  console.log(`State will be written to ${result.statePath}`);
+  if (result.target) {
+    console.log(`Starter target: ${result.target.name} -> project:${result.target.project} field "${result.target.field}" from ${result.target.file}`);
+  }
+  console.log('Next steps:');
+  console.log(`- Edit ${result.configPath} to add document targets for deeper docs`);
+  console.log(`- Run pi-linear-tools sync-doc list --cwd ${result.cwd}`);
+  console.log(`- Run pi-linear-tools sync-doc run --cwd ${result.cwd}`);
+}
+
+async function handleSyncDocCommand(args) {
+  const [maybeAction, ...restArgs] = args;
+  const action = !maybeAction || maybeAction.startsWith('-') ? 'run' : maybeAction;
+  const commandArgs = !maybeAction || maybeAction.startsWith('-') ? args : restArgs;
+  const cwd = readFlag(commandArgs, '--cwd') || process.cwd();
+
+  if (
+    action === '--help'
+    || action === '-h'
+    || action === 'help'
+    || hasFlag(commandArgs, '--help')
+    || hasFlag(commandArgs, '-h')
+  ) {
+    printSyncDocHelp();
+    return;
+  }
+
+  if (!['init', 'explain', 'list', 'run', 'check'].includes(action)) {
+    throw new Error(`Unknown sync-doc action: ${action}`);
+  }
+
+  if (action === 'explain') {
+    console.log(explainSyncDocSetup());
+    return;
+  }
+
+  if (action === 'init') {
+    const result = await initSyncDocConfig({
+      cwd,
+      file: readFlag(commandArgs, '--file'),
+      project: readFlag(commandArgs, '--project'),
+      field: readFlag(commandArgs, '--field'),
+      marker: readFlag(commandArgs, '--marker'),
+      name: readFlag(commandArgs, '--name'),
+      documentIndexMarker: readFlag(commandArgs, '--document-index-marker'),
+      force: hasFlag(commandArgs, '--force'),
+    });
+    printSyncDocInitResult(result);
+    return;
+  }
+
+  if (action === 'list') {
+    const result = await listSyncDocTargets({
+      cwd,
+      configPath: readFlag(commandArgs, '--config'),
+    });
+    printSyncDocTargets(result);
+    return;
+  }
+
+  const client = await createAuthenticatedClient();
+  const hasOneOffFlags = Boolean(
+    readFlag(commandArgs, '--file')
+    && (readFlag(commandArgs, '--project') || readFlag(commandArgs, '--issue'))
+  );
+  const hasNamedTarget = Boolean(readFlag(commandArgs, '--target'));
+
+  if (!hasOneOffFlags && !hasNamedTarget) {
+    const result = await runAllSyncDocs(client, {
+      mode: action,
+      cwd,
+      configPath: readFlag(commandArgs, '--config'),
+    });
+    printSyncDocBatchResult(result);
+    return;
+  }
+
+  const result = await runSyncDoc(client, {
+    mode: action,
+    cwd,
+    configPath: readFlag(commandArgs, '--config'),
+    targetName: readFlag(commandArgs, '--target'),
+    file: readFlag(commandArgs, '--file'),
+    project: readFlag(commandArgs, '--project'),
+    issue: readFlag(commandArgs, '--issue'),
+    targetType: readFlag(commandArgs, '--target-type'),
+    documentTitle: readFlag(commandArgs, '--document-title'),
+    documentId: readFlag(commandArgs, '--document-id'),
+    field: readFlag(commandArgs, '--field'),
+    marker: readFlag(commandArgs, '--marker'),
+  });
+
+  printSyncDocResult(result);
+}
+
+async function handleProjectUpdateViewCli(args) {
+  const client = await createAuthenticatedClient();
+  const positional = args.filter((a) => !a.startsWith('-'));
+  if (positional.length === 0) {
+    throw new Error('Missing required argument: project update ID');
+  }
+
+  const result = await executeProjectUpdateView(client, {
+    projectUpdate: positional[0],
+  });
+  console.log(result.content[0].text);
+}
+
+async function handleProjectUpdateCreateCli(args) {
+  const client = await createAuthenticatedClient();
+  const params = {
+    project: readFlag(args, '--project'),
+    body: readFlag(args, '--body'),
+    health: readFlag(args, '--health'),
+    isDiffHidden: parseBoolean(readFlag(args, '--is-diff-hidden')),
+  };
+
+  if (!params.project) {
+    throw new Error('Missing required flag: --project');
+  }
+
+  const result = await executeProjectUpdateCreate(client, params);
+  console.log(result.content[0].text);
+}
+
+async function handleProjectUpdateUpdateCli(args) {
+  const client = await createAuthenticatedClient();
+  const positional = args.filter((a) => !a.startsWith('-'));
+  if (positional.length === 0) {
+    throw new Error('Missing required argument: project update ID');
+  }
+
+  const params = {
+    projectUpdate: positional[0],
+    body: readFlag(args, '--body'),
+    health: readFlag(args, '--health'),
+    isDiffHidden: parseBoolean(readFlag(args, '--is-diff-hidden')),
+  };
+
+  const result = await executeProjectUpdateUpdate(client, params);
+  console.log(result.content[0].text);
+}
+
+async function handleProjectUpdateArchiveCli(args) {
+  const client = await createAuthenticatedClient();
+  const positional = args.filter((a) => !a.startsWith('-'));
+  if (positional.length === 0) {
+    throw new Error('Missing required argument: project update ID');
+  }
+
+  const result = await executeProjectUpdateArchive(client, {
+    projectUpdate: positional[0],
+  });
+  console.log(result.content[0].text);
+}
+
+async function handleProjectUpdateUnarchiveCli(args) {
+  const client = await createAuthenticatedClient();
+  const positional = args.filter((a) => !a.startsWith('-'));
+  if (positional.length === 0) {
+    throw new Error('Missing required argument: project update ID');
+  }
+
+  const result = await executeProjectUpdateUnarchive(client, {
+    projectUpdate: positional[0],
+  });
+  console.log(result.content[0].text);
+}
+
+async function handleProjectUpdateCommand(args) {
+  const [action] = args;
+
+  if (!action || action === '--help' || action === '-h') {
+    printProjectUpdateHelp();
+    return;
+  }
+
+  switch (action) {
+    case 'list':
+      return handleProjectUpdateListCli(args.slice(1));
+    case 'view':
+      return handleProjectUpdateViewCli(args.slice(1));
+    case 'create':
+      return handleProjectUpdateCreateCli(args.slice(1));
+    case 'update':
+      return handleProjectUpdateUpdateCli(args.slice(1));
+    case 'archive':
+      return handleProjectUpdateArchiveCli(args.slice(1));
+    case 'unarchive':
+      return handleProjectUpdateUnarchiveCli(args.slice(1));
+    default:
+      throw new Error(`Unknown project-update action: ${action}`);
   }
 }
 
@@ -874,6 +1558,16 @@ export async function runCli(argv = process.argv.slice(2)) {
 
   if (command === 'project') {
     await handleProject(rest);
+    return;
+  }
+
+  if (command === 'project-update') {
+    await handleProjectUpdateCommand(rest);
+    return;
+  }
+
+  if (command === 'sync-doc') {
+    await handleSyncDocCommand(rest);
     return;
   }
 

@@ -48,12 +48,25 @@ try {
 import {
   executeIssueList,
   executeIssueView,
+  executeIssueActivity,
   executeIssueCreate,
   executeIssueUpdate,
   executeIssueComment,
   executeIssueStart,
   executeIssueDelete,
   executeProjectList,
+  executeProjectView,
+  executeProjectCreate,
+  executeProjectUpdate,
+  executeProjectDelete,
+  executeProjectArchive,
+  executeProjectUnarchive,
+  executeProjectUpdateList,
+  executeProjectUpdateView,
+  executeProjectUpdateCreate,
+  executeProjectUpdateUpdate,
+  executeProjectUpdateArchive,
+  executeProjectUpdateUnarchive,
   executeTeamList,
   executeMilestoneList,
   executeMilestoneView,
@@ -478,18 +491,18 @@ async function registerLinearTools(pi) {
   pi.registerTool({
     name: 'linear_issue',
     label: 'Linear Issue',
-    description: 'Interact with Linear issues. Actions: list, view, create, update, comment, start, delete',
+    description: 'Interact with Linear issues. Actions: list, view, activity, create, update, comment, start, delete',
     parameters: {
       type: 'object',
       properties: {
         action: {
           type: 'string',
-          enum: ['list', 'view', 'create', 'update', 'comment', 'start', 'delete'],
+          enum: ['list', 'view', 'activity', 'create', 'update', 'comment', 'start', 'delete'],
           description: 'Action to perform on issue(s)',
         },
         issue: {
           type: 'string',
-          description: 'Issue key (ABC-123) or Linear issue ID (for view, update, comment, start, delete)',
+          description: 'Issue key (ABC-123) or Linear issue ID (for view, activity, update, comment, start, delete)',
         },
         project: {
           type: 'string',
@@ -509,8 +522,8 @@ async function registerLinearTools(pi) {
           description: 'Optional explicit assignee ID alias for update/create debugging/compatibility.',
         },
         limit: {
-          type: 'number',
-          description: 'Maximum number of issues to list (default: 50)',
+          type: 'integer',
+          description: 'Maximum number of issues or activity entries to list',
         },
         includeComments: {
           type: 'boolean',
@@ -525,8 +538,12 @@ async function registerLinearTools(pi) {
           description: 'Issue description in markdown (for create, update)',
         },
         priority: {
-          type: 'number',
+          type: 'integer',
           description: 'Priority 0..4 (for create, update)',
+        },
+        includeArchived: {
+          type: 'boolean',
+          description: 'Include archived resources when listing activity or project updates',
         },
         state: {
           type: 'string',
@@ -618,6 +635,8 @@ async function registerLinearTools(pi) {
               return await executeIssueList(client, params);
             case 'view':
               return await executeIssueView(client, params);
+            case 'activity':
+              return await executeIssueActivity(client, params);
             case 'create':
               return await executeIssueCreate(client, params, { resolveDefaultTeam });
             case 'update':
@@ -692,14 +711,57 @@ async function registerLinearTools(pi) {
   pi.registerTool({
     name: 'linear_project',
     label: 'Linear Project',
-    description: 'Interact with Linear projects. Actions: list',
+    description: 'Interact with Linear projects. Actions: list, view, create, update, delete, archive, unarchive',
     parameters: {
       type: 'object',
       properties: {
         action: {
           type: 'string',
-          enum: ['list'],
+          enum: ['list', 'view', 'create', 'update', 'delete', 'archive', 'unarchive'],
           description: 'Action to perform on project(s)',
+        },
+        project: {
+          type: 'string',
+          description: 'Project name or ID (for view, update, delete)',
+        },
+        name: {
+          type: 'string',
+          description: 'Project name (required for create, optional for update)',
+        },
+        teams: {
+          type: 'string',
+          description: 'Comma-separated team keys or IDs (required for create, optional for update)',
+        },
+        description: {
+          type: 'string',
+          description: 'Project description in markdown',
+        },
+        lead: {
+          type: 'string',
+          description: 'Project lead user ID, "me", or "none" when updating',
+        },
+        priority: {
+          type: 'integer',
+          description: 'Priority 0-4',
+          minimum: 0,
+          maximum: 4,
+          multipleOf: 1,
+        },
+        color: {
+          type: 'string',
+          description: 'Project color (hex)',
+        },
+        icon: {
+          type: 'string',
+          description: 'Project icon',
+        },
+        startDate: {
+          type: 'string',
+          description: 'Planned start date (YYYY-MM-DD)',
+        },
+        targetDate: {
+          type: 'string',
+          description: 'Planned target date (YYYY-MM-DD)',
         },
       },
       required: ['action'],
@@ -714,6 +776,18 @@ async function registerLinearTools(pi) {
           switch (params.action) {
             case 'list':
               return await executeProjectList(client);
+            case 'view':
+              return await executeProjectView(client, params);
+            case 'create':
+              return await executeProjectCreate(client, params);
+            case 'update':
+              return await executeProjectUpdate(client, params);
+            case 'delete':
+              return await executeProjectDelete(client, params);
+            case 'archive':
+              return await executeProjectArchive(client, params);
+            case 'unarchive':
+              return await executeProjectUnarchive(client, params);
             default:
               throw new Error(`Unknown action: ${params.action}`);
           }
@@ -735,6 +809,97 @@ async function registerLinearTools(pi) {
         }
 
         throw new Error(`Linear project operation failed: ${errorMessage}`);
+      }
+    },
+  });
+
+  pi.registerTool({
+    name: 'linear_project_update',
+    label: 'Linear Project Update',
+    description: 'Interact with Linear project updates. Actions: list, view, create, update, archive, unarchive',
+    promptSnippet: 'Interact with Linear project updates (list, view, create, update, archive, unarchive)',
+    parameters: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['list', 'view', 'create', 'update', 'archive', 'unarchive'],
+          description: 'Action to perform on project update(s)',
+        },
+        project: {
+          type: 'string',
+          description: 'Project name or ID (for list, create)',
+        },
+        projectUpdate: {
+          type: 'string',
+          description: 'Project update ID (for view, update, archive, unarchive)',
+        },
+        body: {
+          type: 'string',
+          description: 'Project update body in markdown',
+        },
+        health: {
+          type: 'string',
+          description: 'Project update health: onTrack, atRisk, or offTrack',
+          enum: ['onTrack', 'atRisk', 'offTrack'],
+        },
+        isDiffHidden: {
+          type: 'boolean',
+          description: 'Whether to hide the diff on the update',
+        },
+        limit: {
+          type: 'integer',
+          description: 'Max updates to list',
+          minimum: 1,
+          multipleOf: 1,
+        },
+        includeArchived: {
+          type: 'boolean',
+          description: 'Whether archived updates should be included when listing',
+        },
+      },
+      required: ['action'],
+      additionalProperties: false,
+    },
+    renderResult: renderMarkdownResult,
+    async execute(_toolCallId, params) {
+      try {
+        const client = await createAuthenticatedClient();
+
+        return await withRequestUsageLogging(client, 'linear_project_update', params.action, async () => {
+          switch (params.action) {
+            case 'list':
+              return await executeProjectUpdateList(client, params);
+            case 'view':
+              return await executeProjectUpdateView(client, params);
+            case 'create':
+              return await executeProjectUpdateCreate(client, params);
+            case 'update':
+              return await executeProjectUpdateUpdate(client, params);
+            case 'archive':
+              return await executeProjectUpdateArchive(client, params);
+            case 'unarchive':
+              return await executeProjectUpdateUnarchive(client, params);
+            default:
+              throw new Error(`Unknown action: ${params.action}`);
+          }
+        });
+      } catch (error) {
+        const errorType = error?.type || '';
+        const errorMessage = String(error?.message || error || 'Unknown error');
+
+        if (errorType === 'Ratelimited' || errorMessage.toLowerCase().includes('rate limit')) {
+          const resetAt = error?.requestsResetAt
+            ? new Date(error.requestsResetAt).toLocaleTimeString()
+            : 'approximately 1 hour from now';
+          throw new Error(`Linear API rate limit exceeded. Resets at: ${resetAt}. Please wait before retrying.`);
+        }
+
+        if (errorMessage.includes('Linear API error:')) {
+          throw error;
+        }
+
+        throw new Error(`Linear project update operation failed: ${errorMessage}`);
       }
     },
   });
@@ -983,8 +1148,9 @@ export default async function piLinearToolsExtension(pi) {
       const showMilestoneTool = await shouldExposeMilestoneTool();
       const toolLines = [
         'LLM-callable tools:',
-        '  linear_issue (list/view/create/update/comment/start/delete)',
-        '  linear_project (list)',
+        '  linear_issue (list/view/activity/create/update/comment/start/delete)',
+        '  linear_project (list/view/create/update/delete/archive/unarchive)',
+        '  linear_project_update (list/view/create/update/archive/unarchive)',
         '  linear_team (list)',
       ];
 
