@@ -175,7 +175,7 @@ const PROJECT_MILESTONES_QUERY = `
           name
           description
           progress
-          order
+          sortOrder
           targetDate
           status
         }
@@ -1139,7 +1139,7 @@ function transformRawMilestone(rawMilestone, project = null) {
     name: rawMilestone.name,
     description: rawMilestone.description ?? null,
     progress: rawMilestone.progress ?? null,
-    order: rawMilestone.order ?? null,
+    order: rawMilestone.sortOrder ?? null,
     targetDate: rawMilestone.targetDate ?? null,
     status: rawMilestone.status ?? null,
     project: project ? { id: project.id, name: project.name } : null,
@@ -3320,7 +3320,7 @@ async function transformMilestone(sdkMilestone) {
     name: sdkMilestone.name,
     description: sdkMilestone.description,
     progress: sdkMilestone.progress,
-    order: sdkMilestone.order,
+    order: sdkMilestone.sortOrder,
     targetDate: sdkMilestone.targetDate,
     status: sdkMilestone.status,
     project: project ? { id: project.id, name: project.name } : null,
@@ -3500,7 +3500,7 @@ export async function fetchMilestoneDetails(client, milestoneId) {
       name: milestone.name,
       description: milestone.description,
       progress: milestone.progress,
-      order: milestone.order,
+      order: milestone.sortOrder,
       targetDate: milestone.targetDate,
       status: milestone.status,
       project: project ? { id: project.id, name: project.name } : null,
@@ -3581,7 +3581,7 @@ export async function createProjectMilestone(client, input) {
       name: created?.name || name,
       description: created?.description ?? input.description ?? null,
       progress: created?.progress ?? 0,
-      order: created?.order ?? null,
+      order: created?.sortOrder ?? null,
       targetDate: created?.targetDate ?? input.targetDate ?? null,
       status: created?.status ?? input.status ?? 'backlogged',
       project: null,
