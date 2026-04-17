@@ -325,23 +325,21 @@ async function testProjectUpdateValidation() {
 
     const projectUpdateTool = pi.tools.get('linear_project_update');
 
-    await assert.rejects(
-      () => projectUpdateTool.execute('call-project-update-invalid-health', {
-        action: 'create',
-        project: 'Roadmap Refresh',
-        health: 'green',
-      }),
-      /health must be one of: onTrack, atRisk, offTrack/
-    );
+    const invalidHealthResult = await projectUpdateTool.execute('call-project-update-invalid-health', {
+      action: 'create',
+      project: 'Roadmap Refresh',
+      health: 'green',
+    });
+    assert.match(invalidHealthResult.content[0].text, /health must be one of: onTrack, atRisk, offTrack/);
+    assert.equal(invalidHealthResult.details.error, true);
 
-    await assert.rejects(
-      () => projectUpdateTool.execute('call-project-update-invalid-limit', {
-        action: 'list',
-        project: 'Roadmap Refresh',
-        limit: 0,
-      }),
-      /limit must be a positive integer/
-    );
+    const invalidLimitResult = await projectUpdateTool.execute('call-project-update-invalid-limit', {
+      action: 'list',
+      project: 'Roadmap Refresh',
+      limit: 0,
+    });
+    assert.match(invalidLimitResult.content[0].text, /limit must be a positive integer/);
+    assert.equal(invalidLimitResult.details.error, true);
   } finally {
     resetTestClientFactory();
     process.env.LINEAR_API_KEY = prev;

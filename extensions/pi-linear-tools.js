@@ -497,6 +497,40 @@ function handleToolExecutionError(error, operationLabel, options = {}) {
   throw new Error(`${operationLabel}: ${errorMessage}`);
 }
 
+function buildGenericToolErrorResult(error, operationLabel) {
+  const errorType = error?.type || error?.name || 'Error';
+  const errorMessage = String(error?.message || error || 'Unknown error');
+
+  return toToolTextResult(`${operationLabel}: ${errorMessage}`, {
+    error: true,
+    errorType,
+    rateLimited: false,
+  });
+}
+
+async function executeToolSafely(operationLabel, operation, options = {}) {
+  try {
+    return await operation();
+  } catch (error) {
+    debug('[pi-linear-tools] tool execution failed', {
+      operationLabel,
+      errorType: error?.type || error?.name || null,
+      error: String(error?.message || error || 'unknown'),
+    });
+
+    try {
+      return handleToolExecutionError(error, operationLabel, options);
+    } catch (handledError) {
+      debug('[pi-linear-tools] returning generic safe tool error result', {
+        operationLabel,
+        errorType: handledError?.type || handledError?.name || null,
+        error: String(handledError?.message || handledError || 'unknown'),
+      });
+      return buildGenericToolErrorResult(handledError, operationLabel);
+    }
+  }
+}
+
 function renderMarkdownResult(result, _options, _theme) {
   const text = result.content?.[0]?.text || '';
 
@@ -666,7 +700,7 @@ async function registerLinearTools(pi) {
     },
     renderResult: renderMarkdownResult,
     async execute(_toolCallId, params) {
-      try {
+      return executeToolSafely('Linear issue operation failed', async () => {
         // Pre-check: skip API calls if we know we're rate limited
         const { isRateLimited, resetAt } = checkAndClearRateLimit();
         if (isRateLimited) {
@@ -701,38 +735,7 @@ async function registerLinearTools(pi) {
               throw new Error(`Unknown action: ${params.action}`);
           }
         });
-      } catch (error) {
-        // Comprehensive error handling - catch ALL errors including SDK's RatelimitedLinearError
-        const errorType = error?.type || '';
-        const errorMessage = String(error?.message || error || 'Unknown error');
-
-        // Authentication/Forbidden errors (handles SDK's ForbiddenLinearError)
-        if (errorType === 'Forbidden' || errorType === 'AuthenticationError' ||
-          errorMessage.toLowerCase().includes('forbidden') || errorMessage.toLowerCase().includes('unauthorized')) {
-          throw new Error(
-            `Linear API authentication failed: ${errorMessage}\n\n` +
-            `Please check your API key or OAuth token permissions.`
-          );
-        }
-
-        // Network errors (handles SDK's NetworkError)
-        if (errorType === 'NetworkError' || errorMessage.toLowerCase().includes('network')) {
-          throw new Error(
-            `Network error communicating with Linear API.\n\n` +
-            `Please check your internet connection and try again.`
-          );
-        }
-
-        // Internal server errors (handles SDK's InternalError)
-        if (errorType === 'InternalError' || (error?.status >= 500 && error?.status < 600)) {
-          throw new Error(
-            `Linear API server error (${error?.status || 'unknown'}).\n\n` +
-            `Linear may be experiencing issues. Please try again later.`
-          );
-        }
-
-        return handleToolExecutionError(error, 'Linear issue operation failed');
-      }
+      });
     },
   });
 
@@ -798,7 +801,7 @@ async function registerLinearTools(pi) {
     },
     renderResult: renderMarkdownResult,
     async execute(_toolCallId, params) {
-      try {
+      return executeToolSafely('Linear project operation failed', async () => {
         const client = await createAuthenticatedClient();
 
         return await withRequestUsageLogging(client, 'linear_project', params.action, async () => {
@@ -821,9 +824,7 @@ async function registerLinearTools(pi) {
               throw new Error(`Unknown action: ${params.action}`);
           }
         });
-      } catch (error) {
-        return handleToolExecutionError(error, 'Linear project operation failed');
-      }
+      });
     },
   });
 
@@ -877,7 +878,7 @@ async function registerLinearTools(pi) {
     },
     renderResult: renderMarkdownResult,
     async execute(_toolCallId, params) {
-      try {
+      return executeToolSafely('Linear project update operation failed', async () => {
         const client = await createAuthenticatedClient();
 
         return await withRequestUsageLogging(client, 'linear_project_update', params.action, async () => {
@@ -898,9 +899,7 @@ async function registerLinearTools(pi) {
               throw new Error(`Unknown action: ${params.action}`);
           }
         });
-      } catch (error) {
-        return handleToolExecutionError(error, 'Linear project update operation failed');
-      }
+      });
     },
   });
 
@@ -923,7 +922,7 @@ async function registerLinearTools(pi) {
     },
     renderResult: renderMarkdownResult,
     async execute(_toolCallId, params) {
-      try {
+      return executeToolSafely('Linear team operation failed', async () => {
         const client = await createAuthenticatedClient();
 
         return await withRequestUsageLogging(client, 'linear_team', params.action, async () => {
@@ -934,9 +933,7 @@ async function registerLinearTools(pi) {
               throw new Error(`Unknown action: ${params.action}`);
           }
         });
-      } catch (error) {
-        return handleToolExecutionError(error, 'Linear team operation failed');
-      }
+      });
     },
   });
 
@@ -980,7 +977,7 @@ async function registerLinearTools(pi) {
       },
       renderResult: renderMarkdownResult,
       async execute(_toolCallId, params) {
-        try {
+        return executeToolSafely('Linear milestone operation failed', async () => {
           const client = await createAuthenticatedClient();
 
           return await withRequestUsageLogging(client, 'linear_milestone', params.action, async () => {
@@ -999,11 +996,9 @@ async function registerLinearTools(pi) {
                 throw new Error(`Unknown action: ${params.action}`);
             }
           });
-        } catch (error) {
-          return handleToolExecutionError(error, 'Linear milestone operation failed', {
-            transformError: withMilestoneScopeHint,
-          });
-        }
+        }, {
+          transformError: withMilestoneScopeHint,
+        });
       },
     });
   }

@@ -162,7 +162,7 @@ async function testConfigSavesDefaultTeam() {
   });
 }
 
-async function testIssueToolRequiresApiKey() {
+async function testIssueToolReturnsSafeResultWhenAuthMissing() {
   const prev = process.env.LINEAR_API_KEY;
   delete process.env.LINEAR_API_KEY;
 
@@ -172,10 +172,11 @@ async function testIssueToolRequiresApiKey() {
       await extension(pi);
 
       const issueTool = pi.tools.get('linear_issue');
-      await assert.rejects(
-        () => issueTool.execute('call-1', { action: 'list', project: 'demo' }),
-        /No Linear authentication configured|LINEAR_API_KEY not set/
-      );
+      const result = await issueTool.execute('call-1', { action: 'list', project: 'demo' });
+
+      assert.match(result.content[0].text, /No Linear authentication configured|LINEAR_API_KEY not set/);
+      assert.equal(result.details.error, true);
+      assert.equal(result.details.rateLimited, false);
     });
   } finally {
     process.env.LINEAR_API_KEY = prev;
@@ -226,6 +227,48 @@ async function testIssueToolReturnsSafeResultWhenRequestRateLimited() {
 
     const issueTool = pi.tools.get('linear_issue');
     const result = await issueTool.execute('call-rate-live', { action: 'list', project: 'demo' });
+
+    assert.match(result.content[0].text, /Linear API rate limit exceeded/i);
+    assert.equal(result.details.rateLimited, true);
+    assert.equal(result.details.cached, false);
+  } finally {
+    resetTestClientFactory();
+    markRateLimited(Date.now() - 1);
+    process.env.LINEAR_API_KEY = prev;
+  }
+}
+
+async function testProjectToolReturnsSafeResultWhenProjectQueryRateLimited() {
+  const prev = process.env.LINEAR_API_KEY;
+  process.env.LINEAR_API_KEY = 'lin_test';
+
+  try {
+    const rateLimitError = new Error('Rate limit exceeded. Only 4500 requests are allowed per 1 hour.');
+    rateLimitError.type = 'Ratelimited';
+    rateLimitError.requestsResetAt = Date.now() + 60 * 1000;
+
+    const mockClient = {
+      projects: async () => ({
+        nodes: [{ id: 'p1', name: 'demo', slugId: 'demo', archivedAt: null }],
+      }),
+      client: {
+        rawRequest: async (query) => {
+          if (query.includes('ProjectDetails')) {
+            throw rateLimitError;
+          }
+
+          throw new Error(`Unexpected query: ${query}`);
+        },
+      },
+    };
+
+    setTestClientFactory(() => mockClient);
+
+    const pi = createMockPi();
+    await extension(pi);
+
+    const projectTool = pi.tools.get('linear_project');
+    const result = await projectTool.execute('call-project-rate-live', { action: 'view', project: 'demo' });
 
     assert.match(result.content[0].text, /Linear API rate limit exceeded/i);
     assert.equal(result.details.rateLimited, true);
@@ -381,10 +424,10 @@ async function testMilestoneScopeErrorHint() {
     await extension(pi);
 
     const milestoneTool = pi.tools.get('linear_milestone');
-    await assert.rejects(
-      () => milestoneTool.execute('call-m3', { action: 'create', project: 'demo', name: 'Test' }),
-      /Use API key auth for milestone management/
-    );
+    const result = await milestoneTool.execute('call-m3', { action: 'create', project: 'demo', name: 'Test' });
+
+    assert.match(result.content[0].text, /Use API key auth for milestone management/);
+    assert.equal(result.details.error, true);
   } finally {
     resetTestClientFactory();
     process.env.LINEAR_API_KEY = prev;
@@ -609,9 +652,10 @@ async function main() {
   await testRegistrationShowsMilestoneWhenOAuthHasApiKeyOverride();
   await testConfigSavesApiKey();
   await testConfigSavesDefaultTeam();
-  await testIssueToolRequiresApiKey();
+  await testIssueToolReturnsSafeResultWhenAuthMissing();
   await testIssueToolReturnsSafeResultWhenCachedRateLimited();
   await testIssueToolReturnsSafeResultWhenRequestRateLimited();
+  await testProjectToolReturnsSafeResultWhenProjectQueryRateLimited();
   await testIssueToolListUsesSdkWrapper();
   await testMilestoneListIncludesIds();
   await testMilestoneDeleteIncludesName();
