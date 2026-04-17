@@ -153,6 +153,64 @@ const PROJECTS_LOOKUP_QUERY = `
   }
 `;
 
+const PROJECT_MINIMAL_QUERY = `
+  query ProjectMinimal($id: String!) {
+    project(id: $id) {
+      id
+      name
+      slugId
+      archivedAt
+    }
+  }
+`;
+
+const PROJECT_MILESTONES_QUERY = `
+  query ProjectMilestones($id: String!, $first: Int!) {
+    project(id: $id) {
+      id
+      name
+      projectMilestones(first: $first) {
+        nodes {
+          id
+          name
+          description
+          progress
+          order
+          targetDate
+          status
+        }
+      }
+    }
+  }
+`;
+
+const TEAM_MINIMAL_QUERY = `
+  query TeamMinimal($id: String!) {
+    team(id: $id) {
+      id
+      key
+      name
+    }
+  }
+`;
+
+const TEAM_STATES_QUERY = `
+  query TeamStates($id: String!, $first: Int!) {
+    team(id: $id) {
+      id
+      key
+      name
+      states(first: $first) {
+        nodes {
+          id
+          name
+          type
+        }
+      }
+    }
+  }
+`;
+
 const PROJECT_CREATE_MUTATION = `
   mutation ProjectCreate($input: ProjectCreateInput!) {
     projectCreate(input: $input) {
@@ -360,6 +418,377 @@ const DOCUMENT_UPDATE_MUTATION = `
   }
 `;
 
+const ISSUE_MINIMAL_QUERY = `
+  query IssueMinimal($id: String!) {
+    issue(id: $id) {
+      id
+      identifier
+      title
+      description
+      url
+      branchName
+      priority
+      estimate
+      createdAt
+      updatedAt
+      state {
+        id
+        name
+        type
+      }
+      team {
+        id
+        key
+        name
+      }
+      project {
+        id
+        name
+      }
+      projectMilestone {
+        id
+        name
+      }
+      assignee {
+        id
+        name
+        displayName
+      }
+    }
+  }
+`;
+
+const ISSUE_MINIMAL_BY_TEAM_AND_NUMBER_QUERY = `
+  query IssueMinimalByTeamAndNumber($teamKey: String!, $number: Float!) {
+    issues(first: 1, filter: { team: { key: { eq: $teamKey } }, number: { eq: $number } }) {
+      nodes {
+        id
+        identifier
+        title
+        description
+        url
+        branchName
+        priority
+        estimate
+        createdAt
+        updatedAt
+        state {
+          id
+          name
+          type
+        }
+        team {
+          id
+          key
+          name
+        }
+        project {
+          id
+          name
+        }
+        projectMilestone {
+          id
+          name
+        }
+        assignee {
+          id
+          name
+          displayName
+        }
+      }
+    }
+  }
+`;
+
+const ISSUE_DETAILS_QUERY = `
+  query IssueDetails($id: String!) {
+    issue(id: $id) {
+      id
+      identifier
+      title
+      description
+      url
+      branchName
+      priority
+      estimate
+      createdAt
+      updatedAt
+      state {
+        id
+        name
+        color
+        type
+      }
+      team {
+        id
+        key
+        name
+      }
+      project {
+        id
+        name
+      }
+      projectMilestone {
+        id
+        name
+      }
+      assignee {
+        id
+        name
+        displayName
+      }
+      creator {
+        id
+        name
+        displayName
+      }
+      labels(first: 50) {
+        nodes {
+          id
+          name
+          color
+        }
+      }
+      parent {
+        id
+        identifier
+        title
+        state {
+          id
+          name
+          color
+        }
+      }
+      children(first: 50) {
+        nodes {
+          id
+          identifier
+          title
+          state {
+            id
+            name
+            color
+          }
+        }
+      }
+      attachments(first: 50) {
+        nodes {
+          id
+          title
+          url
+          subtitle
+          sourceType
+          createdAt
+        }
+      }
+    }
+  }
+`;
+
+const ISSUE_DETAILS_WITH_COMMENTS_QUERY = `
+  query IssueDetailsWithComments($id: String!) {
+    issue(id: $id) {
+      id
+      identifier
+      title
+      description
+      url
+      branchName
+      priority
+      estimate
+      createdAt
+      updatedAt
+      state {
+        id
+        name
+        color
+        type
+      }
+      team {
+        id
+        key
+        name
+      }
+      project {
+        id
+        name
+      }
+      projectMilestone {
+        id
+        name
+      }
+      assignee {
+        id
+        name
+        displayName
+      }
+      creator {
+        id
+        name
+        displayName
+      }
+      labels(first: 50) {
+        nodes {
+          id
+          name
+          color
+        }
+      }
+      parent {
+        id
+        identifier
+        title
+        state {
+          id
+          name
+          color
+        }
+      }
+      children(first: 50) {
+        nodes {
+          id
+          identifier
+          title
+          state {
+            id
+            name
+            color
+          }
+        }
+      }
+      comments(first: 100) {
+        nodes {
+          id
+          body
+          createdAt
+          updatedAt
+          user {
+            id
+            name
+            displayName
+          }
+          externalUser {
+            id
+            name
+            displayName
+          }
+          parent {
+            id
+          }
+        }
+      }
+      attachments(first: 50) {
+        nodes {
+          id
+          title
+          url
+          subtitle
+          sourceType
+          createdAt
+        }
+      }
+    }
+  }
+`;
+
+const ISSUE_CREATE_MUTATION = `
+  mutation IssueCreate($input: IssueCreateInput!) {
+    issueCreate(input: $input) {
+      success
+      issue {
+        id
+        identifier
+        title
+        description
+        url
+        branchName
+        priority
+        estimate
+        createdAt
+        updatedAt
+        state {
+          id
+          name
+          type
+        }
+        team {
+          id
+          key
+          name
+        }
+        project {
+          id
+          name
+        }
+        projectMilestone {
+          id
+          name
+        }
+        assignee {
+          id
+          name
+          displayName
+        }
+      }
+    }
+  }
+`;
+
+const ISSUE_UPDATE_MUTATION = `
+  mutation IssueUpdate($id: String!, $input: IssueUpdateInput!) {
+    issueUpdate(id: $id, input: $input) {
+      success
+      issue {
+        id
+        identifier
+        title
+        description
+        url
+        branchName
+        priority
+        estimate
+        createdAt
+        updatedAt
+        state {
+          id
+          name
+          type
+        }
+        team {
+          id
+          key
+          name
+        }
+        project {
+          id
+          name
+        }
+        projectMilestone {
+          id
+          name
+        }
+        assignee {
+          id
+          name
+          displayName
+        }
+      }
+    }
+  }
+`;
+
+const ISSUE_DELETE_MUTATION = `
+  mutation IssueDelete($id: String!) {
+    issueDelete(id: $id) {
+      success
+      entity {
+        id
+        identifier
+      }
+    }
+  }
+`;
+
 const ISSUE_ACTIVITY_QUERY = `
   query IssueActivity($id: String!, $first: Int!, $includeArchived: Boolean!) {
     issue(id: $id) {
@@ -490,10 +919,15 @@ async function executeOptimizedQuery(client, query, variables) {
   };
 }
 
-async function executeGraphQL(client, query, variables = {}) {
-  const rawRequest =
+function getRawRequest(client) {
+  return (
     (typeof client.client?.rawRequest === 'function' ? client.client.rawRequest.bind(client.client) : null) ||
-    (typeof client.rawRequest === 'function' ? client.rawRequest.bind(client) : null);
+    (typeof client.rawRequest === 'function' ? client.rawRequest.bind(client) : null)
+  );
+}
+
+async function executeGraphQL(client, query, variables = {}) {
+  const rawRequest = getRawRequest(client);
 
   if (!rawRequest) {
     throw new Error('GraphQL rawRequest is unavailable on this Linear client');
@@ -520,12 +954,281 @@ function transformRawIssue(rawIssue) {
     url: rawIssue.url,
     branchName: rawIssue.branchName,
     priority: rawIssue.priority,
+    estimate: rawIssue.estimate ?? null,
+    createdAt: rawIssue.createdAt ?? null,
+    updatedAt: rawIssue.updatedAt ?? null,
     state: rawIssue.state ? { id: rawIssue.state.id, name: rawIssue.state.name, type: rawIssue.state.type } : null,
     team: rawIssue.team ? { id: rawIssue.team.id, key: rawIssue.team.key, name: rawIssue.team.name } : null,
     project: rawIssue.project ? { id: rawIssue.project.id, name: rawIssue.project.name } : null,
     projectMilestone: rawIssue.projectMilestone ? { id: rawIssue.projectMilestone.id, name: rawIssue.projectMilestone.name } : null,
     assignee: rawIssue.assignee ? { id: rawIssue.assignee.id, name: rawIssue.assignee.name, displayName: rawIssue.assignee.displayName } : null,
   };
+}
+
+function parseIssueIdentifierLookup(lookup) {
+  const match = String(lookup || '').trim().match(/^([A-Za-z0-9]+)-(\d+)$/);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    teamKey: match[1].toUpperCase(),
+    number: Number.parseInt(match[2], 10),
+  };
+}
+
+async function fetchIssueMinimalById(client, issueId) {
+  if (getRawRequest(client)) {
+    try {
+      const data = await executeGraphQL(client, ISSUE_MINIMAL_QUERY, { id: issueId });
+      const transformed = transformRawIssue(data?.issue ?? null);
+      if (transformed) {
+        return transformed;
+      }
+    } catch {
+      // Fall back to SDK read below.
+    }
+  }
+
+  const sdkIssue = await client.issue?.(issueId);
+  return sdkIssue ? transformIssue(sdkIssue) : null;
+}
+
+async function fetchIssueMinimalByIdentifier(client, identifier) {
+  if (getRawRequest(client)) {
+    const parsed = parseIssueIdentifierLookup(identifier);
+    if (parsed) {
+      try {
+        const data = await executeGraphQL(client, ISSUE_MINIMAL_BY_TEAM_AND_NUMBER_QUERY, parsed);
+        const transformed = transformRawIssue(data?.issues?.nodes?.[0] ?? null);
+        if (transformed) {
+          return transformed;
+        }
+      } catch {
+        // Fall back to SDK read below.
+      }
+    }
+  }
+
+  const sdkIssue = await client.issue?.(identifier);
+  return sdkIssue ? transformIssue(sdkIssue) : null;
+}
+
+async function fetchIssueMinimal(client, lookup) {
+  return isLinearId(lookup)
+    ? fetchIssueMinimalById(client, lookup)
+    : fetchIssueMinimalByIdentifier(client, lookup);
+}
+
+async function performIssueUpdate(client, issueId, updateInput) {
+  if (getRawRequest(client)) {
+    const payload = await executeGraphQL(client, ISSUE_UPDATE_MUTATION, {
+      id: issueId,
+      input: updateInput,
+    });
+
+    if (!payload?.issueUpdate?.success) {
+      throw new Error('Failed to update issue');
+    }
+
+    return transformRawIssue(payload.issueUpdate.issue ?? null);
+  }
+
+  const sdkIssue = await client.issue(issueId);
+  if (!sdkIssue) {
+    throw new Error(`Issue not found: ${issueId}`);
+  }
+
+  const result = await sdkIssue.update(updateInput);
+  if (!result.success) {
+    throw new Error('Failed to update issue');
+  }
+
+  return transformIssue(result.issue);
+}
+
+function transformRawIssueDetails(rawIssue, options = {}) {
+  const { includeComments = true } = options;
+  if (!rawIssue) return null;
+
+  return {
+    identifier: rawIssue.identifier,
+    title: rawIssue.title,
+    description: rawIssue.description ?? null,
+    url: rawIssue.url ?? null,
+    branchName: rawIssue.branchName ?? null,
+    priority: rawIssue.priority ?? null,
+    estimate: rawIssue.estimate ?? null,
+    createdAt: rawIssue.createdAt ?? null,
+    updatedAt: rawIssue.updatedAt ?? null,
+    state: rawIssue.state ? {
+      name: rawIssue.state.name,
+      color: rawIssue.state.color ?? null,
+      type: rawIssue.state.type ?? null,
+    } : null,
+    team: rawIssue.team ? { id: rawIssue.team.id, key: rawIssue.team.key, name: rawIssue.team.name } : null,
+    project: rawIssue.project ? { id: rawIssue.project.id, name: rawIssue.project.name } : null,
+    projectMilestone: rawIssue.projectMilestone ? { id: rawIssue.projectMilestone.id, name: rawIssue.projectMilestone.name } : null,
+    assignee: rawIssue.assignee ? { id: rawIssue.assignee.id, name: rawIssue.assignee.name, displayName: rawIssue.assignee.displayName } : null,
+    creator: rawIssue.creator ? { id: rawIssue.creator.id, name: rawIssue.creator.name, displayName: rawIssue.creator.displayName } : null,
+    labels: (rawIssue.labels?.nodes || []).map((label) => ({
+      id: label.id,
+      name: label.name,
+      color: label.color ?? null,
+    })),
+    parent: rawIssue.parent ? {
+      identifier: rawIssue.parent.identifier,
+      title: rawIssue.parent.title,
+      state: rawIssue.parent.state ? {
+        name: rawIssue.parent.state.name,
+        color: rawIssue.parent.state.color ?? null,
+      } : null,
+    } : null,
+    children: (rawIssue.children?.nodes || []).map((child) => ({
+      identifier: child.identifier,
+      title: child.title,
+      state: child.state ? {
+        name: child.state.name,
+        color: child.state.color ?? null,
+      } : null,
+    })),
+    comments: includeComments
+      ? (rawIssue.comments?.nodes || []).map((comment) => ({
+        id: comment.id,
+        body: comment.body,
+        createdAt: comment.createdAt,
+        updatedAt: comment.updatedAt,
+        user: comment.user ? {
+          name: comment.user.name,
+          displayName: comment.user.displayName,
+        } : null,
+        externalUser: comment.externalUser ? {
+          name: comment.externalUser.name,
+          displayName: comment.externalUser.displayName,
+        } : null,
+        parent: comment.parent ? { id: comment.parent.id } : null,
+      }))
+      : [],
+    attachments: (rawIssue.attachments?.nodes || []).map((attachment) => ({
+      id: attachment.id,
+      title: attachment.title,
+      url: attachment.url,
+      subtitle: attachment.subtitle,
+      sourceType: attachment.sourceType,
+      createdAt: attachment.createdAt,
+    })),
+  };
+}
+
+function transformRawProjectMinimal(rawProject) {
+  if (!rawProject) return null;
+
+  return {
+    id: rawProject.id,
+    name: rawProject.name,
+    slugId: rawProject.slugId ?? null,
+    archivedAt: rawProject.archivedAt ?? null,
+  };
+}
+
+function transformRawMilestone(rawMilestone, project = null) {
+  if (!rawMilestone) return null;
+
+  return {
+    id: rawMilestone.id,
+    name: rawMilestone.name,
+    description: rawMilestone.description ?? null,
+    progress: rawMilestone.progress ?? null,
+    order: rawMilestone.order ?? null,
+    targetDate: rawMilestone.targetDate ?? null,
+    status: rawMilestone.status ?? null,
+    project: project ? { id: project.id, name: project.name } : null,
+  };
+}
+
+async function fetchProjectMinimal(client, projectId) {
+  if (!getRawRequest(client)) {
+    const sdkProject = await client.project?.(projectId);
+    return sdkProject ? transformRawProjectMinimal(sdkProject) : null;
+  }
+
+  const data = await executeGraphQL(client, PROJECT_MINIMAL_QUERY, { id: projectId });
+  return transformRawProjectMinimal(data?.project ?? null);
+}
+
+async function fetchTeamMinimal(client, teamId) {
+  if (getRawRequest(client)) {
+    try {
+      const data = await executeGraphQL(client, TEAM_MINIMAL_QUERY, { id: teamId });
+      const team = data?.team;
+      if (team) {
+        return { id: team.id, key: team.key, name: team.name };
+      }
+    } catch {
+      // Fall back to SDK read below.
+    }
+  }
+
+  const sdkTeam = await client.team?.(teamId);
+  return sdkTeam ? { id: sdkTeam.id, key: sdkTeam.key, name: sdkTeam.name } : null;
+}
+
+async function fetchTeamStatesByQuery(client, teamId, options = {}) {
+  const { first = 50 } = options;
+
+  if (getRawRequest(client)) {
+    try {
+      const data = await executeGraphQL(client, TEAM_STATES_QUERY, { id: teamId, first });
+      if (data?.team) {
+        return (data.team.states?.nodes || []).map((state) => ({
+          id: state.id,
+          name: state.name,
+          type: state.type,
+        }));
+      }
+    } catch {
+      // Fall back to SDK read below.
+    }
+  }
+
+  const team = await client.team?.(teamId);
+  if (!team) {
+    return null;
+  }
+
+  const result = await team.states();
+  return (result.nodes || []).map((state) => ({
+    id: state.id,
+    name: state.name,
+    type: state.type,
+  }));
+}
+
+async function fetchProjectMilestonesByQuery(client, projectId, options = {}) {
+  const { first = 250 } = options;
+
+  if (!getRawRequest(client)) {
+    const project = await client.project?.(projectId);
+    if (!project) {
+      return null;
+    }
+
+    const result = await project.projectMilestones();
+    const nodes = result.nodes || [];
+    return Promise.all(nodes.map(transformMilestone));
+  }
+
+  const data = await executeGraphQL(client, PROJECT_MILESTONES_QUERY, {
+    id: projectId,
+    first,
+  });
+
+  if (!data?.project) {
+    return null;
+  }
+
+  const project = { id: data.project.id, name: data.project.name };
+  return (data.project.projectMilestones?.nodes || []).map((milestone) => transformRawMilestone(milestone, project));
 }
 
 // ===== RATE LIMIT TRACKING =====
@@ -1368,17 +2071,18 @@ export async function resolveTeamRef(client, teamRef) {
     throw new Error('Missing team reference');
   }
 
-  // If it looks like a Linear ID (UUID), try direct lookup first (cheap)
+  // If it looks like a Linear ID (UUID), try a minimal GraphQL lookup first.
   if (isLinearId(ref)) {
     try {
-      const direct = await client.team(ref);
+      const direct = await fetchTeamMinimal(client, ref);
       if (direct) {
-        return { id: direct.id, key: direct.key, name: direct.name };
+        return direct;
       }
     } catch {
       // fall back to cached/full-team lookup below
     }
 
+    const teams = await fetchTeams(client);
     const byId = teams.find((t) => t.id === ref);
     if (byId) {
       return byId;
@@ -1422,14 +2126,13 @@ export async function resolveIssue(client, issueRef) {
   return withLinearErrorHandling(async () => {
     const lookup = normalizeIssueLookupInput(issueRef);
 
-    // The SDK's client.issue() method accepts both UUIDs and identifiers (ABC-123)
     try {
-      const issue = await client.issue(lookup);
+      const issue = await fetchIssueMinimal(client, lookup);
       if (issue) {
-        return transformIssue(issue);
+        return issue;
       }
-    } catch (err) {
-      // Fall through to error
+    } catch {
+      // Fall through to not-found error below
     }
 
     throw new Error(`Issue not found: ${lookup}`);
@@ -1448,17 +2151,10 @@ export async function getTeamWorkflowStates(client, teamRef) {
     const cached = getCache(teamStatesCache, cacheKey);
     if (cached) return cached;
 
-    const team = await client.team(teamRef);
-    if (!team) {
+    const mapped = await fetchTeamStatesByQuery(client, teamRef);
+    if (!mapped) {
       throw new Error(`Team not found: ${teamRef}`);
     }
-
-    const states = await team.states();
-    const mapped = (states.nodes || []).map(s => ({
-      id: s.id,
-      name: s.name,
-      type: s.type,
-    }));
 
     setCache(teamStatesCache, cacheKey, mapped, CACHE_TTL_MS.teamStates);
     return mapped;
@@ -1479,12 +2175,12 @@ export async function resolveProjectRef(client, projectRef, options = {}) {
     throw new Error('Missing project reference');
   }
 
-  // If it looks like a Linear ID (UUID), try direct lookup first (cheap)
+  // If it looks like a Linear ID (UUID), try a minimal GraphQL lookup first.
   if (isLinearId(ref)) {
     try {
-      const direct = await client.project(ref);
+      const direct = await fetchProjectMinimal(client, ref);
       if (direct) {
-        return { id: direct.id, name: direct.name };
+        return direct;
       }
     } catch {
       // fall back to cached/full-project lookup below
@@ -1925,109 +2621,127 @@ export async function updateDocument(client, documentRef, patch = {}) {
  * @param {boolean} [options.includeComments=true] - Include comments in response
  * @returns {Promise<Object>} Issue details
  */
+async function fetchIssueDetailsViaSdk(client, issueRef, options = {}) {
+  const { includeComments = true } = options;
+
+  const lookup = normalizeIssueLookupInput(issueRef);
+  const sdkIssue = await client.issue(lookup);
+
+  if (!sdkIssue) {
+    throw new Error(`Issue not found: ${lookup}`);
+  }
+
+  const [
+    state,
+    team,
+    project,
+    projectMilestone,
+    assignee,
+    creator,
+    labelsResult,
+    parent,
+    childrenResult,
+    commentsResult,
+    attachmentsResult,
+  ] = await Promise.all([
+    sdkIssue.state?.catch?.(() => null) ?? sdkIssue.state,
+    sdkIssue.team?.catch?.(() => null) ?? sdkIssue.team,
+    sdkIssue.project?.catch?.(() => null) ?? sdkIssue.project,
+    sdkIssue.projectMilestone?.catch?.(() => null) ?? sdkIssue.projectMilestone,
+    sdkIssue.assignee?.catch?.(() => null) ?? sdkIssue.assignee,
+    sdkIssue.creator?.catch?.(() => null) ?? sdkIssue.creator,
+    sdkIssue.labels?.()?.catch?.(() => ({ nodes: [] })) ?? sdkIssue.labels?.() ?? { nodes: [] },
+    sdkIssue.parent?.catch?.(() => null) ?? sdkIssue.parent,
+    sdkIssue.children?.()?.catch?.(() => ({ nodes: [] })) ?? sdkIssue.children?.() ?? { nodes: [] },
+    includeComments ? (sdkIssue.comments?.()?.catch?.(() => ({ nodes: [] })) ?? sdkIssue.comments?.() ?? { nodes: [] }) : Promise.resolve({ nodes: [] }),
+    sdkIssue.attachments?.()?.catch?.(() => ({ nodes: [] })) ?? sdkIssue.attachments?.() ?? { nodes: [] },
+  ]);
+
+  let transformedParent = null;
+  if (parent) {
+    const parentState = await parent.state?.catch?.(() => null) ?? parent.state;
+    transformedParent = {
+      identifier: parent.identifier,
+      title: parent.title,
+      state: parentState ? { name: parentState.name, color: parentState.color } : null,
+    };
+  }
+
+  const children = (childrenResult.nodes || []).map(c => ({
+    identifier: c.identifier,
+    title: c.title,
+    state: c.state ? { name: c.state.name, color: c.state.color } : null,
+  }));
+
+  const comments = (commentsResult.nodes || []).map(c => ({
+    id: c.id,
+    body: c.body,
+    createdAt: c.createdAt,
+    updatedAt: c.updatedAt,
+    user: c.user ? { name: c.user.name, displayName: c.user.displayName } : null,
+    externalUser: c.externalUser ? { name: c.externalUser.name, displayName: c.externalUser.displayName } : null,
+    parent: c.parent ? { id: c.parent.id } : null,
+  }));
+
+  const attachments = (attachmentsResult.nodes || []).map(a => ({
+    id: a.id,
+    title: a.title,
+    url: a.url,
+    subtitle: a.subtitle,
+    sourceType: a.sourceType,
+    createdAt: a.createdAt,
+  }));
+
+  const labels = (labelsResult.nodes || []).map(l => ({
+    id: l.id,
+    name: l.name,
+    color: l.color,
+  }));
+
+  return {
+    identifier: sdkIssue.identifier,
+    title: sdkIssue.title,
+    description: sdkIssue.description,
+    url: sdkIssue.url,
+    branchName: sdkIssue.branchName,
+    priority: sdkIssue.priority,
+    estimate: sdkIssue.estimate,
+    createdAt: sdkIssue.createdAt,
+    updatedAt: sdkIssue.updatedAt,
+    state: state ? { name: state.name, color: state.color, type: state.type } : null,
+    team: team ? { id: team.id, key: team.key, name: team.name } : null,
+    project: project ? { id: project.id, name: project.name } : null,
+    projectMilestone: projectMilestone ? { id: projectMilestone.id, name: projectMilestone.name } : null,
+    assignee: assignee ? { id: assignee.id, name: assignee.name, displayName: assignee.displayName } : null,
+    creator: creator ? { id: creator.id, name: creator.name, displayName: creator.displayName } : null,
+    labels,
+    parent: transformedParent,
+    children,
+    comments,
+    attachments,
+  };
+}
+
 export async function fetchIssueDetails(client, issueRef, options = {}) {
   return withLinearErrorHandling(async () => {
     const { includeComments = true } = options;
 
-    // Resolve issue - client.issue() accepts both UUIDs and identifiers
-    const lookup = normalizeIssueLookupInput(issueRef);
-    const sdkIssue = await client.issue(lookup);
+    if (!getRawRequest(client)) {
+      return fetchIssueDetailsViaSdk(client, issueRef, options);
+    }
 
-    if (!sdkIssue) {
+    const lookup = normalizeIssueLookupInput(issueRef);
+    const issueId = isLinearId(lookup)
+      ? lookup
+      : (await resolveIssue(client, lookup)).id;
+    const query = includeComments ? ISSUE_DETAILS_WITH_COMMENTS_QUERY : ISSUE_DETAILS_QUERY;
+    const data = await executeGraphQL(client, query, { id: issueId });
+
+    if (!data?.issue) {
       throw new Error(`Issue not found: ${lookup}`);
     }
 
-    // Fetch all nested relations in parallel
-    const [
-      state,
-      team,
-      project,
-      projectMilestone,
-      assignee,
-      creator,
-      labelsResult,
-      parent,
-      childrenResult,
-      commentsResult,
-      attachmentsResult,
-    ] = await Promise.all([
-      sdkIssue.state?.catch?.(() => null) ?? sdkIssue.state,
-      sdkIssue.team?.catch?.(() => null) ?? sdkIssue.team,
-      sdkIssue.project?.catch?.(() => null) ?? sdkIssue.project,
-      sdkIssue.projectMilestone?.catch?.(() => null) ?? sdkIssue.projectMilestone,
-      sdkIssue.assignee?.catch?.(() => null) ?? sdkIssue.assignee,
-      sdkIssue.creator?.catch?.(() => null) ?? sdkIssue.creator,
-      sdkIssue.labels?.()?.catch?.(() => ({ nodes: [] })) ?? sdkIssue.labels?.() ?? { nodes: [] },
-      sdkIssue.parent?.catch?.(() => null) ?? sdkIssue.parent,
-      sdkIssue.children?.()?.catch?.(() => ({ nodes: [] })) ?? sdkIssue.children?.() ?? { nodes: [] },
-      includeComments ? (sdkIssue.comments?.()?.catch?.(() => ({ nodes: [] })) ?? sdkIssue.comments?.() ?? { nodes: [] }) : Promise.resolve({ nodes: [] }),
-      sdkIssue.attachments?.()?.catch?.(() => ({ nodes: [] })) ?? sdkIssue.attachments?.() ?? { nodes: [] },
-    ]);
-
-    // Transform parent if exists
-    let transformedParent = null;
-    if (parent) {
-      const parentState = await parent.state?.catch?.(() => null) ?? parent.state;
-      transformedParent = {
-        identifier: parent.identifier,
-        title: parent.title,
-        state: parentState ? { name: parentState.name, color: parentState.color } : null,
-      };
-    }
-
-    const children = (childrenResult.nodes || []).map(c => ({
-      identifier: c.identifier,
-      title: c.title,
-      state: c.state ? { name: c.state.name, color: c.state.color } : null,
-    }));
-
-    const comments = (commentsResult.nodes || []).map(c => ({
-      id: c.id,
-      body: c.body,
-      createdAt: c.createdAt,
-      updatedAt: c.updatedAt,
-      user: c.user ? { name: c.user.name, displayName: c.user.displayName } : null,
-      externalUser: c.externalUser ? { name: c.externalUser.name, displayName: c.externalUser.displayName } : null,
-      parent: c.parent ? { id: c.parent.id } : null,
-    }));
-
-    const attachments = (attachmentsResult.nodes || []).map(a => ({
-      id: a.id,
-      title: a.title,
-      url: a.url,
-      subtitle: a.subtitle,
-      sourceType: a.sourceType,
-      createdAt: a.createdAt,
-    }));
-
-    const labels = (labelsResult.nodes || []).map(l => ({
-      id: l.id,
-      name: l.name,
-      color: l.color,
-    }));
-
-    return {
-      identifier: sdkIssue.identifier,
-      title: sdkIssue.title,
-      description: sdkIssue.description,
-      url: sdkIssue.url,
-      branchName: sdkIssue.branchName,
-      priority: sdkIssue.priority,
-      estimate: sdkIssue.estimate,
-      createdAt: sdkIssue.createdAt,
-      updatedAt: sdkIssue.updatedAt,
-      state: state ? { name: state.name, color: state.color, type: state.type } : null,
-      team: team ? { id: team.id, key: team.key, name: team.name } : null,
-      project: project ? { id: project.id, name: project.name } : null,
-      projectMilestone: projectMilestone ? { id: projectMilestone.id, name: projectMilestone.name } : null,
-      assignee: assignee ? { id: assignee.id, name: assignee.name, displayName: assignee.displayName } : null,
-      creator: creator ? { id: creator.id, name: creator.name, displayName: creator.displayName } : null,
-      labels,
-      parent: transformedParent,
-      children,
-      comments,
-      attachments,
-    };
+    return transformRawIssueDetails(data.issue, { includeComments });
   }, 'fetchIssueDetails');
 }
 
@@ -2115,17 +2829,17 @@ export async function fetchIssueActivity(client, issueRef, options = {}) {
  */
 export async function setIssueState(client, issueId, stateId) {
   return withLinearErrorHandling(async () => {
-    const issue = await client.issue(issueId);
-    if (!issue) {
+    const updated = await performIssueUpdate(client, issueId, { stateId });
+    if (updated) {
+      return updated;
+    }
+
+    const refreshed = await fetchIssueMinimalById(client, issueId);
+    if (!refreshed) {
       throw new Error(`Issue not found: ${issueId}`);
     }
 
-    const result = await issue.update({ stateId });
-    if (!result.success) {
-      throw new Error('Failed to update issue state');
-    }
-
-    return transformIssue(result.issue);
+    return refreshed;
   }, 'setIssueState');
 }
 
@@ -2195,33 +2909,55 @@ export async function createIssue(client, input) {
       createInput.stateId = input.stateId;
     }
 
-    const result = await client.createIssue(createInput);
-
-    if (!result.success) {
-      throw new Error('Failed to create issue');
-    }
-
-    // Prefer official data path: resolve created issue ID then refetch full issue.
-    const createdIssueId =
-      result.issue?.id
-      || result._issue?.id
-      || null;
-
-    if (createdIssueId) {
-      try {
-        const fullIssue = await client.issue(createdIssueId);
-        if (fullIssue) {
-          const transformed = await transformIssue(fullIssue);
-          return transformed;
-        }
-      } catch {
-        // continue to fallback
+    if (getRawRequest(client)) {
+      const payload = await executeGraphQL(client, ISSUE_CREATE_MUTATION, { input: createInput });
+      if (!payload?.issueCreate?.success) {
+        throw new Error('Failed to create issue');
       }
+
+      const createdIssue = transformRawIssue(payload.issueCreate.issue ?? null);
+      if (createdIssue) {
+        return createdIssue;
+      }
+    } else {
+      const result = await client.createIssue(createInput);
+
+      if (!result.success) {
+        throw new Error('Failed to create issue');
+      }
+
+      const createdIssueId =
+        result.issue?.id
+        || result._issue?.id
+        || null;
+
+      if (createdIssueId) {
+        try {
+          const fullIssue = await fetchIssueMinimalById(client, createdIssueId);
+          if (fullIssue) {
+            return fullIssue;
+          }
+        } catch {
+          // continue to fallback
+        }
+      }
+
+      return {
+        id: createdIssueId,
+        identifier: null,
+        title,
+        description: input.description ?? null,
+        url: null,
+        priority: input.priority ?? null,
+        state: null,
+        team: null,
+        project: null,
+        assignee: null,
+      };
     }
 
-    // Minimal fallback when SDK payload does not expose a resolvable issue ID.
     return {
-      id: createdIssueId,
+      id: null,
       identifier: null,
       title,
       description: input.description ?? null,
@@ -2429,14 +3165,7 @@ export async function updateIssue(client, issueRef, patch = {}) {
 
     for (const childRef of parentOfRefs) {
       const childIssue = await resolveIssue(client, childRef);
-      const childSdkIssue = await client.issue(childIssue.id);
-      if (!childSdkIssue) {
-        throw new Error(`Issue not found: ${childRef}`);
-      }
-      const rel = await childSdkIssue.update({ parentId: targetIssue.id });
-      if (!rel.success) {
-        throw new Error(`Failed to set parent for issue: ${childRef}`);
-      }
+      await performIssueUpdate(client, childIssue.id, { parentId: targetIssue.id });
     }
 
     for (const blockerRef of blockedByRefs) {
@@ -2475,16 +3204,7 @@ export async function updateIssue(client, issueRef, patch = {}) {
     }
 
     if (Object.keys(updateInput).length > 0) {
-      // Get fresh issue instance for update
-      const sdkIssue = await client.issue(targetIssue.id);
-      if (!sdkIssue) {
-        throw new Error(`Issue not found: ${targetIssue.id}`);
-      }
-
-      const result = await sdkIssue.update(updateInput);
-      if (!result.success) {
-        throw new Error('Failed to update issue');
-      }
+      await performIssueUpdate(client, targetIssue.id, updateInput);
     }
 
     for (const relationInput of relationCreates) {
@@ -2499,8 +3219,7 @@ export async function updateIssue(client, issueRef, patch = {}) {
     let updatedIssue = null;
     let usedRateLimitFallback = false;
     try {
-      const updatedSdkIssue = await client.issue(targetIssue.id);
-      updatedIssue = await transformIssue(updatedSdkIssue);
+      updatedIssue = await fetchIssueMinimalById(client, targetIssue.id);
     } catch (refreshError) {
       const refreshMessage = String(refreshError?.message || refreshError || 'unknown');
       const isRefreshRateLimited = refreshError?.type === 'Ratelimited' || refreshMessage.toLowerCase().includes('rate limit');
@@ -2723,15 +3442,10 @@ function invalidateProjectsCache(client) {
  */
 export async function fetchProjectMilestones(client, projectId) {
   return withLinearErrorHandling(async () => {
-    const project = await client.project(projectId);
-    if (!project) {
+    const milestones = await fetchProjectMilestonesByQuery(client, projectId);
+    if (!milestones) {
       throw new Error(`Project not found: ${projectId}`);
     }
-
-    const result = await project.projectMilestones();
-    const nodes = result.nodes || [];
-
-    const milestones = await Promise.all(nodes.map(transformMilestone));
 
     debug('Fetched project milestones', {
       projectId,
@@ -2964,16 +3678,21 @@ export async function deleteIssue(client, issueRef) {
   return withLinearErrorHandling(async () => {
     const targetIssue = await resolveIssue(client, issueRef);
 
-    // Get SDK issue instance for delete
-    const sdkIssue = await client.issue(targetIssue.id);
-    if (!sdkIssue) {
-      throw new Error(`Issue not found: ${targetIssue.id}`);
+    let success = false;
+    if (getRawRequest(client)) {
+      const payload = await executeGraphQL(client, ISSUE_DELETE_MUTATION, { id: targetIssue.id });
+      success = payload?.issueDelete?.success === true;
+    } else {
+      const sdkIssue = await client.issue(targetIssue.id);
+      if (!sdkIssue) {
+        throw new Error(`Issue not found: ${targetIssue.id}`);
+      }
+      const result = await sdkIssue.delete();
+      success = result.success;
     }
 
-    const result = await sdkIssue.delete();
-
     return {
-      success: result.success,
+      success,
       issueId: targetIssue.id,
       identifier: targetIssue.identifier,
     };
