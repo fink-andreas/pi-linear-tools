@@ -1147,13 +1147,29 @@ function transformRawMilestone(rawMilestone, project = null) {
 }
 
 async function fetchProjectMinimal(client, projectId) {
-  if (!getRawRequest(client)) {
-    const sdkProject = await client.project?.(projectId);
-    return sdkProject ? transformRawProjectMinimal(sdkProject) : null;
+  // If input looks like a UUID but can't be resolved directly,
+  // it might be a project name that accidentally matches the UUID pattern.
+  // Return null to signal that resolveProjectRef should fall back to name search.
+  if (isLinearId(projectId)) {
+    if (!getRawRequest(client)) {
+      const sdkProject = await client.project?.(projectId);
+      if (sdkProject) {
+        return transformRawProjectMinimal(sdkProject);
+      }
+      // SDK can't resolve it - return null so resolveProjectRef falls back to name lookup
+      return null;
+    }
+
+    const data = await executeGraphQL(client, PROJECT_MINIMAL_QUERY, { id: projectId });
+    if (data?.project) {
+      return transformRawProjectMinimal(data.project);
+    }
+    // GraphQL can't resolve it - return null so resolveProjectRef falls back to name lookup
+    return null;
   }
 
-  const data = await executeGraphQL(client, PROJECT_MINIMAL_QUERY, { id: projectId });
-  return transformRawProjectMinimal(data?.project ?? null);
+  // For non-UUID inputs (names), return null to let resolveProjectRef handle it directly
+  return null;
 }
 
 async function fetchTeamMinimal(client, teamId) {
