@@ -1,5 +1,38 @@
 # Changelog
 
+## v0.5.0 (2026-04-17)
+
+Linear document sync, project lifecycle management, and estimate/story points support.
+
+### New Features
+- **Linear document sync**: Keep Linear documents in sync with local Markdown files via `linear_doc_sync` command
+- **Project lifecycle**: Full project lifecycle support including archive/unarchive, updates, and milestones
+- **Estimate (story points)**: Support for estimate/story points field on issue create/update
+- **Issue activity history**: View complete issue activity with `linear_issue_activity` tool
+- **Batch sync**: `sync-doc --all` for batch syncing all configured document targets
+
+### Bug Fixes
+- Fixed project name lookup for UUID-like project names
+- Fixed milestone name lookup for view/update/delete operations
+- Replaced 'order' with 'sortOrder' for ProjectMilestone queries
+- Fixed sync-doc first-run check/run parity
+- Fixed sync-doc drift detection and target matching
+- Fixed project archive and update validation
+- Fixed archived project resolution for project updates
+- Fixed sync-doc marker position preservation when position is 'top'
+- Fixed default limit for executeIssueActivity (now 25)
+
+### Improvements
+- Reduced expensive Linear API issue reads
+- Better CLI help for issue and project workflows
+- Improved sync-doc examples and guidance
+- Added promptSnippet to all Linear tools for consistent LLM context
+- Removed redundant action lists from tool descriptions
+
+### Cleanup
+- Removed planning artifacts and documentation files
+- Stopped tracking plan files in git
+
 ## v0.4.2 (2026-03-26)
 
 Rate-limit resilience and API usage diagnostics release.
