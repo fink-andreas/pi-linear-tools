@@ -1,5 +1,0 @@
-- [x] Add minimal project GraphQL helpers and replace `client.project(...)` reads in `src/linear.js`
-- [x] Add regression tests for project lookup and milestone fetch narrow-query paths
-- [x] Narrow issue detail reads (`fetchIssueDetails()`) and remaining SDK-heavy read paths
-- [x] Reduce remaining `client.issue(...)` reads where practical (`createIssue`, `setIssueState`, update helpers, delete)
-- [>] Review remaining SDK fallbacks and decide if any further narrow-query replacement is worth the complexity

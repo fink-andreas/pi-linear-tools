@@ -1,6 +1,7 @@
 # Project-specific agent instructions
 
 - Run `npm test` with `tail` to keep output shorter (for example: `npm test | tail -n 15`).
+- Never commit `PLAN.md` or `TODO.md` unless the user explicitly asks for that.
 
 ## Linear GraphQL API Schema
 
