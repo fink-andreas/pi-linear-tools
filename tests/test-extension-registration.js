@@ -7,7 +7,7 @@ import { join } from 'node:path';
 
 import extension from '../extensions/pi-linear-tools.js';
 import { getSettingsPath, loadSettings, saveSettings } from '../src/settings.js';
-import { setTestClientFactory, resetTestClientFactory } from '../src/linear-client.js';
+import { setTestClientFactory, resetTestClientFactory, markRateLimited } from '../src/linear-client.js';
 import { storeTokens, getTokens } from '../src/auth/token-store.js';
 
 function createMockPi(execImpl = null) {
@@ -178,6 +178,61 @@ async function testIssueToolRequiresApiKey() {
       );
     });
   } finally {
+    process.env.LINEAR_API_KEY = prev;
+  }
+}
+
+async function testIssueToolReturnsSafeResultWhenCachedRateLimited() {
+  const prev = process.env.LINEAR_API_KEY;
+  process.env.LINEAR_API_KEY = 'lin_test';
+
+  try {
+    const pi = createMockPi();
+    await extension(pi);
+
+    markRateLimited(Date.now() + 60 * 1000);
+
+    const issueTool = pi.tools.get('linear_issue');
+    const result = await issueTool.execute('call-rate-cached', { action: 'list', project: 'demo' });
+
+    assert.match(result.content[0].text, /rate limit exceeded \(cached\)/i);
+    assert.equal(result.details.rateLimited, true);
+    assert.equal(result.details.cached, true);
+  } finally {
+    markRateLimited(Date.now() - 1);
+    process.env.LINEAR_API_KEY = prev;
+  }
+}
+
+async function testIssueToolReturnsSafeResultWhenRequestRateLimited() {
+  const prev = process.env.LINEAR_API_KEY;
+  process.env.LINEAR_API_KEY = 'lin_test';
+
+  try {
+    const rateLimitError = new Error('Rate limit exceeded. Only 4500 requests are allowed per 1 hour.');
+    rateLimitError.type = 'Ratelimited';
+    rateLimitError.requestsResetAt = Date.now() + 60 * 1000;
+
+    const mockClient = {
+      projects: async () => {
+        throw rateLimitError;
+      },
+    };
+
+    setTestClientFactory(() => mockClient);
+
+    const pi = createMockPi();
+    await extension(pi);
+
+    const issueTool = pi.tools.get('linear_issue');
+    const result = await issueTool.execute('call-rate-live', { action: 'list', project: 'demo' });
+
+    assert.match(result.content[0].text, /Linear API rate limit exceeded/i);
+    assert.equal(result.details.rateLimited, true);
+    assert.equal(result.details.cached, false);
+  } finally {
+    resetTestClientFactory();
+    markRateLimited(Date.now() - 1);
     process.env.LINEAR_API_KEY = prev;
   }
 }
@@ -553,6 +608,8 @@ async function main() {
   await testConfigSavesApiKey();
   await testConfigSavesDefaultTeam();
   await testIssueToolRequiresApiKey();
+  await testIssueToolReturnsSafeResultWhenCachedRateLimited();
+  await testIssueToolReturnsSafeResultWhenRequestRateLimited();
   await testIssueToolListUsesSdkWrapper();
   await testMilestoneListIncludesIds();
   await testMilestoneDeleteIncludesName();

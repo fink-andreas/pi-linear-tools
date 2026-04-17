@@ -452,6 +452,51 @@ async function shouldExposeMilestoneTool() {
 /**
  * Render tool result as markdown
  */
+function toToolTextResult(text, details = {}) {
+  return {
+    content: [{ type: 'text', text }],
+    details,
+  };
+}
+
+function buildRateLimitToolResult(error, options = {}) {
+  const { cached = false } = options;
+  const resetTimestamp = error?.requestsResetAt || Date.now() + 3600000;
+  const resetTime = new Date(resetTimestamp).toLocaleTimeString();
+
+  markRateLimited(resetTimestamp);
+
+  return toToolTextResult(
+    cached
+      ? `Linear API rate limit exceeded (cached).\n\nThe rate limit resets at: ${resetTime}\n\nPlease wait before making more requests.`
+      : `Linear API rate limit exceeded.\n\nThe rate limit resets at: ${resetTime}\n\nPlease wait before making more requests, or reduce the frequency of API calls.`,
+    {
+      error: true,
+      errorType: 'Ratelimited',
+      rateLimited: true,
+      cached,
+      requestsResetAt: resetTimestamp,
+      resetTime,
+    }
+  );
+}
+
+function handleToolExecutionError(error, operationLabel, options = {}) {
+  const transformedError = options.transformError ? options.transformError(error) : error;
+  const errorType = error?.type || transformedError?.type || '';
+  const errorMessage = String(transformedError?.message || transformedError || 'Unknown error');
+
+  if (errorType === 'Ratelimited' || errorMessage.toLowerCase().includes('rate limit')) {
+    return buildRateLimitToolResult(error);
+  }
+
+  if (errorMessage.includes('Linear API error:')) {
+    throw transformedError;
+  }
+
+  throw new Error(`${operationLabel}: ${errorMessage}`);
+}
+
 function renderMarkdownResult(result, _options, _theme) {
   const text = result.content?.[0]?.text || '';
 
@@ -621,17 +666,13 @@ async function registerLinearTools(pi) {
     },
     renderResult: renderMarkdownResult,
     async execute(_toolCallId, params) {
-      // Pre-check: skip API calls if we know we're rate limited
-      const { isRateLimited, resetAt } = checkAndClearRateLimit();
-      if (isRateLimited) {
-        throw new Error(
-          `Linear API rate limit exceeded (cached).\n\n` +
-          `The rate limit resets at: ${resetAt.toLocaleTimeString()}\n\n` +
-          `Please wait before making more requests.`
-        );
-      }
-
       try {
+        // Pre-check: skip API calls if we know we're rate limited
+        const { isRateLimited, resetAt } = checkAndClearRateLimit();
+        if (isRateLimited) {
+          return buildRateLimitToolResult({ requestsResetAt: resetAt.getTime(), type: 'Ratelimited' }, { cached: true });
+        }
+
         const client = await createAuthenticatedClient();
 
         return await withRequestUsageLogging(client, 'linear_issue', params.action, async () => {
@@ -665,18 +706,6 @@ async function registerLinearTools(pi) {
         const errorType = error?.type || '';
         const errorMessage = String(error?.message || error || 'Unknown error');
 
-        // Rate limit error - provide clear reset time and mark globally
-        if (errorType === 'Ratelimited' || errorMessage.toLowerCase().includes('rate limit')) {
-          const resetTimestamp = error?.requestsResetAt || (Date.now() + 3600000);
-          const resetTime = new Date(resetTimestamp).toLocaleTimeString();
-          markRateLimited(resetTimestamp);
-          throw new Error(
-            `Linear API rate limit exceeded.\n\n` +
-            `The rate limit resets at: ${resetTime}\n\n` +
-            `Please wait before making more requests, or reduce the frequency of API calls.`
-          );
-        }
-
         // Authentication/Forbidden errors (handles SDK's ForbiddenLinearError)
         if (errorType === 'Forbidden' || errorType === 'AuthenticationError' ||
           errorMessage.toLowerCase().includes('forbidden') || errorMessage.toLowerCase().includes('unauthorized')) {
@@ -702,13 +731,7 @@ async function registerLinearTools(pi) {
           );
         }
 
-        // Re-throw if already formatted with "Linear API error:"
-        if (errorMessage.includes('Linear API error:')) {
-          throw error;
-        }
-
-        // Wrap unexpected errors with context - NEVER let raw errors propagate
-        throw new Error(`Linear issue operation failed: ${errorMessage}`);
+        return handleToolExecutionError(error, 'Linear issue operation failed');
       }
     },
   });
@@ -799,22 +822,7 @@ async function registerLinearTools(pi) {
           }
         });
       } catch (error) {
-        // Comprehensive error handling - catch ALL errors
-        const errorType = error?.type || '';
-        const errorMessage = String(error?.message || error || 'Unknown error');
-
-        if (errorType === 'Ratelimited' || errorMessage.toLowerCase().includes('rate limit')) {
-          const resetAt = error?.requestsResetAt
-            ? new Date(error.requestsResetAt).toLocaleTimeString()
-            : 'approximately 1 hour from now';
-          throw new Error(`Linear API rate limit exceeded. Resets at: ${resetAt}. Please wait before retrying.`);
-        }
-
-        if (errorMessage.includes('Linear API error:')) {
-          throw error;
-        }
-
-        throw new Error(`Linear project operation failed: ${errorMessage}`);
+        return handleToolExecutionError(error, 'Linear project operation failed');
       }
     },
   });
@@ -891,21 +899,7 @@ async function registerLinearTools(pi) {
           }
         });
       } catch (error) {
-        const errorType = error?.type || '';
-        const errorMessage = String(error?.message || error || 'Unknown error');
-
-        if (errorType === 'Ratelimited' || errorMessage.toLowerCase().includes('rate limit')) {
-          const resetAt = error?.requestsResetAt
-            ? new Date(error.requestsResetAt).toLocaleTimeString()
-            : 'approximately 1 hour from now';
-          throw new Error(`Linear API rate limit exceeded. Resets at: ${resetAt}. Please wait before retrying.`);
-        }
-
-        if (errorMessage.includes('Linear API error:')) {
-          throw error;
-        }
-
-        throw new Error(`Linear project update operation failed: ${errorMessage}`);
+        return handleToolExecutionError(error, 'Linear project update operation failed');
       }
     },
   });
@@ -941,22 +935,7 @@ async function registerLinearTools(pi) {
           }
         });
       } catch (error) {
-        // Comprehensive error handling - catch ALL errors
-        const errorType = error?.type || '';
-        const errorMessage = String(error?.message || error || 'Unknown error');
-
-        if (errorType === 'Ratelimited' || errorMessage.toLowerCase().includes('rate limit')) {
-          const resetAt = error?.requestsResetAt
-            ? new Date(error.requestsResetAt).toLocaleTimeString()
-            : 'approximately 1 hour from now';
-          throw new Error(`Linear API rate limit exceeded. Resets at: ${resetAt}. Please wait before retrying.`);
-        }
-
-        if (errorMessage.includes('Linear API error:')) {
-          throw error;
-        }
-
-        throw new Error(`Linear team operation failed: ${errorMessage}`);
+        return handleToolExecutionError(error, 'Linear team operation failed');
       }
     },
   });
@@ -1021,24 +1000,9 @@ async function registerLinearTools(pi) {
             }
           });
         } catch (error) {
-          // Apply milestone-specific hint, then wrap with operation context
-          const hintError = withMilestoneScopeHint(error);
-          // Comprehensive error handling - catch ALL errors
-          const errorType = error?.type || '';
-          const errorMessage = String(hintError?.message || hintError || 'Unknown error');
-
-          if (errorType === 'Ratelimited' || errorMessage.toLowerCase().includes('rate limit')) {
-            const resetAt = error?.requestsResetAt
-              ? new Date(error.requestsResetAt).toLocaleTimeString()
-              : 'approximately 1 hour from now';
-            throw new Error(`Linear API rate limit exceeded. Resets at: ${resetAt}. Please wait before retrying.`);
-          }
-
-          if (errorMessage.includes('Linear API error:')) {
-            throw hintError;
-          }
-
-          throw new Error(`Linear milestone operation failed: ${errorMessage}`);
+          return handleToolExecutionError(error, 'Linear milestone operation failed', {
+            transformError: withMilestoneScopeHint,
+          });
         }
       },
     });

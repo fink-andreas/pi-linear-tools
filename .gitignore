@@ -141,6 +141,7 @@ vite.config.ts.timestamp-*
 # Local planning artifacts
 PLAN.md
 TODO.md
+REDUCE_API_CALLS.md
 finished/
 
 # Local pi runtime state
