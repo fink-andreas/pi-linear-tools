@@ -319,6 +319,10 @@ export async function executeIssueCreate(client, params, options = {}) {
     createInput.priority = params.priority;
   }
 
+  if (params.estimate !== undefined && params.estimate !== null) {
+    createInput.estimate = params.estimate;
+  }
+
   if (params.parentId) {
     createInput.parentId = params.parentId;
   }
@@ -401,6 +405,7 @@ export async function executeIssueUpdate(client, params) {
     title: params.title,
     description: params.description,
     priority: params.priority,
+    estimate: params.estimate,
     state: params.state,
     milestone: params.milestone,
     projectMilestoneId: params.projectMilestoneId,

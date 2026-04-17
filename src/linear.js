@@ -2175,6 +2175,14 @@ export async function createIssue(client, input) {
       createInput.priority = parsed;
     }
 
+    if (input.estimate !== undefined) {
+      const parsed = Number.parseInt(String(input.estimate), 10);
+      if (Number.isNaN(parsed) || parsed < 0) {
+        throw new Error(`Invalid estimate: ${input.estimate}. Must be a non-negative integer.`);
+      }
+      createInput.estimate = parsed;
+    }
+
     if (input.assigneeId !== undefined) {
       createInput.assigneeId = input.assigneeId;
     }
@@ -2285,6 +2293,9 @@ function buildFallbackUpdatedIssue(targetIssue, updateInput) {
   if (Object.prototype.hasOwnProperty.call(updateInput, 'priority')) {
     fallback.priority = updateInput.priority;
   }
+  if (Object.prototype.hasOwnProperty.call(updateInput, 'estimate')) {
+    fallback.estimate = updateInput.estimate;
+  }
 
   if (Object.prototype.hasOwnProperty.call(updateInput, 'assigneeId')) {
     const assigneeId = updateInput.assigneeId;
@@ -2353,6 +2364,15 @@ export async function updateIssue(client, issueRef, patch = {}) {
         throw new Error(`Invalid priority: ${patch.priority}. Valid range: 0..4`);
       }
       updateInput.priority = parsed;
+    }
+
+
+    if (patch.estimate !== undefined) {
+      const parsed = Number.parseInt(String(patch.estimate), 10);
+      if (Number.isNaN(parsed) || parsed < 0) {
+        throw new Error(`Invalid estimate: ${patch.estimate}. Must be a non-negative integer.`);
+      }
+      updateInput.estimate = parsed;
     }
 
     if (patch.state !== undefined) {

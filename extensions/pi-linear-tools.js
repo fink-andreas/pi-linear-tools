@@ -586,6 +586,10 @@ async function registerLinearTools(pi) {
           type: 'string',
           description: 'For update: mark this issue as duplicate of the given issue key/ID.',
         },
+        estimate: {
+          type: 'integer',
+          description: 'Estimate/story points for the issue (non-negative integer, for create/update)',
+        },
         team: {
           type: 'string',
           description: 'Team key (e.g. ENG) or name (optional if default team configured)',
