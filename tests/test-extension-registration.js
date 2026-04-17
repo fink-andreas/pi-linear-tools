@@ -74,7 +74,24 @@ async function testRegistrationIncludesMilestoneWithDefaultApiKeyMode() {
 
     const issueTool = pi.tools.get('linear_issue');
     assert.ok(issueTool);
+    assert.equal(issueTool.description, 'Interact with Linear issues.');
     assert.ok(issueTool.parameters.properties.action.enum.includes('activity'));
+
+    const projectTool = pi.tools.get('linear_project');
+    assert.ok(projectTool);
+    assert.equal(projectTool.description, 'Interact with Linear projects.');
+
+    const projectUpdateTool = pi.tools.get('linear_project_update');
+    assert.ok(projectUpdateTool);
+    assert.equal(projectUpdateTool.description, 'Interact with Linear project updates.');
+
+    const teamTool = pi.tools.get('linear_team');
+    assert.ok(teamTool);
+    assert.equal(teamTool.description, 'Interact with Linear teams.');
+
+    const milestoneTool = pi.tools.get('linear_milestone');
+    assert.ok(milestoneTool);
+    assert.equal(milestoneTool.description, 'Interact with Linear project milestones.');
   });
 }
 

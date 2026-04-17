@@ -491,7 +491,7 @@ async function registerLinearTools(pi) {
   pi.registerTool({
     name: 'linear_issue',
     label: 'Linear Issue',
-    description: 'Interact with Linear issues. Actions: list, view, activity, create, update, comment, start, delete',
+    description: 'Interact with Linear issues.',
     promptSnippet: 'Interact with Linear issues (list, view, activity, create, update, comment, start, delete)',
     parameters: {
       type: 'object',
@@ -716,7 +716,7 @@ async function registerLinearTools(pi) {
   pi.registerTool({
     name: 'linear_project',
     label: 'Linear Project',
-    description: 'Interact with Linear projects. Actions: list, view, create, update, delete, archive, unarchive',
+    description: 'Interact with Linear projects.',
     promptSnippet: 'Interact with Linear projects (list, view, create, update, delete, archive, unarchive)',
     parameters: {
       type: 'object',
@@ -822,7 +822,7 @@ async function registerLinearTools(pi) {
   pi.registerTool({
     name: 'linear_project_update',
     label: 'Linear Project Update',
-    description: 'Interact with Linear project updates. Actions: list, view, create, update, archive, unarchive',
+    description: 'Interact with Linear project updates.',
     promptSnippet: 'Interact with Linear project updates (list, view, create, update, archive, unarchive)',
     parameters: {
       type: 'object',
@@ -913,7 +913,7 @@ async function registerLinearTools(pi) {
   pi.registerTool({
     name: 'linear_team',
     label: 'Linear Team',
-    description: 'Interact with Linear teams. Actions: list',
+    description: 'Interact with Linear teams.',
     promptSnippet: 'Interact with Linear teams (list)',
     parameters: {
       type: 'object',
@@ -965,7 +965,7 @@ async function registerLinearTools(pi) {
     pi.registerTool({
       name: 'linear_milestone',
       label: 'Linear Milestone',
-      description: 'Interact with Linear project milestones. Actions: list, view, create, update, delete',
+      description: 'Interact with Linear project milestones.',
       promptSnippet: 'Interact with Linear milestones (list, view, create, update, delete)',
       parameters: {
         type: 'object',
