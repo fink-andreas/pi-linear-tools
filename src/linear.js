@@ -1787,6 +1787,52 @@ function resolveProjectMilestoneIdFromInput(milestones, milestoneInput) {
   throw new Error(`Milestone not found in project: ${target}`);
 }
 
+/**
+ * Resolve a milestone reference (name or ID) to a milestone object with id and name.
+ * Requires project context to search for milestones by name.
+ * @param {LinearClient} client - Linear SDK client
+ * @param {string} milestoneRef - Milestone name or ID
+ * @param {string} projectId - Project ID to search within
+ * @returns {Promise<{id: string, name: string}>}
+ */
+export async function resolveMilestoneRef(client, milestoneRef, projectId) {
+  const ref = String(milestoneRef || '').trim();
+  if (!ref) {
+    throw new Error('Missing milestone reference');
+  }
+
+  // If it's already a Linear ID (UUID format with 16+ hex chars), try to fetch it directly
+  if (/^[0-9a-fA-F-]{16,}$/.test(ref)) {
+    try {
+      const milestone = await client.projectMilestone(ref);
+      if (milestone) {
+        return { id: milestone.id, name: milestone.name };
+      }
+    } catch {
+      // fall through to name lookup
+    }
+    throw new Error(`Milestone not found: ${ref}`);
+  }
+
+  // Search by name in the project's milestones
+  const milestones = await fetchProjectMilestones(client, projectId);
+
+  // Try exact name match first
+  const exactMatch = milestones.find((m) => m.name === ref);
+  if (exactMatch) {
+    return { id: exactMatch.id, name: exactMatch.name };
+  }
+
+  // Try case-insensitive match
+  const lowerRef = ref.toLowerCase();
+  const caseInsensitiveMatch = milestones.find((m) => m.name?.toLowerCase() === lowerRef);
+  if (caseInsensitiveMatch) {
+    return { id: caseInsensitiveMatch.id, name: caseInsensitiveMatch.name };
+  }
+
+  throw new Error(`Milestone not found: ${ref}. Available milestones: ${milestones.map((m) => m.name).join(', ')}`);
+}
+
 function normalizeIssueRefList(value) {
   if (value === undefined || value === null) return [];
   if (Array.isArray(value)) {

@@ -17,6 +17,7 @@ import {
   fetchTeams,
   resolveProjectRef,
   resolveTeamRef,
+  resolveMilestoneRef,
   getTeamWorkflowStates,
   fetchIssueDetails,
   fetchIssueActivity,
@@ -1046,7 +1047,24 @@ export async function executeMilestoneList(client, params) {
  * View milestone details
  */
 export async function executeMilestoneView(client, params) {
-  const milestoneId = ensureNonEmpty(params.milestone, 'milestone');
+  let projectId = null;
+  let milestoneId = params.milestone;
+
+  // If milestone is not a Linear ID, resolve it with project context
+  const ref = String(milestoneId || '').trim();
+  const isId = typeof ref === 'string' && /^[0-9a-fA-F-]{16,}$/.test(ref);
+
+  if (!isId) {
+    // Need project context to resolve milestone name
+    let projectRef = params.project;
+    if (!projectRef) {
+      projectRef = path.basename(process.cwd());
+    }
+    const resolvedProject = await resolveProjectRef(client, projectRef);
+    projectId = resolvedProject.id;
+    const resolvedMilestone = await resolveMilestoneRef(client, ref, projectId);
+    milestoneId = resolvedMilestone.id;
+  }
 
   const milestoneData = await fetchMilestoneDetails(client, milestoneId);
 
@@ -1168,7 +1186,25 @@ export async function executeMilestoneCreate(client, params) {
  * Update a milestone
  */
 export async function executeMilestoneUpdate(client, params) {
-  const milestoneId = ensureNonEmpty(params.milestone, 'milestone');
+  let projectId = null;
+  let milestoneId = params.milestone;
+
+  // If milestone is not a Linear ID, resolve it with project context
+  const ref = String(milestoneId || '').trim();
+  const isId = typeof ref === 'string' && /^[0-9a-fA-F-]{16,}$/.test(ref);
+
+
+  if (!isId) {
+    // Need project context to resolve milestone name
+    let projectRef = params.project;
+    if (!projectRef) {
+      projectRef = path.basename(process.cwd());
+    }
+    const resolvedProject = await resolveProjectRef(client, projectRef);
+    projectId = resolvedProject.id;
+    const resolvedMilestone = await resolveMilestoneRef(client, ref, projectId);
+    milestoneId = resolvedMilestone.id;
+  }
 
   // Note: status is not included as it's a computed/read-only field in Linear's API
   const result = await updateProjectMilestone(client, milestoneId, {
@@ -1207,7 +1243,26 @@ export async function executeMilestoneUpdate(client, params) {
  * Delete a milestone
  */
 export async function executeMilestoneDelete(client, params) {
-  const milestoneId = ensureNonEmpty(params.milestone, 'milestone');
+  let projectId = null;
+  let milestoneId = params.milestone;
+
+  // If milestone is not a Linear ID, resolve it with project context
+  const ref = String(milestoneId || '').trim();
+  const isId = typeof ref === 'string' && /^[0-9a-fA-F-]{16,}$/.test(ref);
+
+
+  if (!isId) {
+    // Need project context to resolve milestone name
+    let projectRef = params.project;
+    if (!projectRef) {
+      projectRef = path.basename(process.cwd());
+    }
+    const resolvedProject = await resolveProjectRef(client, projectRef);
+    projectId = resolvedProject.id;
+    const resolvedMilestone = await resolveMilestoneRef(client, ref, projectId);
+    milestoneId = resolvedMilestone.id;
+  }
+
   const result = await deleteProjectMilestone(client, milestoneId);
 
   const label = result.name

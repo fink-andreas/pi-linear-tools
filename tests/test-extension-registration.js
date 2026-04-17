@@ -334,12 +334,14 @@ async function testMilestoneDeleteIncludesName() {
   process.env.LINEAR_API_KEY = 'lin_test';
 
   try {
+    // Use a UUID-format ID so the code recognizes it as an ID (not a name)
+    const milestoneId = '0123456789012345';
     const mockClient = {
-      projectMilestone: async (milestoneId) => {
-        if (milestoneId !== 'm1') return null;
-        return { id: 'm1', name: 'Release v0.2.0' };
+      projectMilestone: async (id) => {
+        if (id !== milestoneId) return null;
+        return { id: milestoneId, name: 'Release v0.2.0' };
       },
-      deleteProjectMilestone: async (milestoneId) => ({ success: milestoneId === 'm1' }),
+      deleteProjectMilestone: async (id) => ({ success: id === milestoneId }),
     };
 
     setTestClientFactory(() => mockClient);
@@ -348,10 +350,10 @@ async function testMilestoneDeleteIncludesName() {
     await extension(pi);
 
     const milestoneTool = pi.tools.get('linear_milestone');
-    const result = await milestoneTool.execute('call-m2', { action: 'delete', milestone: 'm1' });
+    const result = await milestoneTool.execute('call-m2', { action: 'delete', milestone: milestoneId });
 
     assert.match(result.content[0].text, /Deleted milestone \*\*Release v0\.2\.0\*\*/);
-    assert.match(result.content[0].text, /`m1`/);
+    assert.match(result.content[0].text, new RegExp(`\`${milestoneId}\``));
     assert.equal(result.details.name, 'Release v0.2.0');
   } finally {
     resetTestClientFactory();

@@ -57,7 +57,7 @@ linear_project(
   priority=3
 )
 ```
-**Expected:** Updates project fields. Note: Name lookup may fail, use ID.
+**Expected:** Updates project fields.
 
 ### Test 6: Archive Project
 ```
@@ -176,7 +176,7 @@ linear_issue(action="update", issue="INN-287", description="New description")
 ```
 linear_issue(action="update", issue="INN-287", milestone="First Steps")
 ```
-**Expected:** Assigns milestone. Note: May fail with name lookup, try using milestone ID.
+**Expected:** Assigns milestone.
 
 ### Test 24: Add Blocked By Dependency
 ```
@@ -222,7 +222,7 @@ linear_milestone(action="list", project="pi-linear-test-repo")
 ```
 linear_milestone(action="view", milestone="<MILESTONE_ID>")
 ```
-**Expected:** Returns milestone details. Note: Name lookup may fail, use ID.
+**Expected:** Returns milestone details.
 
 ### Test 31: Create Milestone
 ```
@@ -358,9 +358,9 @@ linear_issue(action="list", includeArchived=true, limit=5)
 
 ## Known Issues & Limitations
 
-| Issue | Workaround |
-|-------|------------|
-| Milestone name lookup fails | Use milestone ID instead of name |
+| Issue | Status |
+|-------|--------|
+| Milestone name lookup | ✅ Fixed - name lookup now works |
 | Project name update fails | Use project ID instead of name |
 | `Cannot query field "order"` on milestone list | Ignore error, results may still be returned |
 | Aggressive rate limiting | Space out requests, wait 60+ seconds between sessions |
