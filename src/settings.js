@@ -21,6 +21,7 @@ export function getDefaultSettings() {
     defaultTeam: null,
     defaultWorkspace: null,
     projects: {},
+    rateLimitDebug: false, // Enable detailed rate limit info per tool call
   };
 }
 
@@ -109,6 +110,11 @@ function migrateSettings(settings) {
   // Ensure projects is an object
   if (!migrated.projects || typeof migrated.projects !== 'object' || Array.isArray(migrated.projects)) {
     migrated.projects = {};
+  }
+
+  // Ensure rateLimitDebug is a boolean
+  if (migrated.rateLimitDebug === undefined) {
+    migrated.rateLimitDebug = false;
   }
 
   // Migrate project scopes
@@ -214,6 +220,11 @@ export function validateSettings(settings) {
         }
       }
     }
+  }
+
+  // Validate rateLimitDebug
+  if (settings.rateLimitDebug !== undefined && typeof settings.rateLimitDebug !== 'boolean') {
+    errors.push('settings.rateLimitDebug must be a boolean');
   }
 
   return { valid: errors.length === 0, errors };

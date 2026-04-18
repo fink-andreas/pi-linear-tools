@@ -1,5 +1,5 @@
 import { loadSettings, saveSettings } from '../src/settings.js';
-import { createLinearClient, checkAndClearRateLimit, markRateLimited, getClientRequestMetrics } from '../src/linear-client.js';
+import { createLinearClient, checkAndClearRateLimit, markRateLimited, getClientRequestMetrics, getClientRateLimitInfo } from '../src/linear-client.js';
 import { setQuietMode, debug } from '../src/logger.js';
 import {
   resolveProjectRef,
@@ -120,12 +120,13 @@ async function createAuthenticatedClient() {
   return createLinearClient(await getLinearAuth());
 }
 
-async function withRequestUsageLogging(client, toolName, action, operation) {
+async function withRequestUsageLogging(client, toolName, action, operation, rateLimitDebug = false) {
   const before = getClientRequestMetrics(client);
 
   try {
     const result = await operation();
     const after = getClientRequestMetrics(client);
+    const rateLimitInfo = rateLimitDebug ? getClientRateLimitInfo(client) : null;
 
     const usageDelta = {
       tool: toolName,
@@ -139,11 +140,37 @@ async function withRequestUsageLogging(client, toolName, action, operation) {
 
     debug('[pi-linear-tools] API usage per command', usageDelta);
 
-    if (!INCLUDE_USAGE_SUMMARY || !result || typeof result !== 'object') {
+    if (rateLimitDebug && rateLimitInfo) {
+      debug('[pi-linear-tools] Rate limit status', {
+        tool: toolName,
+        action,
+        rateLimitUsed: rateLimitInfo.used,
+        rateLimitRemaining: rateLimitInfo.remaining,
+        rateLimitPercent: rateLimitInfo.usagePercent,
+        rateLimitResetAt: rateLimitInfo.resetTime,
+      });
+    }
+
+    // When rateLimitDebug is true, always include rate limit info in result details
+    // even if INCLUDE_USAGE_SUMMARY is disabled
+    if (!result || typeof result !== 'object') {
       return result;
     }
 
     const details = (result.details && typeof result.details === 'object') ? result.details : {};
+
+    // Add rate limit info to details if debug is enabled
+    if (rateLimitDebug && rateLimitInfo) {
+      details.rateLimit = rateLimitInfo;
+    }
+
+    if (!INCLUDE_USAGE_SUMMARY) {
+      return {
+        ...result,
+        details,
+      };
+    }
+
     const content = Array.isArray(result.content)
       ? result.content.map((item, idx) => {
         if (idx !== 0 || item?.type !== 'text' || typeof item.text !== 'string') return item;
@@ -164,6 +191,7 @@ async function withRequestUsageLogging(client, toolName, action, operation) {
     };
   } catch (error) {
     const after = getClientRequestMetrics(client);
+    const rateLimitInfo = rateLimitDebug ? getClientRateLimitInfo(client) : null;
 
     debug('[pi-linear-tools] API usage per command (error)', {
       tool: toolName,
@@ -173,6 +201,11 @@ async function withRequestUsageLogging(client, toolName, action, operation) {
       failedDelta: after.failed - before.failed,
       rateLimitedDelta: after.rateLimited - before.rateLimited,
       error: String(error?.message || error || 'unknown'),
+      ...(rateLimitDebug && rateLimitInfo ? {
+        rateLimitUsed: rateLimitInfo.used,
+        rateLimitRemaining: rateLimitInfo.remaining,
+        rateLimitPercent: rateLimitInfo.usagePercent,
+      } : {}),
     });
 
     throw error;
@@ -707,6 +740,8 @@ async function registerLinearTools(pi) {
           return buildRateLimitToolResult({ requestsResetAt: resetAt.getTime(), type: 'Ratelimited' }, { cached: true });
         }
 
+        const settings = await loadSettings();
+        const rateLimitDebug = settings.rateLimitDebug || false;
         const client = await createAuthenticatedClient();
 
         return await withRequestUsageLogging(client, 'linear_issue', params.action, async () => {
@@ -734,7 +769,7 @@ async function registerLinearTools(pi) {
             default:
               throw new Error(`Unknown action: ${params.action}`);
           }
-        });
+        }, rateLimitDebug);
       });
     },
   });
@@ -802,6 +837,8 @@ async function registerLinearTools(pi) {
     renderResult: renderMarkdownResult,
     async execute(_toolCallId, params) {
       return executeToolSafely('Linear project operation failed', async () => {
+        const settings = await loadSettings();
+        const rateLimitDebug = settings.rateLimitDebug || false;
         const client = await createAuthenticatedClient();
 
         return await withRequestUsageLogging(client, 'linear_project', params.action, async () => {
@@ -823,7 +860,7 @@ async function registerLinearTools(pi) {
             default:
               throw new Error(`Unknown action: ${params.action}`);
           }
-        });
+        }, rateLimitDebug);
       });
     },
   });
@@ -879,6 +916,8 @@ async function registerLinearTools(pi) {
     renderResult: renderMarkdownResult,
     async execute(_toolCallId, params) {
       return executeToolSafely('Linear project update operation failed', async () => {
+        const settings = await loadSettings();
+        const rateLimitDebug = settings.rateLimitDebug || false;
         const client = await createAuthenticatedClient();
 
         return await withRequestUsageLogging(client, 'linear_project_update', params.action, async () => {
@@ -898,7 +937,7 @@ async function registerLinearTools(pi) {
             default:
               throw new Error(`Unknown action: ${params.action}`);
           }
-        });
+        }, rateLimitDebug);
       });
     },
   });
@@ -923,6 +962,8 @@ async function registerLinearTools(pi) {
     renderResult: renderMarkdownResult,
     async execute(_toolCallId, params) {
       return executeToolSafely('Linear team operation failed', async () => {
+        const settings = await loadSettings();
+        const rateLimitDebug = settings.rateLimitDebug || false;
         const client = await createAuthenticatedClient();
 
         return await withRequestUsageLogging(client, 'linear_team', params.action, async () => {
@@ -932,7 +973,7 @@ async function registerLinearTools(pi) {
             default:
               throw new Error(`Unknown action: ${params.action}`);
           }
-        });
+        }, rateLimitDebug);
       });
     },
   });
@@ -978,6 +1019,8 @@ async function registerLinearTools(pi) {
       renderResult: renderMarkdownResult,
       async execute(_toolCallId, params) {
         return executeToolSafely('Linear milestone operation failed', async () => {
+          const settings = await loadSettings();
+          const rateLimitDebug = settings.rateLimitDebug || false;
           const client = await createAuthenticatedClient();
 
           return await withRequestUsageLogging(client, 'linear_milestone', params.action, async () => {
@@ -995,7 +1038,7 @@ async function registerLinearTools(pi) {
               default:
                 throw new Error(`Unknown action: ${params.action}`);
             }
-          });
+          }, rateLimitDebug);
         }, {
           transformError: withMilestoneScopeHint,
         });

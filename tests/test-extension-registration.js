@@ -7,7 +7,7 @@ import { join } from 'node:path';
 
 import extension from '../extensions/pi-linear-tools.js';
 import { getSettingsPath, loadSettings, saveSettings } from '../src/settings.js';
-import { setTestClientFactory, resetTestClientFactory, markRateLimited } from '../src/linear-client.js';
+import { setTestClientFactory, resetTestClientFactory, markRateLimited, setTestRateLimitTracker, clearTestRateLimitTracker } from '../src/linear-client.js';
 import { storeTokens, getTokens } from '../src/auth/token-store.js';
 
 function createMockPi(execImpl = null) {
@@ -663,7 +663,106 @@ async function main() {
   await testInteractiveConfigWizard();
   await testInteractiveConfigWizardOAuth();
   await testInteractiveConfigSwitchToApiKeyClearsOAuthTokensAndShowsRestartMessage();
+  await testRateLimitDebugIncludesRateLimitInResult();
+  await testRateLimitDebugExcludesRateLimitFromResult();
   console.log('✓ tests/test-extension-registration.js passed');
+}
+
+async function testRateLimitDebugIncludesRateLimitInResult() {
+  await withTempHome(async () => {
+    const prev = process.env.LINEAR_API_KEY;
+    process.env.LINEAR_API_KEY = 'lin_test';
+
+    try {
+      // Enable rate limit debug
+      await setAuthSettings({ rateLimitDebug: true });
+
+      // Set up rate limit tracker state directly
+      setTestRateLimitTracker('lin_test', {
+        remaining: 4500,
+        resetAt: Date.now() + 3600000,
+      });
+
+      const mockClient = {
+        projects: async () => ({ nodes: [] }),
+        client: {
+          rawRequest: async () => ({
+            headers: new Map([
+              ['X-RateLimit-Requests-Remaining', '4500'],
+              ['X-RateLimit-Requests-Reset', String(Date.now() + 3600000)],
+            ]),
+          }),
+        },
+        __piLinearTrackerKey: 'lin_test',
+      };
+
+      setTestClientFactory(() => mockClient);
+
+      const pi = createMockPi();
+      await extension(pi);
+
+      const projectTool = pi.tools.get('linear_project');
+      const result = await projectTool.execute('call-debug', { action: 'list' });
+
+      // When rateLimitDebug is true, result should include rateLimit info
+      assert.ok(result.details.rateLimit, 'Result should include rateLimit info when debug enabled');
+      assert.ok(typeof result.details.rateLimit.remaining === 'number', 'RateLimit should have remaining');
+      assert.ok(typeof result.details.rateLimit.used === 'number', 'RateLimit should have used');
+      assert.ok(typeof result.details.rateLimit.usagePercent === 'number', 'RateLimit should have usagePercent');
+    } finally {
+      resetTestClientFactory();
+      clearTestRateLimitTracker();
+      await setAuthSettings({ rateLimitDebug: false });
+      process.env.LINEAR_API_KEY = prev;
+    }
+  });
+}
+
+async function testRateLimitDebugExcludesRateLimitFromResult() {
+  await withTempHome(async () => {
+    const prev = process.env.LINEAR_API_KEY;
+    process.env.LINEAR_API_KEY = 'lin_test';
+
+    try {
+      // Disable rate limit debug (default)
+      await setAuthSettings({ rateLimitDebug: false });
+
+      // Set up rate limit tracker state directly
+      setTestRateLimitTracker('lin_test', {
+        remaining: 4500,
+        resetAt: Date.now() + 3600000,
+      });
+
+      const mockClient = {
+        projects: async () => ({ nodes: [] }),
+        client: {
+          rawRequest: async () => ({
+            headers: new Map([
+              ['X-RateLimit-Requests-Remaining', '4500'],
+              ['X-RateLimit-Requests-Reset', String(Date.now() + 3600000)],
+            ]),
+          }),
+        },
+        __piLinearTrackerKey: 'lin_test',
+      };
+
+      setTestClientFactory(() => mockClient);
+
+      const pi = createMockPi();
+      await extension(pi);
+
+      const projectTool = pi.tools.get('linear_project');
+      const result = await projectTool.execute('call-no-debug', { action: 'list' });
+
+      // When rateLimitDebug is false, result should NOT include rateLimit info
+      assert.ok(!result.details.rateLimit, 'Result should NOT include rateLimit info when debug disabled');
+    } finally {
+      resetTestClientFactory();
+      clearTestRateLimitTracker();
+      await setAuthSettings({ rateLimitDebug: false });
+      process.env.LINEAR_API_KEY = prev;
+    }
+  });
 }
 
 main().catch((err) => {

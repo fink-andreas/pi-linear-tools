@@ -30,6 +30,7 @@ async function testDefaults() {
   assert.equal(defaults.defaultTeam, null);
   assert.equal(defaults.defaultWorkspace, null);
   assert.deepEqual(defaults.projects, {});
+  assert.equal(defaults.rateLimitDebug, false);
 }
 
 async function testSaveAndLoad() {
@@ -66,10 +67,29 @@ async function testValidation() {
   assert.ok(invalid.errors.length > 0);
 }
 
+async function testRateLimitDebugValidation() {
+  // Valid: rateLimitDebug is boolean
+  const validTrue = validateSettings({ schemaVersion: 2, rateLimitDebug: true });
+  assert.equal(validTrue.valid, true);
+
+  const validFalse = validateSettings({ schemaVersion: 2, rateLimitDebug: false });
+  assert.equal(validFalse.valid, true);
+
+  // Invalid: rateLimitDebug is not boolean
+  const invalidString = validateSettings({ schemaVersion: 2, rateLimitDebug: 'true' });
+  assert.equal(invalidString.valid, false);
+  assert.ok(invalidString.errors.some(e => e.includes('rateLimitDebug')));
+
+  const invalidNumber = validateSettings({ schemaVersion: 2, rateLimitDebug: 1 });
+  assert.equal(invalidNumber.valid, false);
+  assert.ok(invalidNumber.errors.some(e => e.includes('rateLimitDebug')));
+}
+
 async function main() {
   await testDefaults();
   await testSaveAndLoad();
   await testValidation();
+  await testRateLimitDebugValidation();
   console.log('✓ tests/test-settings.js passed');
 }
 

@@ -141,6 +141,40 @@ export function getClientRateLimit(client) {
 }
 
 /**
+ * Get detailed rate limit info including usage percentage
+ * @param {LinearClient} client - Linear SDK client
+ * @returns {{remaining: number|null, resetAt: number|null, resetTime: string|null, used: number, usagePercent: number|null, total: number}}
+ */
+export function getClientRateLimitInfo(client) {
+  const trackerData = rateLimitTracker.get(getTrackerKeyFromClient(client));
+  const total = 5000; // Linear's hourly request limit
+
+  if (trackerData && trackerData.remaining !== undefined) {
+    const remaining = trackerData.remaining;
+    const used = Math.max(0, total - remaining);
+    const usagePercent = Math.round((used / total) * 100);
+
+    return {
+      remaining,
+      resetAt: trackerData.resetAt,
+      resetTime: trackerData.resetAt ? new Date(trackerData.resetAt).toLocaleTimeString() : null,
+      used,
+      usagePercent,
+      total,
+    };
+  }
+
+  return {
+    remaining: null,
+    resetAt: null,
+    resetTime: null,
+    used: 0,
+    usagePercent: null,
+    total,
+  };
+}
+
+/**
  * Expose per-client request counters for diagnostics
  */
 export function getClientRequestMetrics(client) {
@@ -316,4 +350,21 @@ export function setTestClientFactory(factory) {
  */
 export function resetTestClientFactory() {
   _testClientFactory = null;
+}
+
+/**
+ * Set rate limit tracker state for testing (TEST ONLY)
+ * @param {string} apiKey - API key used to create the client
+ * @param {{remaining: number, resetAt: number}} state - Tracker state
+ */
+export function setTestRateLimitTracker(apiKey, state) {
+  const trackerKey = getTrackerKey(apiKey);
+  rateLimitTracker.set(trackerKey, state);
+}
+
+/**
+ * Clear rate limit tracker for testing (TEST ONLY)
+ */
+export function clearTestRateLimitTracker() {
+  rateLimitTracker.clear();
 }
