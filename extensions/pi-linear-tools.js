@@ -164,7 +164,7 @@ async function withRequestUsageLogging(client, toolName, action, operation, rate
       details.rateLimit = rateLimitInfo;
     }
 
-    if (!INCLUDE_USAGE_SUMMARY) {
+    if (!INCLUDE_USAGE_SUMMARY && !rateLimitDebug) {
       return {
         ...result,
         details,
@@ -174,9 +174,20 @@ async function withRequestUsageLogging(client, toolName, action, operation, rate
     const content = Array.isArray(result.content)
       ? result.content.map((item, idx) => {
         if (idx !== 0 || item?.type !== 'text' || typeof item.text !== 'string') return item;
+        let appendedText = item.text;
+
+        if (INCLUDE_USAGE_SUMMARY) {
+          appendedText += `\n\n_${usageDelta.summary}_`;
+        }
+
+        if (rateLimitDebug && rateLimitInfo) {
+          const percent = rateLimitInfo.usagePercent;
+          appendedText += `\n\n---\n**Rate Limit**: ${rateLimitInfo.used}/${rateLimitInfo.total} used (${percent}%) • Resets at ${rateLimitInfo.resetTime}`;
+        }
+
         return {
           ...item,
-          text: `${item.text}\n\n_${usageDelta.summary}_`,
+          text: appendedText,
         };
       })
       : result.content;
@@ -186,7 +197,7 @@ async function withRequestUsageLogging(client, toolName, action, operation, rate
       content,
       details: {
         ...details,
-        apiUsage: usageDelta,
+        ...(INCLUDE_USAGE_SUMMARY ? { apiUsage: usageDelta } : {}),
       },
     };
   } catch (error) {
