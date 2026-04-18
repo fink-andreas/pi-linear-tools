@@ -1051,13 +1051,14 @@ export default async function piLinearToolsExtension(pi) {
   // Safety wrapper: never let extension errors crash pi
   try {
   pi.registerCommand('linear-tools-config', {
-    description: 'Configure pi-linear-tools settings (API key and default team mappings)',
+    description: 'Configure pi-linear-tools settings (API key, default team, rate limit debug)',
     handler: async (argsText, ctx) => {
       const args = parseArgs(argsText);
       const apiKey = readFlag(args, '--api-key');
       const defaultTeam = readFlag(args, '--default-team');
       const projectTeam = readFlag(args, '--team');
       const projectName = readFlag(args, '--project');
+      const rateLimitDebug = readFlag(args, '--rate-limit-debug');
 
       if (apiKey) {
         const settings = await loadSettings();
@@ -1074,6 +1075,17 @@ export default async function piLinearToolsExtension(pi) {
               'warning'
             );
           }
+        }
+        return;
+      }
+
+      if (rateLimitDebug) {
+        const settings = await loadSettings();
+        const enabled = rateLimitDebug === 'true' || rateLimitDebug === '1';
+        settings.rateLimitDebug = enabled;
+        await saveSettings(settings);
+        if (ctx?.hasUI) {
+          ctx.ui.notify(`Rate limit debug ${enabled ? 'enabled' : 'disabled'}`, 'info');
         }
         return;
       }
@@ -1121,8 +1133,14 @@ export default async function piLinearToolsExtension(pi) {
         return;
       }
 
-      if (!apiKey && !defaultTeam && !projectTeam && !projectName && ctx?.hasUI && ctx?.ui) {
+      if (!apiKey && !defaultTeam && !projectTeam && !projectName && !rateLimitDebug && ctx?.hasUI && ctx?.ui) {
         await runInteractiveConfigFlow(ctx, pi);
+        return;
+      }
+
+      // Show current settings if no valid action was specified
+      if (apiKey || defaultTeam || projectTeam || projectName || rateLimitDebug) {
+        // Actions above already handled and returned
         return;
       }
 
@@ -1132,7 +1150,7 @@ export default async function piLinearToolsExtension(pi) {
 
       pi.sendMessage({
         customType: 'pi-linear-tools',
-        content: `Configuration:\n  LINEAR_API_KEY: ${hasKey ? 'configured' : 'not set'} (source: ${keySource})\n  Default workspace: ${settings.defaultWorkspace?.name || 'not set'}\n  Default team: ${settings.defaultTeam || 'not set'}\n  Project team mappings: ${Object.keys(settings.projects || {}).length}\n\nCommands:\n  /linear-tools-config --api-key lin_xxx\n  /linear-tools-config --default-team ENG\n  /linear-tools-config --team ENG --project MyProject\n\nNote: environment LINEAR_API_KEY takes precedence over settings file.`,
+        content: `Configuration:\n  LINEAR_API_KEY: ${hasKey ? 'configured' : 'not set'} (source: ${keySource})\n  Default workspace: ${settings.defaultWorkspace?.name || 'not set'}\n  Default team: ${settings.defaultTeam || 'not set'}\n  Rate limit debug: ${settings.rateLimitDebug ? 'enabled' : 'disabled'}\n  Project team mappings: ${Object.keys(settings.projects || {}).length}\n\nCommands:\n  /linear-tools-config --api-key lin_xxx\n  /linear-tools-config --default-team ENG\n  /linear-tools-config --team ENG --project MyProject\n  /linear-tools-config --rate-limit-debug true|false\n\nNote: environment LINEAR_API_KEY takes precedence over settings file.`,
         display: true,
       });
     },
@@ -1177,6 +1195,7 @@ export default async function piLinearToolsExtension(pi) {
           '  /linear-tools-config --api-key <key>',
           '  /linear-tools-config --default-team <team-key>',
           '  /linear-tools-config --team <team-key> --project <project-name-or-id>',
+          '  /linear-tools-config --rate-limit-debug true|false',
           '  /linear-tools-help',
           '  /linear-tools-reload',
           '',
