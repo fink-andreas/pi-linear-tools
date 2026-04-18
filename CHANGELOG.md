@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.5.1 (2026-04-17)
+
+### Bug Fixes
+- **Prevent pi crashes from Linear tool errors**: Added `executeToolSafely` wrapper that catches errors and returns them as safe tool results instead of throwing, preventing pi from crashing on Linear API errors
+
 ## v0.5.0 (2026-04-17)
 
 Linear document sync, project lifecycle management, and estimate/story points support.
