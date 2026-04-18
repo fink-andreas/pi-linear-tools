@@ -1,6 +1,6 @@
 # pi-linear-tools
 
-`pi-linear-tools` is a Pi extension for the [Pi coding agent](https://github.com/badlogic/pi-mono) that lets you manage [Linear](https://linear.app/about) issues, projects, and milestones via LLM tools and CLI commands.
+`pi-linear-tools` is a token eficcient Pi extension for the [Pi coding agent](https://github.com/badlogic/pi-mono) that lets you manage [Linear](https://linear.app/about) issues, projects, and milestones via LLM tool calls and CLI commands.
 
 Useful mental model:
 - `issue update` changes issue fields; `issue comment` adds discussion; `issue activity` reads the Activity timeline
