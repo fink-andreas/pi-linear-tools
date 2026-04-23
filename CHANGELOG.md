@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.6.0 (2026-04-23)
+
+Rate-limit resilience for milestone operations.
+
+### Bug Fixes
+- **Fixed linear_milestone view rate-limit crash**: `linear_milestone view` no longer crashes when hitting Linear API rate limits. Errors are now properly surfaced as safe tool results instead of propagating as crashes.
+- **Fixed milestone issues rate-limit swallowing**: `fetchMilestoneDetails()` now correctly propagates rate-limit errors from lazy-loaded issue data instead of silently returning partial results.
+
+### Performance / API Usage
+- **Replaced N+1 lazy loading with single GraphQL query**: Milestone details now fetch all issue state/assignee in ONE request instead of N+1 per-issue lazy loads. This dramatically reduces API calls and rate-limit exposure for large milestones.
+- **Added cached rate-limit pre-check**: `linear_milestone` now has the same cached pre-check that `linear_issue` uses to short-circuit before making API calls when the cache already knows about a rate limit.
+- **Exported `isRateLimitError()` helper**: Made available for consistent error handling across tools.
+
+### Documentation
+- **Reorganized README**: Moved Key Concepts section for better onboarding
+- **Added combined Linear+Pi logo**: Light/dark theme support for branding
+
 ## v0.5.1 (2026-04-17)
 
 ### Bug Fixes
