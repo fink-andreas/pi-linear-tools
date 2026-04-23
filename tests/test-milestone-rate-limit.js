@@ -44,7 +44,7 @@ async function loadExtension(mocks) {
 }
 
 async function run() {
-  // ─── Test 1: Milestone view rate-limited at client.projectMilestone() level ───
+  // Test 1: Milestone view rate-limited at client.projectMilestone() level
   {
     markRateLimited(Date.now() - 1); // clear cached rate limit
     const rateLimitError = createRateLimitedError();
@@ -70,32 +70,29 @@ async function run() {
     });
 
     if (!result.content?.[0]?.text) {
-      console.error('✗ Test 1 FAIL: result has no text content:', result);
+      console.error('Test 1 FAIL: result has no text content:', result);
       process.exit(1);
     }
 
     if (!result.content[0].text.includes('Linear API rate limit exceeded')) {
-      console.error('✗ Test 1 FAIL: result text does not mention rate limit:', result.content[0].text);
+      console.error('Test 1 FAIL: result text does not mention rate limit:', result.content[0].text);
       process.exit(1);
     }
 
     if (!result.details.rateLimited) {
-      console.error('✗ Test 1 FAIL: result.details.rateLimited is not true:', result.details);
+      console.error('Test 1 FAIL: result.details.rateLimited is not true:', result.details);
       process.exit(1);
     }
 
     if (result.details.cached) {
-      console.error('✗ Test 1 FAIL: result.details.cached should be false for live rate limit:', result.details);
+      console.error('Test 1 FAIL: result.details.cached should be false for live rate limit:', result.details);
       process.exit(1);
     }
 
-    console.log('✓ Test 1: milestone view returns safe rate-limit result when milestone fetch is rate-limited');
+    console.log('Test 1: milestone view returns safe rate-limit result when milestone fetch is rate-limited');
   }
 
-  // ─── Test 2: Milestone view rate-limited during milestone.issues() lazy load ──
-  // NOTE: fetchMilestoneDetails currently catches the issues() error and falls back
-  // to an empty issues list, so the milestone renders but issues are missing.
-  // This is the CRASH PATH described in the PLAN — the error should be propagated.
+  // Test 2: Milestone view rate-limited during milestone.issues() lazy load
   {
     markRateLimited(Date.now() - 1);
     const rateLimitError = createRateLimitedError();
@@ -143,34 +140,29 @@ async function run() {
     }
 
     if (threw) {
-      // Before the fix: issues() rate limit escapes and crashes
-      console.error('✗ Test 2 FAIL: milestone view threw (rate-limit error escaped):', thrownError?.message);
+      console.error('Test 2 FAIL: milestone view threw (rate-limit error escaped):', thrownError?.message);
       process.exit(1);
     }
 
-    // After the fix: should return a safe rate-limit result
     if (!result.content?.[0]?.text) {
-      console.error('✗ Test 2 FAIL: result has no text content:', result);
+      console.error('Test 2 FAIL: result has no text content:', result);
       process.exit(1);
     }
 
     if (!result.content[0].text.toLowerCase().includes('rate limit')) {
-      // Before the fix: milestone renders normally (error swallowed silently)
-      console.error('✗ Test 2 FAIL: rate-limit error was swallowed; result does not mention rate limit:', result.content[0].text);
+      console.error('Test 2 FAIL: rate-limit error was swallowed; result does not mention rate limit:', result.content[0].text);
       process.exit(1);
     }
 
     if (!result.details.rateLimited) {
-      console.error('✗ Test 2 FAIL: result.details.rateLimited is not true:', result.details);
+      console.error('Test 2 FAIL: result.details.rateLimited is not true:', result.details);
       process.exit(1);
     }
 
-    console.log('✓ Test 2: milestone view returns safe rate-limit result when issues lazy-load is rate-limited');
+    console.log('Test 2: milestone view returns safe rate-limit result when issues lazy-load is rate-limited');
   }
 
-  // ─── Test 3: Per-issue state/assignee lazy-load rate-limit errors ────────────
-  // These are caught by safeResolveRelation and fall back to null.
-  // Acceptable current behavior — milestone still renders with partial issue data.
+  // Test 3: Per-issue state/assignee lazy-load rate-limit errors
   {
     markRateLimited(Date.now() - 1);
     const rateLimitError = createRateLimitedError();
@@ -232,26 +224,29 @@ async function run() {
     }
 
     if (threw) {
-      console.error('✗ Test 3 FAIL: milestone view threw:', thrownError?.message);
+      console.error('Test 3 FAIL: milestone view threw:', thrownError?.message);
       process.exit(1);
     }
 
     if (!result.content?.[0]?.text || !result.content[0].text.includes('Release v0.2.0')) {
-      console.error('✗ Test 3 FAIL: milestone name missing from result:', result?.content?.[0]?.text);
+      console.error('Test 3 FAIL: milestone name missing from result:', result?.content?.[0]?.text);
       process.exit(1);
     }
 
-    // safeResolveRelation catches per-issue errors — acceptable degradation
-    console.log('✓ Test 3: milestone view gracefully handles per-issue lazy-load rate-limit errors');
+    console.log('Test 3: milestone view gracefully handles per-issue lazy-load rate-limit errors');
   }
 
-  // ─── Test 4: Cached rate-limit pre-check on milestone tool ───────────────────
+  // Test 4: Cached rate-limit pre-check on milestone tool
   {
     markRateLimited(Date.now() - 1);
 
+    const liveError = new Error('Should not be reached — cached rate limit should short-circuit');
+    liveError.type = 'Ratelimited';
+    liveError.requestsResetAt = Date.now() + 60000;
+
     const mocks = {
       projectMilestone: async () => {
-        throw new Error('Should not be reached — cached rate limit should short-circuit');
+        throw liveError;
       },
       projects: async () => ({
         nodes: [{ id: 'p1', name: 'demo', slugId: 'demo', archivedAt: null }],
@@ -273,35 +268,122 @@ async function run() {
     });
 
     if (!result.content?.[0]?.text) {
-      console.error('✗ Test 4 FAIL: result has no text content:', result);
+      console.error('Test 4 FAIL: result has no text content:', result);
       process.exit(1);
     }
 
     if (!result.content[0].text.toLowerCase().includes('rate limit')) {
-      console.error('✗ Test 4 FAIL: result text does not mention rate limit:', result.content[0].text);
+      console.error('Test 4 FAIL: result text does not mention rate limit:', result.content[0].text);
       process.exit(1);
     }
 
     if (!result.details.rateLimited) {
-      console.error('✗ Test 4 FAIL: result.details.rateLimited is not true:', result.details);
+      console.error('Test 4 FAIL: result.details.rateLimited is not true:', result.details);
       process.exit(1);
     }
 
     if (!result.details.cached) {
-      console.error('✗ Test 4 FAIL: result.details.cached should be true for cached rate limit:', result.details);
+      console.error('Test 4 FAIL: result.details.cached should be true for cached rate limit:', result.details);
       process.exit(1);
     }
 
-    console.log('✓ Test 4: milestone tool uses cached rate-limit pre-check');
+    console.log('Test 4: milestone tool uses cached rate-limit pre-check');
 
     markRateLimited(Date.now() - 1); // clean up
   }
 
+  // Test 5: fetchMilestoneDetails uses raw GraphQL when rawRequest is available
+  {
+    markRateLimited(Date.now() - 1);
+
+    let rawRequestCalled = false;
+    let rawRequestQuery = null;
+
+    const mockClient = {
+      client: {
+        rawRequest: async (query, variables) => {
+          rawRequestCalled = true;
+          rawRequestQuery = query;
+          return {
+            data: {
+              projectMilestone: {
+                id: '0123456789012345',
+                name: 'Release v0.3.0',
+                description: 'GraphQL milestone',
+                progress: 75,
+                sortOrder: 2,
+                targetDate: '2026-12-31',
+                status: 'inProgress',
+                project: { id: 'p1', name: 'demo' },
+                issues: {
+                  nodes: [
+                    {
+                      id: 'issue-2',
+                      identifier: 'DEMO-2',
+                      title: 'GraphQL issue',
+                      priority: 2,
+                      estimate: 3,
+                      state: { id: 's2', name: 'In Progress', color: '#5f5f5f', type: 'started' },
+                      assignee: { id: 'u2', name: 'Alice', displayName: 'Alice' },
+                    },
+                  ],
+                },
+              },
+            },
+            headers: new Map(),
+          };
+        },
+      },
+      projects: async () => ({
+        nodes: [{ id: 'p1', name: 'demo', slugId: 'demo', archivedAt: null }],
+      }),
+    };
+
+    setTestClientFactory(() => mockClient);
+    const ext = await import('../extensions/pi-linear-tools.js');
+    const pi = createMockPi();
+    await ext.default(pi);
+
+    const milestoneTool = pi.tools.get('linear_milestone');
+    const result = await milestoneTool.execute('call-milestone-graphql', {
+      action: 'view',
+      milestone: '0123456789012345',
+      project: 'demo',
+    });
+
+    if (!rawRequestCalled) {
+      console.error('Test 5 FAIL: rawRequest was not called — GraphQL path not used');
+      process.exit(1);
+    }
+
+    if (!rawRequestQuery?.includes('MilestoneDetails')) {
+      console.error('Test 5 FAIL: MilestoneDetails query not used:', rawRequestQuery);
+      process.exit(1);
+    }
+
+    if (!result.content?.[0]?.text?.includes('GraphQL milestone')) {
+      console.error('Test 5 FAIL: result missing milestone data from GraphQL:', result.content?.[0]?.text);
+      process.exit(1);
+    }
+
+    if (!result.content[0].text?.includes('DEMO-2')) {
+      console.error('Test 5 FAIL: result missing issue from GraphQL:', result.content?.[0]?.text);
+      process.exit(1);
+    }
+
+    if (!result.content[0].text?.includes('Alice')) {
+      console.error('Test 5 FAIL: result missing assignee from GraphQL:', result.content?.[0]?.text);
+      process.exit(1);
+    }
+
+    console.log('Test 5: fetchMilestoneDetails uses raw GraphQL with MilestoneDetails query');
+  }
+
   resetTestClientFactory();
-  console.log('\n✓ tests/test-milestone-rate-limit.js passed');
+  console.log('tests/test-milestone-rate-limit.js passed');
 }
 
 run().catch((err) => {
-  console.error('✗ Test failed:', err?.message || err);
+  console.error('Test failed:', err?.message || err);
   process.exit(1);
 });

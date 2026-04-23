@@ -235,6 +235,45 @@ const PROJECT_UPDATE_MUTATION = `
   }
 `;
 
+
+const MILESTONE_DETAILS_QUERY = `
+  query MilestoneDetails($id: String!, $issueLimit: Int!) {
+    projectMilestone(id: $id) {
+      id
+      name
+      description
+      progress
+      sortOrder
+      targetDate
+      status
+      project {
+        id
+        name
+      }
+      issues(first: $issueLimit) {
+        nodes {
+          id
+          identifier
+          title
+          priority
+          estimate
+          state {
+            id
+            name
+            color
+            type
+          }
+          assignee {
+            id
+            name
+            displayName
+          }
+        }
+      }
+    }
+  }
+`;
+
 const PROJECT_DELETE_MUTATION = `
   mutation ProjectDelete($id: String!) {
     projectDelete(id: $id) {
@@ -3540,6 +3579,54 @@ export async function fetchProjectMilestones(client, projectId) {
  */
 export async function fetchMilestoneDetails(client, milestoneId) {
   return withLinearErrorHandling(async () => {
+    // Prefer raw GraphQL: one request instead of N+1 SDK lazy loads.
+    // This dramatically reduces rate-limit exposure for milestone view.
+    if (getRawRequest(client)) {
+      try {
+        const data = await executeGraphQL(client, MILESTONE_DETAILS_QUERY, {
+          id: milestoneId,
+          issueLimit: 250,
+        });
+
+        const raw = data?.projectMilestone;
+        if (!raw) {
+          throw new Error(`Milestone not found: ${milestoneId}`);
+        }
+
+        const project = raw.project ? { id: raw.project.id, name: raw.project.name } : null;
+        const issues = (raw.issues?.nodes || []).map((issue) => ({
+          id: issue.id,
+          identifier: issue.identifier,
+          title: issue.title,
+          state: issue.state ? { name: issue.state.name, color: issue.state.color, type: issue.state.type } : null,
+          assignee: issue.assignee ? { id: issue.assignee.id, name: issue.assignee.name, displayName: issue.assignee.displayName } : null,
+          priority: issue.priority ?? null,
+          estimate: issue.estimate ?? null,
+        }));
+
+        return {
+          id: raw.id,
+          name: raw.name,
+          description: raw.description ?? null,
+          progress: raw.progress ?? null,
+          order: raw.sortOrder ?? null,
+          targetDate: raw.targetDate ?? null,
+          status: raw.status ?? null,
+          project,
+          issues,
+        };
+      } catch (err) {
+        // If raw GraphQL fails (e.g., network error), fall through to SDK path.
+        // Rate-limit errors are re-thrown by executeGraphQL -> withLinearErrorHandling.
+        if (!isLinearError(err)) {
+          debug('fetchMilestoneDetails: raw GraphQL unavailable, falling back to SDK', { error: err?.message });
+        } else {
+          throw err; // re-throw Linear errors including rate limits
+        }
+      }
+    }
+
+    // SDK fallback: the rate-limit propagation logic for lazy loads is preserved.
     const milestone = await client.projectMilestone(milestoneId);
     if (!milestone) {
       throw new Error(`Milestone not found: ${milestoneId}`);
