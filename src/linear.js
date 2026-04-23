@@ -1331,7 +1331,7 @@ function checkRateLimitWarning() {
  * @param {Error} error - The error to check
  * @returns {boolean}
  */
-function isLinearError(error) {
+export function isLinearError(error) {
   return error?.constructor?.name?.includes('LinearError') ||
     error?.name?.includes('LinearError') ||
     error?.type?.startsWith?.('Ratelimited') ||
@@ -1340,6 +1340,19 @@ function isLinearError(error) {
     error?.type === 'invalid_request' ||
     error?.type === 'NetworkError' ||
     error?.type === 'InternalError';
+}
+
+
+/**
+ * Check if an error is a rate-limit error
+ * @param {Error} error - The error to check
+ * @returns {boolean}
+ */
+export function isRateLimitError(error) {
+  return (
+    isLinearError(error) &&
+    (error?.type === 'Ratelimited' || String(error?.message || '').toLowerCase().includes('rate limit'))
+  );
 }
 
 /**
@@ -3533,17 +3546,35 @@ export async function fetchMilestoneDetails(client, milestoneId) {
     }
 
     // Fetch project and issues in parallel
-    const [project, issuesResult] = await Promise.all([
+    const [projectResult, issuesResult] = await Promise.all([
       milestone.project?.catch?.(() => null) ?? milestone.project,
-      milestone.issues?.()?.catch?.(() => ({ nodes: [] })) ?? milestone.issues?.() ?? { nodes: [] },
+      milestone.issues?.()?.catch?.((err) => {
+        if (isRateLimitError(err)) {
+          // Propagate rate-limit errors so the caller can surface a safe user message
+          // instead of silently swallowing the issue list.
+          throw err;
+        }
+        return { nodes: [] };
+      }) ?? { nodes: [] },
     ]);
+
+    const project = projectResult;
 
     const issues = await Promise.all(
       (issuesResult.nodes || []).map(async (issue) => {
+        // Propagate rate-limit errors from per-issue lazy loads so the caller can surface
+        // a safe user message. Silently degrading to partial data masks the problem.
         const [state, assignee] = await Promise.all([
-          issue.state?.catch?.(() => null) ?? issue.state,
-          issue.assignee?.catch?.(() => null) ?? issue.assignee,
+          issue.state?.catch?.((err) => {
+            if (isRateLimitError(err)) throw err;
+            return null;
+          }) ?? issue.state,
+          issue.assignee?.catch?.((err) => {
+            if (isRateLimitError(err)) throw err;
+            return null;
+          }) ?? issue.assignee,
         ]);
+
 
         return {
           id: issue.id,

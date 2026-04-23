@@ -504,21 +504,35 @@ function toToolTextResult(text, details = {}) {
 }
 
 function buildRateLimitToolResult(error, options = {}) {
-  const { cached = false } = options;
+  const { cached = false, viaCachedPreCheck = false } = options;
   const resetTimestamp = error?.requestsResetAt || Date.now() + 3600000;
   const resetTime = new Date(resetTimestamp).toLocaleTimeString();
 
   markRateLimited(resetTimestamp);
 
   return toToolTextResult(
-    cached
-      ? `Linear API rate limit exceeded (cached).\n\nThe rate limit resets at: ${resetTime}\n\nPlease wait before making more requests.`
-      : `Linear API rate limit exceeded.\n\nThe rate limit resets at: ${resetTime}\n\nPlease wait before making more requests, or reduce the frequency of API calls.`,
+    viaCachedPreCheck
+      ? `Linear API rate limit exceeded (cached — this request was not sent to Linear).
+
+The rate limit resets at: ${resetTime}
+
+Please wait before making more requests.`
+      : cached
+        ? `Linear API rate limit exceeded (cached).
+
+The rate limit resets at: ${resetTime}
+
+Please wait before making more requests.`
+        : `Linear API rate limit exceeded.
+
+The rate limit resets at: ${resetTime}
+
+Please wait before making more requests, or reduce the frequency of API calls.`,
     {
       error: true,
       errorType: 'Ratelimited',
       rateLimited: true,
-      cached,
+      cached: viaCachedPreCheck || cached,
       requestsResetAt: resetTimestamp,
       resetTime,
     }
@@ -531,7 +545,7 @@ function handleToolExecutionError(error, operationLabel, options = {}) {
   const errorMessage = String(transformedError?.message || transformedError || 'Unknown error');
 
   if (errorType === 'Ratelimited' || errorMessage.toLowerCase().includes('rate limit')) {
-    return buildRateLimitToolResult(error);
+    return buildRateLimitToolResult(transformedError, { viaCachedPreCheck: options.viaCachedPreCheck });
   }
 
   if (errorMessage.includes('Linear API error:')) {
@@ -1030,9 +1044,16 @@ async function registerLinearTools(pi) {
       renderResult: renderMarkdownResult,
       async execute(_toolCallId, params) {
         return executeToolSafely('Linear milestone operation failed', async () => {
+          // Pre-check: skip API calls if we know we're rate limited
+          const { isRateLimited, resetAt } = checkAndClearRateLimit();
+          if (isRateLimited) {
+            return buildRateLimitToolResult({ requestsResetAt: resetAt.getTime(), type: 'Ratelimited' }, { viaCachedPreCheck: true });
+          }
+
           const settings = await loadSettings();
           const rateLimitDebug = settings.rateLimitDebug || false;
           const client = await createAuthenticatedClient();
+
 
           return await withRequestUsageLogging(client, 'linear_milestone', params.action, async () => {
             switch (params.action) {
