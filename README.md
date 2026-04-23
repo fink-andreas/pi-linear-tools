@@ -1,5 +1,13 @@
 # pi-linear-tools
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/linear-pi-combined-white.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/images/linear-pi-combined-black.svg">
+    <img src="docs/images/linear-pi-combined-black.svg" alt="Linear + Pi" width="340">
+  </picture>
+</p>
+
 `pi-linear-tools` is a token eficcient Pi extension for the [Pi coding agent](https://github.com/badlogic/pi-mono) that lets you manage [Linear](https://linear.app/about) issues, projects, and milestones via LLM tool calls and CLI commands.
 
 Useful mental model:

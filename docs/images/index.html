@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Linear + Pi</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    html {
+      color-scheme: light dark;
+    }
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #fff;
+      color: #1f2328;
+      transition: background 0.3s, color 0.3s;
+    }
+    body.dark {
+      background: #212830;
+      color: #d1d7e0;
+    }
+    .container {
+      position: relative;
+    }
+    img {
+      max-width: 90vw;
+      max-height: 90vh;
+      width: auto;
+      height: auto;
+    }
+    .toggle-btn {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      padding: 8px 16px;
+      border: 1px solid #d1d7e0;
+      border-radius: 6px;
+      font-size: 14px;
+      font-family: system-ui, sans-serif;
+      cursor: pointer;
+      background: #fff;
+      color: #1f2328;
+      transition: background 0.3s, color 0.3s, border-color 0.3s;
+    }
+    body.dark .toggle-btn {
+      background: #212830;
+      color: #d1d7e0;
+      border-color: #1f2328;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <img src="linear-pi-combined.svg" alt="Linear + Pi">
+  </div>
+  <button class="toggle-btn" onclick="toggleTheme()">Switch Theme</button>
+
+  <script>
+    const body = document.body;
+
+    // Apply system preference on load
+    if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      body.classList.add('dark');
+    }
+
+    // Listen for system preference changes
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+      body.classList.toggle('dark', e.matches);
+    });
+
+    function toggleTheme() {
+      body.classList.toggle('dark');
+    }
+  </script>
+</body>
+</html>
