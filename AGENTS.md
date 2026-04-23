@@ -27,3 +27,14 @@ Use this order when reinstalling locally:
 4. Restart pi (close and reopen session).
 5. Run `/reload` (optional but recommended after restart).
 6. Re-run live tool checks.
+
+## Release Workflow
+
+For publishing to npm, the user must authenticate manually (OTP required):
+
+```bash
+npm login
+npm publish --access public
+```
+
+This cannot be automated in the agent session. Prompt the user to run these commands in a separate terminal/bash before retrying the publish.
