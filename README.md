@@ -10,20 +10,6 @@
 
 `pi-linear-tools` is a token eficcient Pi extension for the [Pi coding agent](https://github.com/badlogic/pi-mono) that lets you manage [Linear](https://linear.app/about) issues, projects, and milestones via LLM tool calls and CLI commands.
 
-Useful mental model:
-- `issue update` changes issue fields; `issue comment` adds discussion; `issue activity` reads the Activity timeline
-- `project update` changes project fields; `project-update` manages Updates tab entries
-- `project-update` maps to Linear project updates in the Updates tab
-- `sync-doc init` scaffolds `.linear-tools/config.json` in the folder you point at
-- `sync-doc run` and `sync-doc check` default to all configured targets in `.linear-tools/config.json`
-- `sync-doc --target X` narrows the operation to one configured target
-
-Reference conventions:
-- issues use issue key or issue ID
-- projects use project name or project ID
-- project updates use project update ID
-- milestones use milestone ID
-
 ## Install
 
 ### As a pi package (recommended)
@@ -61,6 +47,22 @@ Optional non-interactive commands:
 
 - `/linear-tools-config`
 - `/linear-tools-help`
+
+## Key Concepts
+
+Useful mental model:
+- `issue update` changes issue fields; `issue comment` adds discussion; `issue activity` reads the Activity timeline
+- `project update` changes project fields; `project-update` manages Updates tab entries
+- `project-update` maps to Linear project updates in the Updates tab
+- `sync-doc init` scaffolds `.linear-tools/config.json` in the folder you point at
+- `sync-doc run` and `sync-doc check` default to all configured targets in `.linear-tools/config.json`
+- `sync-doc --target X` narrows the operation to one configured target
+
+Reference conventions:
+- issues use issue key or issue ID
+- projects use project name or project ID
+- project updates use project update ID
+- milestones use milestone ID
 
 ## LLM-callable tools
 
