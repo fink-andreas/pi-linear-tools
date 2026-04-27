@@ -124,6 +124,10 @@ pi-linear-tools issue update ENG-123 --title "Updated title" --assignee me
 pi-linear-tools issue update ENG-123 --milestone "Sprint 1"
 pi-linear-tools issue update ENG-123 --sub-issue-of ENG-100
 
+# Issue priority uses Linear's native scale: 0=None, 1=Urgent, 2=High, 3=Medium, 4=Low.
+# You can also use aliases: none, urgent, high, medium, low.
+pi-linear-tools issue update ENG-123 --priority urgent
+
 # Comment on issue
 pi-linear-tools issue comment ENG-123 --body "This is fixed in PR #456"
 pi-linear-tools issue comment ENG-123 --body "Blocked on API review"

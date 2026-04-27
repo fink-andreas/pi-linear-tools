@@ -174,8 +174,8 @@ Issue Actions:
   list [--project X] [--states X,Y] [--assignee me|all] [--team X] [--limit N]
   view <issue> [--no-comments]
   activity <issue> [--limit N] [--include-archived true|false]
-  create --title X [--team X] [--project X] [--description X] [--priority 0-4] [--assignee me|ID]
-  update <issue> [--title X] [--description X] [--state X] [--priority 0-4]
+  create --title X [--team X] [--project X] [--description X] [--priority 0-4|name] [--assignee me|ID]
+  update <issue> [--title X] [--description X] [--state X] [--priority 0-4|name]
          [--assignee me|ID] [--milestone X] [--sub-issue-of X]
   comment <issue> --body X
   start <issue> [--from-ref X] [--on-branch-exists switch|suffix]
@@ -242,7 +242,7 @@ Common Flags:
   --project     Project name or ID
   --team        Team key (e.g., ENG)
   --assignee    "me" or assignee ID
-  --priority    Priority 0-4 (0=None, 1=Urgent, 2=High, 3=Medium, 4=Low)
+  --priority    Issue priority: 0=None, 1=Urgent, 2=High, 3=Medium, 4=Low; or none, urgent, high, medium, low
   --state       State name or ID
   --limit       Max results (default: 50)
 
@@ -318,7 +318,7 @@ Create Options:
   --team X         Team key, e.g., ENG (required if no default team)
   --project X      Project name or ID
   --description X  Issue description (markdown)
-  --priority N     Priority 0-4
+  --priority N     Issue priority: 0=None, 1=Urgent, 2=High, 3=Medium, 4=Low; or none, urgent, high, medium, low
   --assignee X     "me" or assignee ID
   --parent-id X    Parent issue ID for sub-issues
 
@@ -327,7 +327,7 @@ Update Options:
   --title X        New title
   --description X  New description
   --state X        New state name or ID
-  --priority N     New priority 0-4
+  --priority N     New issue priority: 0=None, 1=Urgent, 2=High, 3=Medium, 4=Low; or none, urgent, high, medium, low
   --assignee X     "me" or assignee ID
   --milestone X    Milestone name/ID, or "none" to clear
   --sub-issue-of X Parent issue key/ID, or "none" to clear
@@ -845,7 +845,7 @@ async function handleIssueCreate(args) {
     team: readFlag(args, '--team'),
     project: readFlag(args, '--project'),
     description: readFlag(args, '--description'),
-    priority: parseNumber(readFlag(args, '--priority')),
+    priority: readFlag(args, '--priority'),
     assignee: readFlag(args, '--assignee'),
     parentId: readFlag(args, '--parent-id'),
     state: readFlag(args, '--state'),
@@ -872,7 +872,7 @@ async function handleIssueUpdate(args) {
     title: readFlag(args, '--title'),
     description: readFlag(args, '--description'),
     state: readFlag(args, '--state'),
-    priority: parseNumber(readFlag(args, '--priority')),
+    priority: readFlag(args, '--priority'),
     assignee: readFlag(args, '--assignee'),
     milestone: readFlag(args, '--milestone'),
     subIssueOf: readFlag(args, '--sub-issue-of'),

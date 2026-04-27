@@ -79,11 +79,19 @@ async function testRegistrationIncludesMilestoneWithDefaultApiKeyMode() {
     assert.deepEqual(
       issueTool.parameters.properties.priority,
       {
-        type: 'integer',
-        description: 'Priority 0..4 (for create, update)',
-        minimum: 0,
-        maximum: 4,
-        multipleOf: 1,
+        description: 'Issue priority: 0=None, 1=Urgent, 2=High, 3=Medium, 4=Low (Linear-native scale), or one of: none, urgent, high, medium, low (for create/update)',
+        oneOf: [
+          {
+            type: 'integer',
+            minimum: 0,
+            maximum: 4,
+            multipleOf: 1,
+          },
+          {
+            type: 'string',
+            enum: ['none', 'urgent', 'high', 'medium', 'low'],
+          },
+        ],
       }
     );
     assert.deepEqual(

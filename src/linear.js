@@ -1602,6 +1602,37 @@ function normalizeProjectUpdateHealth(value) {
   return normalized;
 }
 
+const ISSUE_PRIORITY_NAMES = ['No priority', 'Urgent', 'High', 'Medium', 'Low'];
+const ISSUE_PRIORITY_ALIASES = Object.freeze({
+  none: 0,
+  urgent: 1,
+  high: 2,
+  medium: 3,
+  low: 4,
+});
+const ISSUE_PRIORITY_MAPPING_DESCRIPTION = '0=None, 1=Urgent, 2=High, 3=Medium, 4=Low';
+const ISSUE_PRIORITY_ALIAS_DESCRIPTION = Object.keys(ISSUE_PRIORITY_ALIASES).join(', ');
+
+function parseIssuePriority(value) {
+  if (typeof value === 'number') {
+    if (Number.isInteger(value) && value >= 0 && value <= 4) {
+      return value;
+    }
+  } else if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(ISSUE_PRIORITY_ALIASES, normalized)) {
+      return ISSUE_PRIORITY_ALIASES[normalized];
+    }
+    if (/^[0-4]$/.test(normalized)) {
+      return Number(normalized);
+    }
+  }
+
+  throw new Error(
+    `Invalid priority: ${value}. Use Linear priority ${ISSUE_PRIORITY_MAPPING_DESCRIPTION}, or one of: ${ISSUE_PRIORITY_ALIAS_DESCRIPTION}.`
+  );
+}
+
 function formatPriorityLabel(value) {
   if (value === undefined || value === null) {
     return null;
@@ -1612,8 +1643,7 @@ function formatPriorityLabel(value) {
     return String(value);
   }
 
-  const priorityNames = ['No priority', 'Urgent', 'High', 'Medium', 'Low'];
-  return priorityNames[numeric] || `Priority ${numeric}`;
+  return ISSUE_PRIORITY_NAMES[numeric] || `Priority ${numeric}`;
 }
 
 function getUserDisplayName(user) {
@@ -2979,7 +3009,7 @@ export async function setIssueState(client, issueId, stateId) {
  * @param {string} input.title - Issue title (required)
  * @param {string} [input.description] - Issue description
  * @param {string} [input.projectId] - Project ID
- * @param {string} [input.priority] - Priority 0-4
+ * @param {number|string} [input.priority] - Issue priority: 0=None, 1=Urgent, 2=High, 3=Medium, 4=Low; or none/urgent/high/medium/low
  * @param {string} [input.assigneeId] - Assignee ID
  * @param {string} [input.parentId] - Parent issue ID for sub-issues
  * @returns {Promise<Object>} Created issue
@@ -3010,11 +3040,7 @@ export async function createIssue(client, input) {
     }
 
     if (input.priority !== undefined) {
-      const parsed = Number.parseInt(String(input.priority), 10);
-      if (Number.isNaN(parsed) || parsed < 0 || parsed > 4) {
-        throw new Error(`Invalid priority: ${input.priority}. Valid range: 0..4`);
-      }
-      createInput.priority = parsed;
+      createInput.priority = parseIssuePriority(input.priority);
     }
 
     if (input.estimate !== undefined) {
@@ -3076,7 +3102,7 @@ export async function createIssue(client, input) {
         title,
         description: input.description ?? null,
         url: null,
-        priority: input.priority ?? null,
+        priority: createInput.priority ?? null,
         state: null,
         team: null,
         project: null,
@@ -3090,7 +3116,7 @@ export async function createIssue(client, input) {
       title,
       description: input.description ?? null,
       url: null,
-      priority: input.priority ?? null,
+      priority: createInput.priority ?? null,
       state: null,
       team: null,
       project: null,
@@ -3223,11 +3249,7 @@ export async function updateIssue(client, issueRef, patch = {}) {
     }
 
     if (patch.priority !== undefined) {
-      const parsed = Number.parseInt(String(patch.priority), 10);
-      if (Number.isNaN(parsed) || parsed < 0 || parsed > 4) {
-        throw new Error(`Invalid priority: ${patch.priority}. Valid range: 0..4`);
-      }
-      updateInput.priority = parsed;
+      updateInput.priority = parseIssuePriority(patch.priority);
     }
 
 
