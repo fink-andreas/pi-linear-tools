@@ -288,7 +288,7 @@ const PROJECT_DELETE_MUTATION = `
 
 const PROJECT_ARCHIVE_MUTATION = `
   mutation ProjectArchive($id: String!) {
-    projectArchiveResult: projectDelete(id: $id) {
+    projectArchiveResult: projectArchive(id: $id) {
       success
       entity {
         id

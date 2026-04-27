@@ -72,6 +72,8 @@ async function testProjectArchiveAndUnarchive() {
       rawRequest: async (query, variables) => {
         if (query.includes('ProjectArchive')) {
           assert.equal(variables.id, '11111111-1111-4111-8111-111111111111');
+          assert.match(query, /projectArchive\s*\(/);
+          assert.doesNotMatch(query, /projectDelete\s*\(/);
           return {
             data: {
               projectArchiveResult: {
