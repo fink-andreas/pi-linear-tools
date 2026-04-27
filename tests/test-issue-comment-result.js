@@ -42,7 +42,11 @@ async function testShortCommentRendered() {
     throw new Error(`Missing success line: ${text}`);
   }
 
-  if (!text.includes(`Comment:\n${body}`)) {
+  if (text.includes('\nComment:\n')) {
+    throw new Error(`Comment label should not be rendered: ${text}`);
+  }
+
+  if (!text.includes(`Added comment to issue INN-305\n\n${body}`)) {
     throw new Error(`Missing submitted comment body: ${text}`);
   }
 
@@ -69,8 +73,8 @@ async function testLongCommentPreviewCapped() {
 
   const text = result.content[0].text;
 
-  if (!text.includes('Comment:\n')) {
-    throw new Error(`Missing comment preview heading: ${text}`);
+  if (text.includes('\nComment:\n')) {
+    throw new Error(`Comment label should not be rendered: ${text}`);
   }
 
   if (text.includes('This should remain only in details.')) {

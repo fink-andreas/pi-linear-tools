@@ -526,7 +526,7 @@ export async function executeIssueComment(client, params) {
   const preview = formatCommentPreview(commentBody);
 
   return toTextResult(
-    `Added comment to issue ${result.issue.identifier}\n\nComment:\n${preview.text}`,
+    `Added comment to issue ${result.issue.identifier}\n\n${preview.text}`,
     {
       issueId: result.issue.id,
       identifier: result.issue.identifier,
