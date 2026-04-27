@@ -53,6 +53,20 @@ function toTextResult(text, details = {}) {
   };
 }
 
+const COMMENT_PREVIEW_LIMIT = 500;
+
+function formatCommentPreview(body, limit = COMMENT_PREVIEW_LIMIT) {
+  const text = String(body || '').trim();
+  if (text.length <= limit) {
+    return { text, truncated: false };
+  }
+
+  return {
+    text: `${text.slice(0, limit).trimEnd()}...`,
+    truncated: true,
+  };
+}
+
 function ensureNonEmpty(value, fieldName) {
   const text = String(value || '').trim();
   if (!text) throw new Error(`Missing required field: ${fieldName}`);
@@ -508,13 +522,18 @@ export async function executeIssueComment(client, params) {
   const issue = ensureNonEmpty(params.issue, 'issue');
   const body = ensureNonEmpty(params.body, 'body');
   const result = await addIssueComment(client, issue, body, params.parentCommentId);
+  const commentBody = String(result.comment?.body || body).trim();
+  const preview = formatCommentPreview(commentBody);
 
   return toTextResult(
-    `Added comment to issue ${result.issue.identifier}`,
+    `Added comment to issue ${result.issue.identifier}\n\nComment:\n${preview.text}`,
     {
       issueId: result.issue.id,
       identifier: result.issue.identifier,
       commentId: result.comment.id,
+      commentBody,
+      commentPreview: preview.text,
+      commentPreviewTruncated: preview.truncated,
     }
   );
 }
