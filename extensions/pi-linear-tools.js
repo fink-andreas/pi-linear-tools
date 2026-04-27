@@ -144,7 +144,9 @@ async function withRequestUsageLogging(client, toolName, action, operation, rate
       debug('[pi-linear-tools] Rate limit status', {
         tool: toolName,
         action,
+        requestsDelta: usageDelta.requestsDelta,
         rateLimitUsed: rateLimitInfo.used,
+        rateLimitTotal: rateLimitInfo.total,
         rateLimitRemaining: rateLimitInfo.remaining,
         rateLimitPercent: rateLimitInfo.usagePercent,
         rateLimitResetAt: rateLimitInfo.resetTime,
@@ -161,7 +163,10 @@ async function withRequestUsageLogging(client, toolName, action, operation, rate
 
     // Add rate limit info to details if debug is enabled
     if (rateLimitDebug && rateLimitInfo) {
-      details.rateLimit = rateLimitInfo;
+      details.rateLimit = {
+        ...rateLimitInfo,
+        requestsDelta: usageDelta.requestsDelta,
+      };
     }
 
     if (!INCLUDE_USAGE_SUMMARY && !rateLimitDebug) {
@@ -181,8 +186,12 @@ async function withRequestUsageLogging(client, toolName, action, operation, rate
         }
 
         if (rateLimitDebug && rateLimitInfo) {
-          const percent = rateLimitInfo.usagePercent;
-          appendedText += `\n\n---\n**Rate Limit**: ${rateLimitInfo.used}/${rateLimitInfo.total} used (${percent}%) • Resets at ${rateLimitInfo.resetTime}`;
+          const percent = rateLimitInfo.usagePercent === null ? 'unknown' : `${rateLimitInfo.usagePercent}%`;
+          const windowUsage = rateLimitInfo.remaining === null
+            ? 'request window: unknown'
+            : `request window: ${rateLimitInfo.used}/${rateLimitInfo.total} used (${percent})`;
+          const reset = rateLimitInfo.resetTime ? ` • Resets at ${rateLimitInfo.resetTime}` : '';
+          appendedText += `\n\n---\n**Rate Limit**: +${usageDelta.requestsDelta} requests this call | ${windowUsage}${reset}`;
         }
 
         return {
@@ -213,7 +222,9 @@ async function withRequestUsageLogging(client, toolName, action, operation, rate
       rateLimitedDelta: after.rateLimited - before.rateLimited,
       error: String(error?.message || error || 'unknown'),
       ...(rateLimitDebug && rateLimitInfo ? {
+        requestsDelta: after.total - before.total,
         rateLimitUsed: rateLimitInfo.used,
+        rateLimitTotal: rateLimitInfo.total,
         rateLimitRemaining: rateLimitInfo.remaining,
         rateLimitPercent: rateLimitInfo.usagePercent,
       } : {}),

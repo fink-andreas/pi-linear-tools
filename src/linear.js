@@ -1292,7 +1292,11 @@ async function fetchProjectMilestonesByQuery(client, projectId, options = {}) {
  * Track rate limit status from API responses
  * Linear API returns headers: X-RateLimit-Requests-Remaining, X-RateLimit-Requests-Reset
  */
+const DEFAULT_REQUEST_LIMIT = 5000;
+const LOW_RATE_LIMIT_THRESHOLD = 0.10;
+
 const rateLimitState = {
+  limit: DEFAULT_REQUEST_LIMIT,
   remaining: null,
   resetAt: null,
   lastWarnAt: 0,
@@ -1307,14 +1311,21 @@ function updateRateLimitState(response) {
 
   const headers = response.headers;
   if (headers) {
+    const limit = headers.get('X-RateLimit-Requests-Limit');
     const remaining = headers.get('X-RateLimit-Requests-Remaining');
     const resetAt = headers.get('X-RateLimit-Requests-Reset');
 
+    if (limit !== null) {
+      const parsedLimit = parseInt(limit, 10);
+      if (Number.isFinite(parsedLimit)) rateLimitState.limit = parsedLimit;
+    }
     if (remaining !== null) {
-      rateLimitState.remaining = parseInt(remaining, 10);
+      const parsedRemaining = parseInt(remaining, 10);
+      if (Number.isFinite(parsedRemaining)) rateLimitState.remaining = parsedRemaining;
     }
     if (resetAt !== null) {
-      rateLimitState.resetAt = parseInt(resetAt, 10);
+      const parsedResetAt = parseInt(resetAt, 10);
+      if (Number.isFinite(parsedResetAt)) rateLimitState.resetAt = parsedResetAt;
     }
   }
 }
@@ -1325,6 +1336,7 @@ function updateRateLimitState(response) {
  */
 export function getRateLimitStatus() {
   const result = {
+    limit: rateLimitState.limit,
     remaining: rateLimitState.remaining,
     resetAt: rateLimitState.resetAt,
     resetTime: null,
@@ -1335,9 +1347,10 @@ export function getRateLimitStatus() {
   if (rateLimitState.resetAt) {
     result.resetTime = new Date(rateLimitState.resetAt).toLocaleTimeString();
     const remaining = rateLimitState.remaining;
-    if (remaining !== null && remaining <= 1000) {
-      result.usagePercent = Math.round(((5000 - remaining) / 5000) * 100);
-      result.shouldWarn = remaining <= 500;
+    const limit = rateLimitState.limit || DEFAULT_REQUEST_LIMIT;
+    if (remaining !== null) {
+      result.usagePercent = Math.round((Math.max(0, limit - remaining) / limit) * 100);
+      result.shouldWarn = remaining <= Math.max(1, Math.floor(limit * LOW_RATE_LIMIT_THRESHOLD));
     }
   }
 
@@ -1356,6 +1369,7 @@ function checkRateLimitWarning() {
   if (status.shouldWarn && status.remaining !== null) {
     rateLimitState.lastWarnAt = now;
     warn(`Linear API rate limit running low: ${status.remaining} requests remaining (~${status.usagePercent}% used). Resets at ${status.resetTime}`, {
+      limit: status.limit,
       remaining: status.remaining,
       resetAt: status.resetTime,
       usagePercent: status.usagePercent,

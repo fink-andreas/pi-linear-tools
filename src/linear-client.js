@@ -11,7 +11,11 @@ import { debug, warn, info } from './logger.js';
 /** @type {Function|null} Test-only client factory override */
 let _testClientFactory = null;
 
-/** @type {Map<string, {remaining: number, resetAt: number}>} Per-client rate limit tracking */
+const DEFAULT_REQUEST_LIMIT = 5000;
+const LOW_RATE_LIMIT_THRESHOLD = 0.10;
+const RATE_LIMIT_WARN_MIN_MS = 30000;
+
+/** @type {Map<string, {limit: number, remaining: number, resetAt: number, lastWarnAt?: number}>} Per-client request rate limit tracking */
 const rateLimitTracker = new Map();
 
 /** @type {Map<string, {total: number, success: number, failed: number, rateLimited: number, windowStart: number, lastSummaryAt: number}>} */
@@ -30,6 +34,33 @@ function getTrackerKey(apiKey) {
 
 function getTrackerKeyFromClient(client) {
   return client?.__piLinearTrackerKey || client?.apiKey || 'default';
+}
+
+function parseHeaderNumber(value) {
+  if (value === null || value === undefined) return null;
+  const parsed = Number.parseInt(String(value), 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getTrackerLimit(tracker) {
+  return tracker?.limit || tracker?.total || DEFAULT_REQUEST_LIMIT;
+}
+
+function getUsedRequests(tracker) {
+  const limit = getTrackerLimit(tracker);
+  const remaining = tracker?.remaining;
+  if (!Number.isFinite(remaining)) return 0;
+  return Math.max(0, limit - remaining);
+}
+
+function getUsagePercent(tracker) {
+  const limit = getTrackerLimit(tracker);
+  if (!limit) return null;
+  return Math.round((getUsedRequests(tracker) / limit) * 100);
+}
+
+function getLowRequestThreshold(tracker) {
+  return Math.max(1, Math.floor(getTrackerLimit(tracker) * LOW_RATE_LIMIT_THRESHOLD));
 }
 
 function getRequestMetric(trackerKey) {
@@ -60,7 +91,8 @@ function maybeLogRequestSummary(trackerKey) {
   if (!shouldLogByCount && !shouldLogByTime) return;
 
   metric.lastSummaryAt = now;
-  const used = Math.max(0, 5000 - (tracker.remaining ?? 5000));
+  const used = getUsedRequests(tracker);
+  const limit = getTrackerLimit(tracker);
 
   info('[pi-linear-tools] Linear API usage summary', {
     trackerKey,
@@ -68,6 +100,7 @@ function maybeLogRequestSummary(trackerKey) {
     requestsSuccess: metric.success,
     requestsFailed: metric.failed,
     requestsRateLimited: metric.rateLimited,
+    requestsLimit: limit,
     requestsRemaining: tracker.remaining,
     requestsUsed: used,
     resetAt: tracker.resetAt,
@@ -125,19 +158,20 @@ export function markRateLimited(resetAt) {
  * Extract rate limit info from SDK client response
  * The Linear SDK stores response metadata on the client after requests
  * @param {LinearClient} client - Linear SDK client
- * @returns {{remaining: number|null, resetAt: number|null, resetTime: string|null}}
+ * @returns {{limit: number|null, remaining: number|null, resetAt: number|null, resetTime: string|null}}
  */
 export function getClientRateLimit(client) {
   const trackerData = rateLimitTracker.get(getTrackerKeyFromClient(client));
   if (trackerData) {
     return {
+      limit: getTrackerLimit(trackerData),
       remaining: trackerData.remaining,
       resetAt: trackerData.resetAt,
       resetTime: trackerData.resetAt ? new Date(trackerData.resetAt).toLocaleTimeString() : null,
     };
   }
 
-  return { remaining: null, resetAt: null, resetTime: null };
+  return { limit: null, remaining: null, resetAt: null, resetTime: null };
 }
 
 /**
@@ -147,12 +181,12 @@ export function getClientRateLimit(client) {
  */
 export function getClientRateLimitInfo(client) {
   const trackerData = rateLimitTracker.get(getTrackerKeyFromClient(client));
-  const total = 5000; // Linear's hourly request limit
+  const total = getTrackerLimit(trackerData);
 
   if (trackerData && trackerData.remaining !== undefined) {
     const remaining = trackerData.remaining;
-    const used = Math.max(0, total - remaining);
-    const usagePercent = Math.round((used / total) * 100);
+    const used = getUsedRequests(trackerData);
+    const usagePercent = getUsagePercent(trackerData);
 
     return {
       remaining,
@@ -206,11 +240,12 @@ export function getClientRequestMetrics(client) {
  * @returns {boolean} True if warning was issued
  */
 export function checkAndWarnRateLimit(client) {
-  const { remaining, resetTime } = getClientRateLimit(client);
+  const rateLimitInfo = getClientRateLimitInfo(client);
+  const { remaining, resetTime, usagePercent } = rateLimitInfo;
 
-  if (remaining !== null && remaining <= 500) {
-    const usagePercent = Math.round(((5000 - remaining) / 5000) * 100);
+  if (remaining !== null && remaining <= getLowRequestThreshold(rateLimitInfo)) {
     warn(`Linear API rate limit running low: ${remaining} requests remaining (~${usagePercent}% used). Resets at ${resetTime}`, {
+      limit: rateLimitInfo.total,
       remaining,
       resetTime,
       usagePercent,
@@ -267,7 +302,12 @@ export function createLinearClient(auth) {
   const trackerKey = getTrackerKey(apiKey);
   client.__piLinearTrackerKey = trackerKey;
   if (!rateLimitTracker.has(trackerKey)) {
-    rateLimitTracker.set(trackerKey, { remaining: 5000, resetAt: Date.now() + 3600000 });
+    rateLimitTracker.set(trackerKey, {
+      limit: DEFAULT_REQUEST_LIMIT,
+      remaining: DEFAULT_REQUEST_LIMIT,
+      resetAt: Date.now() + 3600000,
+      lastWarnAt: 0,
+    });
   }
   getRequestMetric(trackerKey);
 
@@ -288,22 +328,34 @@ export function createLinearClient(auth) {
       metric.success += 1;
 
       if (response.headers) {
-        const remaining = response.headers.get('X-RateLimit-Requests-Remaining');
-        const resetAt = response.headers.get('X-RateLimit-Requests-Reset');
+        const limit = parseHeaderNumber(response.headers.get('X-RateLimit-Requests-Limit'));
+        const remaining = parseHeaderNumber(response.headers.get('X-RateLimit-Requests-Remaining'));
+        const resetAt = parseHeaderNumber(response.headers.get('X-RateLimit-Requests-Reset'));
 
         const tracker = rateLimitTracker.get(trackerKey);
+        if (tracker && limit !== null) {
+          tracker.limit = limit;
+        }
         if (tracker && remaining !== null) {
-          tracker.remaining = parseInt(remaining, 10);
+          tracker.remaining = remaining;
         }
         if (tracker && resetAt !== null) {
-          tracker.resetAt = parseInt(resetAt, 10);
+          tracker.resetAt = resetAt;
         }
       }
 
       const tracker = rateLimitTracker.get(trackerKey);
-      if (tracker && tracker.remaining <= 500 && tracker.remaining > 0) {
-        const usagePercent = Math.round(((5000 - tracker.remaining) / 5000) * 100);
+      const now = Date.now();
+      if (
+        tracker &&
+        tracker.remaining <= getLowRequestThreshold(tracker) &&
+        tracker.remaining > 0 &&
+        now - (tracker.lastWarnAt || 0) >= RATE_LIMIT_WARN_MIN_MS
+      ) {
+        tracker.lastWarnAt = now;
+        const usagePercent = getUsagePercent(tracker);
         warn(`Linear API rate limit running low: ${tracker.remaining} requests remaining (~${usagePercent}% used). Resets at ${new Date(tracker.resetAt).toLocaleTimeString()}`, {
+          limit: getTrackerLimit(tracker),
           remaining: tracker.remaining,
           resetTime: new Date(tracker.resetAt).toLocaleTimeString(),
           usagePercent,
@@ -322,9 +374,12 @@ export function createLinearClient(auth) {
         metric.rateLimited += 1;
         const resetAt = Number(error?.requestsResetAt) || Date.now() + 3600000;
         const remaining = Number.isFinite(error?.requestsRemaining) ? error.requestsRemaining : 0;
+        const previousTracker = rateLimitTracker.get(trackerKey);
         rateLimitTracker.set(trackerKey, {
+          limit: getTrackerLimit(previousTracker),
           remaining,
           resetAt,
+          lastWarnAt: previousTracker?.lastWarnAt || 0,
         });
         markRateLimited(resetAt);
       }

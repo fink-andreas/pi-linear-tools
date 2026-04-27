@@ -679,7 +679,8 @@ async function testRateLimitDebugIncludesRateLimitInResult() {
 
       // Set up rate limit tracker state directly
       setTestRateLimitTracker('lin_test', {
-        remaining: 4500,
+        limit: 100,
+        remaining: 50,
         resetAt: Date.now() + 3600000,
       });
 
@@ -688,7 +689,8 @@ async function testRateLimitDebugIncludesRateLimitInResult() {
         client: {
           rawRequest: async () => ({
             headers: new Map([
-              ['X-RateLimit-Requests-Remaining', '4500'],
+              ['X-RateLimit-Requests-Limit', '100'],
+              ['X-RateLimit-Requests-Remaining', '50'],
               ['X-RateLimit-Requests-Reset', String(Date.now() + 3600000)],
             ]),
           }),
@@ -706,9 +708,15 @@ async function testRateLimitDebugIncludesRateLimitInResult() {
 
       // When rateLimitDebug is true, result should include rateLimit info
       assert.ok(result.details.rateLimit, 'Result should include rateLimit info when debug enabled');
-      assert.ok(typeof result.details.rateLimit.remaining === 'number', 'RateLimit should have remaining');
-      assert.ok(typeof result.details.rateLimit.used === 'number', 'RateLimit should have used');
-      assert.ok(typeof result.details.rateLimit.usagePercent === 'number', 'RateLimit should have usagePercent');
+      assert.equal(result.details.rateLimit.total, 100, 'RateLimit should use the dynamic request limit');
+      assert.equal(result.details.rateLimit.remaining, 50, 'RateLimit should have remaining');
+      assert.equal(result.details.rateLimit.used, 50, 'RateLimit should have used');
+      assert.equal(result.details.rateLimit.usagePercent, 50, 'RateLimit should have usagePercent');
+      assert.equal(result.details.rateLimit.requestsDelta, 0, 'RateLimit should include this-call request delta');
+
+      const text = result.content?.[0]?.text || '';
+      assert.match(text, /\+0 requests this call/, 'Debug text should show this-call request delta');
+      assert.match(text, /request window: 50\/100 used \(50%\)/, 'Debug text should show cumulative request window usage separately');
     } finally {
       resetTestClientFactory();
       clearTestRateLimitTracker();
