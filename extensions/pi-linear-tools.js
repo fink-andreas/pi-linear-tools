@@ -689,6 +689,9 @@ async function registerLinearTools(pi) {
         priority: {
           type: 'integer',
           description: 'Priority 0..4 (for create, update)',
+          minimum: 0,
+          maximum: 4,
+          multipleOf: 1,
         },
         includeArchived: {
           type: 'boolean',
@@ -737,6 +740,7 @@ async function registerLinearTools(pi) {
         estimate: {
           type: 'integer',
           description: 'Estimate/story points for the issue (non-negative integer, for create/update)',
+          minimum: 0,
         },
         team: {
           type: 'string',

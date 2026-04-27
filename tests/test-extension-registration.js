@@ -76,6 +76,24 @@ async function testRegistrationIncludesMilestoneWithDefaultApiKeyMode() {
     assert.ok(issueTool);
     assert.equal(issueTool.description, 'Interact with Linear issues.');
     assert.ok(issueTool.parameters.properties.action.enum.includes('activity'));
+    assert.deepEqual(
+      issueTool.parameters.properties.priority,
+      {
+        type: 'integer',
+        description: 'Priority 0..4 (for create, update)',
+        minimum: 0,
+        maximum: 4,
+        multipleOf: 1,
+      }
+    );
+    assert.deepEqual(
+      issueTool.parameters.properties.estimate,
+      {
+        type: 'integer',
+        description: 'Estimate/story points for the issue (non-negative integer, for create/update)',
+        minimum: 0,
+      }
+    );
 
     const projectTool = pi.tools.get('linear_project');
     assert.ok(projectTool);
