@@ -231,6 +231,43 @@ async function testIssueToolReturnsSafeResultWhenCachedRateLimited() {
   }
 }
 
+async function testProjectToolsReturnSafeResultWhenCachedRateLimited() {
+  const prev = process.env.LINEAR_API_KEY;
+  process.env.LINEAR_API_KEY = 'lin_test';
+
+  try {
+    let clientCreated = false;
+    setTestClientFactory(() => {
+      clientCreated = true;
+      throw new Error('Client should not be created during cached rate-limit pre-check');
+    });
+
+    const pi = createMockPi();
+    await extension(pi);
+
+    markRateLimited(Date.now() + 60 * 1000);
+
+    const projectTool = pi.tools.get('linear_project');
+    const projectResult = await projectTool.execute('call-project-rate-cached', { action: 'list' });
+
+    assert.match(projectResult.content[0].text, /rate limit exceeded \(cached\)/i);
+    assert.equal(projectResult.details.rateLimited, true);
+    assert.equal(projectResult.details.cached, true);
+
+    const projectUpdateTool = pi.tools.get('linear_project_update');
+    const projectUpdateResult = await projectUpdateTool.execute('call-project-update-rate-cached', { action: 'list', project: 'demo' });
+
+    assert.match(projectUpdateResult.content[0].text, /rate limit exceeded \(cached\)/i);
+    assert.equal(projectUpdateResult.details.rateLimited, true);
+    assert.equal(projectUpdateResult.details.cached, true);
+    assert.equal(clientCreated, false);
+  } finally {
+    resetTestClientFactory();
+    markRateLimited(Date.now() - 1);
+    process.env.LINEAR_API_KEY = prev;
+  }
+}
+
 async function testIssueToolReturnsSafeResultWhenRequestRateLimited() {
   const prev = process.env.LINEAR_API_KEY;
   process.env.LINEAR_API_KEY = 'lin_test';
@@ -680,6 +717,7 @@ async function main() {
   await testConfigSavesDefaultTeam();
   await testIssueToolReturnsSafeResultWhenAuthMissing();
   await testIssueToolReturnsSafeResultWhenCachedRateLimited();
+  await testProjectToolsReturnSafeResultWhenCachedRateLimited();
   await testIssueToolReturnsSafeResultWhenRequestRateLimited();
   await testProjectToolReturnsSafeResultWhenProjectQueryRateLimited();
   await testIssueToolListUsesSdkWrapper();

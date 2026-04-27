@@ -885,6 +885,12 @@ async function registerLinearTools(pi) {
     renderResult: renderMarkdownResult,
     async execute(_toolCallId, params) {
       return executeToolSafely('Linear project operation failed', async () => {
+        // Pre-check: skip API calls if we know we're rate limited
+        const { isRateLimited, resetAt } = checkAndClearRateLimit();
+        if (isRateLimited) {
+          return buildRateLimitToolResult({ requestsResetAt: resetAt.getTime(), type: 'Ratelimited' }, { cached: true });
+        }
+
         const settings = await loadSettings();
         const rateLimitDebug = settings.rateLimitDebug || false;
         const client = await createAuthenticatedClient();
@@ -964,6 +970,12 @@ async function registerLinearTools(pi) {
     renderResult: renderMarkdownResult,
     async execute(_toolCallId, params) {
       return executeToolSafely('Linear project update operation failed', async () => {
+        // Pre-check: skip API calls if we know we're rate limited
+        const { isRateLimited, resetAt } = checkAndClearRateLimit();
+        if (isRateLimited) {
+          return buildRateLimitToolResult({ requestsResetAt: resetAt.getTime(), type: 'Ratelimited' }, { cached: true });
+        }
+
         const settings = await loadSettings();
         const rateLimitDebug = settings.rateLimitDebug || false;
         const client = await createAuthenticatedClient();
