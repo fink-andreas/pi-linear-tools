@@ -67,7 +67,7 @@ Reference conventions:
 ## LLM-callable tools
 
 ### `linear_issue`
-Actions: `list`, `view`, `activity`, `create`, `update`, `comment`, `start`, `delete`
+Actions: `list`, `view`, `images`, `activity`, `create`, `update`, `comment`, `start`, `delete`
 
 ### `linear_project`
 Actions: `list`, `view`, `create`, `update`, `delete`, `archive`, `unarchive`
@@ -98,7 +98,7 @@ pi-linear-tools config --team ENG --project "My Project"
 
 ### Issue commands
 
-Use `update` to change the issue itself. Use `comment` to add discussion. Use `activity` to read the Activity timeline shown in Linear.
+Use `update` to change the issue itself. Use `comment` to add discussion. Use `activity` to read the Activity timeline shown in Linear. Use `images` to fetch image attachments embedded in issue markdown/comments.
 
 ```bash
 # List issues
@@ -109,6 +109,10 @@ pi-linear-tools issue list --project "My Project" --assignee me
 # View issue details
 pi-linear-tools issue view ENG-123
 pi-linear-tools issue view ENG-123 --no-comments
+
+# Fetch markdown-embedded issue/comment images
+pi-linear-tools issue images ENG-123
+pi-linear-tools issue images ENG-123 --limit 5
 
 # Read Activity timeline
 pi-linear-tools issue activity ENG-123 --limit 20

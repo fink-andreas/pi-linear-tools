@@ -76,6 +76,7 @@ async function testRegistrationIncludesMilestoneWithDefaultApiKeyMode() {
     assert.ok(issueTool);
     assert.equal(issueTool.description, 'Interact with Linear issues.');
     assert.ok(issueTool.parameters.properties.action.enum.includes('activity'));
+    assert.ok(issueTool.parameters.properties.action.enum.includes('images'));
     assert.deepEqual(
       issueTool.parameters.properties.priority,
       {

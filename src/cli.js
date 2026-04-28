@@ -18,6 +18,7 @@ import {
 import {
   executeIssueList,
   executeIssueView,
+  executeIssueImages,
   executeIssueActivity,
   executeIssueCreate,
   executeIssueUpdate,
@@ -173,6 +174,7 @@ Auth Actions:
 Issue Actions:
   list [--project X] [--states X,Y] [--assignee me|all] [--team X] [--limit N]
   view <issue> [--no-comments]
+  images <issue> [--no-comments] [--limit N]
   activity <issue> [--limit N] [--include-archived true|false]
   create --title X [--team X] [--project X] [--description X] [--priority 0-4|name] [--assignee me|ID]
   update <issue> [--title X] [--description X] [--state X] [--priority 0-4|name]
@@ -286,10 +288,12 @@ Guidance:
   Use "update" to change the issue itself: title, description, state, assignee, milestone, or parent.
   Use "comment" to add a discussion entry.
   Use "activity" to read the Activity timeline shown in Linear.
+  Use "images" to fetch image attachments embedded in issue markdown/comments.
 
 Actions:
   list      List issues in a project
   view      View issue details
+  images    Fetch image attachments embedded in issue markdown/comments
   activity  View issue activity/history
   create    Create a new issue
   update    Update an existing issue
@@ -307,6 +311,11 @@ List Options:
 View Options:
   <issue>          Issue key (e.g., ENG-123), ID, or issue URL
   --no-comments    Exclude comments from output
+
+Images Options:
+  <issue>          Issue key (e.g., ENG-123), ID, or issue URL
+  --no-comments    Exclude images from comments
+  --limit N        Max images to fetch (default: 10)
 
 Activity Options:
   <issue>          Issue key, ID, or issue URL
@@ -819,6 +828,24 @@ async function handleIssueView(args) {
   console.log(result.content[0].text);
 }
 
+async function handleIssueImages(args) {
+  const client = await createAuthenticatedClient();
+
+  const positional = args.filter((a) => !a.startsWith('-'));
+  if (positional.length === 0) {
+    throw new Error('Missing required argument: issue key or ID');
+  }
+
+  const params = {
+    issue: positional[0],
+    includeComments: !hasFlag(args, '--no-comments'),
+    limit: parseNumber(readFlag(args, '--limit')),
+  };
+
+  const result = await executeIssueImages(client, params);
+  console.log(result.content[0].text);
+}
+
 async function handleIssueActivity(args) {
   const client = await createAuthenticatedClient();
 
@@ -950,6 +977,8 @@ async function handleIssue(args) {
       return handleIssueList(rest);
     case 'view':
       return handleIssueView(rest);
+    case 'images':
+      return handleIssueImages(rest);
     case 'activity':
       return handleIssueActivity(rest);
     case 'create':
