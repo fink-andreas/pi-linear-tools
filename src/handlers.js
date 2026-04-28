@@ -6,6 +6,7 @@
  */
 
 import path from 'path';
+import { mkdir, open, unlink } from 'node:fs/promises';
 import {
   prepareIssueStart,
   setIssueState,
@@ -83,6 +84,197 @@ function parseRefList(value) {
     .map((item) => item.trim())
     .filter(Boolean);
 }
+
+const DEFAULT_MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024;
+
+function hasValue(value) {
+  return value !== undefined && value !== null && String(value).trim() !== '';
+}
+
+function resolveSafeRelativeDirectory(directory, cwd = process.cwd()) {
+  const requested = ensureNonEmpty(directory, 'directory');
+  if (path.isAbsolute(requested)) {
+    throw new Error('Download directory must be a relative path');
+  }
+
+  const resolvedCwd = path.resolve(cwd);
+  const resolvedDirectory = path.resolve(resolvedCwd, requested);
+  const relative = path.relative(resolvedCwd, resolvedDirectory);
+
+  if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new Error('Download directory must stay within the current working directory');
+  }
+
+  return resolvedDirectory;
+}
+
+function sanitizeDownloadFilename(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+
+  const basename = path.basename(text) || text;
+  const sanitized = basename
+    .replace(/[\\/\u0000-\u001f\u007f<>:"|?*]+/g, '_')
+    .replace(/^\.+$/, '')
+    .replace(/^\.+/, '')
+    .trim()
+    .slice(0, 180);
+
+  return sanitized || '';
+}
+
+function filenameFromAttachment(attachment, explicitFilename) {
+  const explicit = sanitizeDownloadFilename(explicitFilename);
+  if (explicit) return explicit;
+
+  const fromTitle = sanitizeDownloadFilename(attachment?.title);
+  if (fromTitle) return fromTitle;
+
+  try {
+    const url = new URL(attachment?.url || '');
+    const fromUrl = sanitizeDownloadFilename(url.pathname);
+    if (fromUrl) return fromUrl;
+  } catch {
+    // fall through to attachment id
+  }
+
+  const fromId = sanitizeDownloadFilename(attachment?.id);
+  if (fromId) return fromId;
+
+  throw new Error('Unable to derive a safe filename for attachment; provide filename explicitly');
+}
+
+function resolveSafeDestinationPath(directory, filename, cwd = process.cwd()) {
+  const resolvedDirectory = resolveSafeRelativeDirectory(directory, cwd);
+  const safeFilename = filenameFromAttachment({}, filename);
+  const destination = path.resolve(resolvedDirectory, safeFilename);
+  const relative = path.relative(resolvedDirectory, destination);
+
+  if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new Error('Download filename must not escape the destination directory');
+  }
+
+  return { directory: resolvedDirectory, filename: safeFilename, filePath: destination };
+}
+
+function selectIssueAttachment(attachments, params) {
+  const list = Array.isArray(attachments) ? attachments : [];
+  if (list.length === 0) {
+    throw new Error('Issue has no Linear attachments to download');
+  }
+
+  const selectors = [
+    ['attachmentId', params.attachmentId],
+    ['attachmentTitle', params.attachmentTitle],
+    ['attachmentUrl', params.attachmentUrl],
+    ['attachmentIndex', params.attachmentIndex],
+  ].filter(([, value]) => hasValue(value));
+
+  if (selectors.length > 1) {
+    throw new Error('Provide only one attachment selector: attachmentId, attachmentTitle, attachmentUrl, or attachmentIndex');
+  }
+
+  if (selectors.length === 0) {
+    if (list.length === 1) return list[0];
+    throw new Error('Multiple attachments found; provide attachmentId, attachmentTitle, attachmentUrl, or attachmentIndex');
+  }
+
+  const [selector, rawValue] = selectors[0];
+  const value = String(rawValue).trim();
+  let matches = [];
+
+  if (selector === 'attachmentId') {
+    matches = list.filter((attachment) => attachment.id === value);
+  } else if (selector === 'attachmentTitle') {
+    const normalized = value.toLowerCase();
+    matches = list.filter((attachment) => String(attachment.title || '').toLowerCase() === normalized);
+  } else if (selector === 'attachmentUrl') {
+    matches = list.filter((attachment) => attachment.url === value);
+  } else if (selector === 'attachmentIndex') {
+    const index = Number.parseInt(value, 10);
+    if (!Number.isInteger(index) || index < 1 || index > list.length) {
+      throw new Error(`attachmentIndex must be between 1 and ${list.length}`);
+    }
+    return list[index - 1];
+  }
+
+  if (matches.length === 0) {
+    throw new Error(`No attachment matched ${selector}: ${value}`);
+  }
+  if (matches.length > 1) {
+    throw new Error(`Multiple attachments matched ${selector}: ${value}; use attachmentId instead`);
+  }
+  return matches[0];
+}
+
+function normalizeMaxBytes(value) {
+  if (value === undefined || value === null || value === '') return DEFAULT_MAX_DOWNLOAD_BYTES;
+  const maxBytes = Number(value);
+  if (!Number.isInteger(maxBytes) || maxBytes <= 0) {
+    throw new Error('maxBytes must be a positive integer');
+  }
+  if (maxBytes > DEFAULT_MAX_DOWNLOAD_BYTES) {
+    throw new Error(`maxBytes cannot exceed ${DEFAULT_MAX_DOWNLOAD_BYTES} bytes`);
+  }
+  return maxBytes;
+}
+
+async function writeResponseBodyToFile(response, filePath, options) {
+  const { overwrite, maxBytes } = options;
+  const flags = overwrite ? 'w' : 'wx';
+  let fileHandle;
+  let bytesWritten = 0;
+
+  try {
+    fileHandle = await open(filePath, flags);
+  } catch (err) {
+    if (err?.code === 'EEXIST') {
+      throw new Error(`Destination file already exists: ${filePath}`);
+    }
+    throw err;
+  }
+
+  try {
+    if (!response.body) {
+      const buffer = Buffer.from(await response.arrayBuffer());
+      if (buffer.length > maxBytes) {
+        throw new Error(`Download exceeds maxBytes (${maxBytes} bytes)`);
+      }
+      await fileHandle.writeFile(buffer);
+      bytesWritten = buffer.length;
+      return bytesWritten;
+    }
+
+    const reader = response.body.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const buffer = Buffer.from(value);
+      bytesWritten += buffer.length;
+      if (bytesWritten > maxBytes) {
+        throw new Error(`Download exceeds maxBytes (${maxBytes} bytes)`);
+      }
+      await fileHandle.write(buffer);
+    }
+    return bytesWritten;
+  } catch (err) {
+    await fileHandle.close().catch(() => {});
+    await unlink(filePath).catch(() => {});
+    throw err;
+  } finally {
+    await fileHandle?.close?.().catch(() => {});
+  }
+}
+
+export const issueDownloadInternals = {
+  DEFAULT_MAX_DOWNLOAD_BYTES,
+  resolveSafeRelativeDirectory,
+  sanitizeDownloadFilename,
+  filenameFromAttachment,
+  resolveSafeDestinationPath,
+  selectIssueAttachment,
+  normalizeMaxBytes,
+};
 
 // ===== GIT OPERATIONS (for issue start) =====
 
@@ -262,6 +454,71 @@ export async function executeIssueView(client, params) {
       title: issueData.title,
       state: issueData.state,
       url: issueData.url,
+    },
+  };
+}
+
+export async function executeIssueDownload(client, params, options = {}) {
+  const issue = ensureNonEmpty(params.issue, 'issue');
+  const directory = ensureNonEmpty(params.directory, 'directory');
+  const overwrite = params.overwrite === true;
+  const settings = options.settings || {};
+
+  if (overwrite && settings.allow_overwrite_files !== true) {
+    throw new Error('overwrite=true requires allow_overwrite_files=true. Enable it with /linear-tools-config --allow-overwrite-files true.');
+  }
+
+  const maxBytes = normalizeMaxBytes(params.maxBytes);
+  const issueData = await fetchIssueDetails(client, issue, { includeComments: false });
+  const attachment = selectIssueAttachment(issueData.attachments, params);
+  const filename = filenameFromAttachment(attachment, params.filename);
+  const destination = resolveSafeDestinationPath(directory, filename, options.cwd || process.cwd());
+  const fetchImpl = options.fetchImpl || globalThis.fetch;
+
+  if (typeof fetchImpl !== 'function') {
+    throw new Error('Fetch API is not available in this Node.js runtime');
+  }
+
+  await mkdir(destination.directory, { recursive: true });
+
+  const response = await fetchImpl(attachment.url, { redirect: 'follow' });
+  if (!response?.ok) {
+    const status = response?.status ? `HTTP ${response.status}` : 'request failed';
+    throw new Error(`Failed to download attachment "${attachment.title}": ${status}`);
+  }
+
+  const contentLengthHeader = response.headers?.get?.('content-length');
+  if (contentLengthHeader) {
+    const contentLength = Number.parseInt(contentLengthHeader, 10);
+    if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+      throw new Error(`Download exceeds maxBytes (${maxBytes} bytes)`);
+    }
+  }
+
+  const bytesWritten = await writeResponseBodyToFile(response, destination.filePath, { overwrite, maxBytes });
+  const relativePath = path.relative(options.cwd || process.cwd(), destination.filePath) || destination.filename;
+
+  return {
+    content: [{
+      type: 'text',
+      text: [
+        `Downloaded **${attachment.title}** to \`${relativePath}\``,
+        '',
+        `- bytes: ${bytesWritten}`,
+        `- source: ${attachment.url}`,
+      ].join('\n'),
+    }],
+    details: {
+      issueId: issueData.id,
+      identifier: issueData.identifier,
+      attachmentId: attachment.id,
+      attachmentTitle: attachment.title,
+      sourceUrl: attachment.url,
+      filePath: destination.filePath,
+      relativePath,
+      bytesWritten,
+      overwritten: overwrite,
+      maxBytes,
     },
   };
 }

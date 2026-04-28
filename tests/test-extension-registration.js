@@ -76,6 +76,10 @@ async function testRegistrationIncludesMilestoneWithDefaultApiKeyMode() {
     assert.ok(issueTool);
     assert.equal(issueTool.description, 'Interact with Linear issues.');
     assert.ok(issueTool.parameters.properties.action.enum.includes('activity'));
+    assert.ok(issueTool.parameters.properties.action.enum.includes('download'));
+    assert.equal(issueTool.parameters.properties.maxBytes.maximum, 52428800);
+    assert.equal(issueTool.parameters.properties.directory.type, 'string');
+    assert.equal(issueTool.parameters.properties.overwrite.type, 'boolean');
     assert.deepEqual(
       issueTool.parameters.properties.priority,
       {
@@ -185,6 +189,23 @@ async function testConfigSavesDefaultTeam() {
 
     const settings = JSON.parse(await readFile(getSettingsPath(), 'utf-8'));
     assert.equal(settings.defaultTeam, 'ENG');
+  });
+}
+
+async function testConfigSavesAllowOverwriteFiles() {
+  await withTempHome(async () => {
+    const pi = createMockPi();
+    await extension(pi);
+
+    const config = pi.commands.get('linear-tools-config').handler;
+    await config('--allow-overwrite-files true', { hasUI: false });
+
+    let settings = JSON.parse(await readFile(getSettingsPath(), 'utf-8'));
+    assert.equal(settings.allow_overwrite_files, true);
+
+    await config('--allow-overwrite-files false', { hasUI: false });
+    settings = JSON.parse(await readFile(getSettingsPath(), 'utf-8'));
+    assert.equal(settings.allow_overwrite_files, false);
   });
 }
 
@@ -715,6 +736,7 @@ async function main() {
   await testRegistrationShowsMilestoneWhenOAuthHasApiKeyOverride();
   await testConfigSavesApiKey();
   await testConfigSavesDefaultTeam();
+  await testConfigSavesAllowOverwriteFiles();
   await testIssueToolReturnsSafeResultWhenAuthMissing();
   await testIssueToolReturnsSafeResultWhenCachedRateLimited();
   await testProjectToolsReturnSafeResultWhenCachedRateLimited();

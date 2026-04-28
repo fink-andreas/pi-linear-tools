@@ -31,6 +31,7 @@ async function testDefaults() {
   assert.equal(defaults.defaultWorkspace, null);
   assert.deepEqual(defaults.projects, {});
   assert.equal(defaults.rateLimitDebug, false);
+  assert.equal(defaults.allow_overwrite_files, false);
 }
 
 async function testSaveAndLoad() {
@@ -54,6 +55,7 @@ async function testSaveAndLoad() {
     assert.equal(loaded.apiKey, 'lin_test');
     assert.equal(loaded.defaultTeam, 'ENG');
     assert.equal(loaded.debug_reload, undefined);
+    assert.equal(loaded.allow_overwrite_files, false);
     assert.equal(loaded.projects['project-1'].scope.team, 'ENG');
   });
 }
@@ -65,6 +67,18 @@ async function testValidation() {
   const invalid = validateSettings({ schemaVersion: 2, projects: [] });
   assert.equal(invalid.valid, false);
   assert.ok(invalid.errors.length > 0);
+}
+
+async function testAllowOverwriteFilesValidation() {
+  const validTrue = validateSettings({ schemaVersion: 2, allow_overwrite_files: true });
+  assert.equal(validTrue.valid, true);
+
+  const validFalse = validateSettings({ schemaVersion: 2, allow_overwrite_files: false });
+  assert.equal(validFalse.valid, true);
+
+  const invalidString = validateSettings({ schemaVersion: 2, allow_overwrite_files: 'true' });
+  assert.equal(invalidString.valid, false);
+  assert.ok(invalidString.errors.some(e => e.includes('allow_overwrite_files')));
 }
 
 async function testRateLimitDebugValidation() {
@@ -89,6 +103,7 @@ async function main() {
   await testDefaults();
   await testSaveAndLoad();
   await testValidation();
+  await testAllowOverwriteFilesValidation();
   await testRateLimitDebugValidation();
   console.log('✓ tests/test-settings.js passed');
 }

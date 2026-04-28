@@ -22,6 +22,7 @@ export function getDefaultSettings() {
     defaultWorkspace: null,
     projects: {},
     rateLimitDebug: false, // Enable detailed rate limit info per tool call
+    allow_overwrite_files: false, // Require explicit opt-in before tools can overwrite local files
   };
 }
 
@@ -115,6 +116,11 @@ function migrateSettings(settings) {
   // Ensure rateLimitDebug is a boolean
   if (migrated.rateLimitDebug === undefined) {
     migrated.rateLimitDebug = false;
+  }
+
+  // Ensure local file overwrite guard is disabled by default
+  if (migrated.allow_overwrite_files === undefined) {
+    migrated.allow_overwrite_files = false;
   }
 
   // Migrate project scopes
@@ -225,6 +231,11 @@ export function validateSettings(settings) {
   // Validate rateLimitDebug
   if (settings.rateLimitDebug !== undefined && typeof settings.rateLimitDebug !== 'boolean') {
     errors.push('settings.rateLimitDebug must be a boolean');
+  }
+
+  // Validate local file overwrite guard
+  if (settings.allow_overwrite_files !== undefined && typeof settings.allow_overwrite_files !== 'boolean') {
+    errors.push('settings.allow_overwrite_files must be a boolean');
   }
 
   return { valid: errors.length === 0, errors };

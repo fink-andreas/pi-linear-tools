@@ -41,6 +41,7 @@ Optional non-interactive commands:
 /linear-tools-config --api-key lin_xxx
 /linear-tools-config --default-team ENG
 /linear-tools-config --team ENG --project "My Project"
+/linear-tools-config --allow-overwrite-files true|false
 ```
 
 ## Extension commands
@@ -67,7 +68,9 @@ Reference conventions:
 ## LLM-callable tools
 
 ### `linear_issue`
-Actions: `list`, `view`, `activity`, `create`, `update`, `comment`, `start`, `delete`
+Actions: `list`, `view`, `download`, `activity`, `create`, `update`, `comment`, `start`, `delete`
+
+`download` fetches Linear issue attachments only. Destination directories must be relative paths. Existing files are not overwritten unless both `overwrite: true` is provided and the config guard is enabled with `/linear-tools-config --allow-overwrite-files true`.
 
 ### `linear_project`
 Actions: `list`, `view`, `create`, `update`, `delete`, `archive`, `unarchive`
@@ -94,6 +97,7 @@ pi-linear-tools config
 pi-linear-tools config --api-key lin_xxx
 pi-linear-tools config --default-team ENG
 pi-linear-tools config --team ENG --project "My Project"
+pi-linear-tools config --allow-overwrite-files true|false
 ```
 
 ### Issue commands
@@ -113,6 +117,10 @@ pi-linear-tools issue view ENG-123 --no-comments
 # Read Activity timeline
 pi-linear-tools issue activity ENG-123 --limit 20
 pi-linear-tools issue activity https://linear.app/workspace/issue/ENG-123/example --limit 20
+
+# Download a Linear issue attachment
+pi-linear-tools issue download ENG-123 --attachment-index 1 --directory downloads
+pi-linear-tools issue download ENG-123 --attachment-id att_xxx --directory downloads --filename spec.pdf
 
 # Create issue
 pi-linear-tools issue create --title "Fix login bug" --team ENG
