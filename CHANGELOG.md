@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.7.0 (2026-05-05)
+
+Issue image fetching and file download release.
+
+### New Features
+- **`linear_issue(action="images")`**: Fetch markdown/HTML embedded images from issue descriptions and comments. Returns images as tool `image` content (base64-encoded). Includes special auth handling for Linear upload URLs (`uploads.linear.app`).
+- **`linear_issue(action="download")`**: Download Linear issue attachments to local filesystem. Supports attachment selection by ID, title, URL, or index. Includes relative path validation, filename sanitization, and `allow_overwrite_files` config guard (default: `false`).
+
+### Performance / API Usage
+- **N+1 issue resolution optimization**: Merged N+1-per-issue lazy loads in milestone details into a single GraphQL batch query (introduced in v0.6.0).
+
+### Documentation
+- **Updated smoke tests**: Added coverage for `images` and `download` actions.
+
+### Bug Fixes
+- **Fixed workspace-wide issue listing (#4)**: `linear_issue list` now falls back to workspace-level listing (using `fetchIssues`) when no project is specified and cwd doesn't match a Linear project. This allows `linear_issue list assignee=me` to work without requiring a project context.
+- Fixed project archive mutation to actually archive instead of delete (INN-301).
+- Fixed `linear_issue comment` to render submitted comment text in result (INN-305).
+- Fixed rate limit display to not show hardcoded total=5000 (INN-304).
+- Fixed `linear_project` and `linear_project_update` to have rate-limit pre-check (INN-303).
+
 ## v0.6.0 (2026-04-23)
 
 Rate-limit resilience for milestone operations.

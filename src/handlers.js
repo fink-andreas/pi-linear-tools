@@ -25,6 +25,7 @@ import {
   fetchIssueActivity,
   formatIssueAsMarkdown,
   formatIssueActivityAsMarkdown,
+  fetchIssues,
   fetchIssuesByProject,
   fetchProjectMilestones,
   fetchMilestoneDetails,
@@ -389,11 +390,23 @@ async function startGitBranch(branchName, fromRef = 'HEAD', onBranchExists = 'sw
 export async function executeIssueList(client, params) {
   return withHandlerErrorHandling(async () => {
     let projectRef = params.project;
-    if (!projectRef) {
-      projectRef = path.basename(process.cwd());
-    }
+    let projectMode = false;
 
-    const resolved = await resolveProjectRef(client, projectRef);
+    if (projectRef) {
+      // Explicit project specified - use project-scoped listing
+      projectMode = true;
+    } else {
+      // No explicit project - try cwd fallback
+      const cwdProject = path.basename(process.cwd());
+      try {
+        const resolved = await resolveProjectRef(client, cwdProject);
+        projectRef = resolved.name; // use resolved name for display
+        projectMode = true;
+      } catch {
+        // cwd doesn't match any project - fall back to workspace-level listing
+        projectMode = false;
+      }
+    }
 
     let assigneeId = null;
     if (params.assignee === 'me') {
@@ -408,21 +421,50 @@ export async function executeIssueList(client, params) {
       teamId = team.id;
     }
 
-    const { issues, truncated } = await fetchIssuesByProject(client, resolved.id, params.states || null, {
-      assigneeId,
-      teamId,
-      limit: params.limit || 20,
-    });
+    const limit = params.limit || 20;
 
-    if (issues.length === 0) {
-      return toTextResult(`No issues found in project "${resolved.name}"`, {
-        projectId: resolved.id,
-        projectName: resolved.name,
-        issueCount: 0,
+    let issues;
+    let truncated;
+    let projectId = null;
+    let projectName = null;
+
+    if (projectMode) {
+      // Project-scoped listing
+      const resolved = await resolveProjectRef(client, projectRef);
+      projectId = resolved.id;
+      projectName = resolved.name;
+
+      const result = await fetchIssuesByProject(client, resolved.id, params.states || null, {
+        assigneeId,
+        teamId,
+        limit,
       });
+      issues = result.issues;
+      truncated = result.truncated;
+    } else {
+      // Workspace-level listing (no project filter)
+      // Default to open states if none specified
+      const workspaceStates = params.states || ['Backlog', 'Triage', 'In Progress', 'In Review'];
+      const result = await fetchIssues(client, assigneeId, workspaceStates, limit);
+      issues = result.issues;
+      truncated = result.truncated;
     }
 
-    const lines = [`## Issues in project "${resolved.name}" (${issues.length}${truncated ? '+' : ''})\n`];
+    if (issues.length === 0) {
+      return toTextResult(
+        projectMode
+          ? `No issues found in project "${projectName}"`
+          : 'No issues found in workspace',
+        {
+          projectId,
+          projectName,
+          issueCount: 0,
+        }
+      );
+    }
+
+    const scopeLabel = projectMode ? `project "${projectName}"` : 'workspace';
+    const lines = [`## Issues in ${scopeLabel} (${issues.length}${truncated ? '+' : ''})\n`];
 
     for (const issue of issues) {
       const stateLabel = issue.state?.name || 'Unknown';
@@ -442,8 +484,8 @@ export async function executeIssueList(client, params) {
     }
 
     return toTextResult(lines.join('\n'), {
-      projectId: resolved.id,
-      projectName: resolved.name,
+      projectId,
+      projectName,
       issueCount: issues.length,
       truncated,
     });
