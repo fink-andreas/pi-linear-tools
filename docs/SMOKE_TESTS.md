@@ -109,7 +109,13 @@ linear_issue(action="list", assignee="all", limit=10)
 ```
 linear_issue(action="view", issue="INN-259")
 ```
-**Expected:** Returns full issue details including state, team, project, assignee, priority, comments.
+**Expected:** Returns full issue details including state, team, project, assignee, priority, comments, and attachments when present.
+
+### Test 13a: Download Issue Attachment
+```
+linear_issue(action="download", issue="INN-259", attachmentIndex=1, directory="downloads", overwrite=false)
+```
+**Expected:** Downloads the first Linear issue attachment into the relative `downloads` directory. Existing files are not overwritten unless `overwrite=true` and `/linear-tools-config --allow-overwrite-files true` has been set.
 
 ### Test 14: Create Issue
 ```

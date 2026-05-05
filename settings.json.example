@@ -1,7 +1,11 @@
 {
-  "schemaVersion": 1,
-  "linearApiKey": "lin_xxx",
+  "schemaVersion": 2,
+  "authMethod": "api-key",
+  "apiKey": "lin_xxx",
   "defaultTeam": "ENG",
+  "defaultWorkspace": null,
+  "rateLimitDebug": false,
+  "allow_overwrite_files": false,
   "projects": {
     "97ec7cae-e252-493d-94d3-6910aa28cacf": {
       "scope": {

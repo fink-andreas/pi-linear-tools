@@ -49,6 +49,7 @@ import {
   executeIssueList,
   executeIssueView,
   executeIssueImages,
+  executeIssueDownload,
   executeIssueActivity,
   executeIssueCreate,
   executeIssueUpdate,
@@ -641,18 +642,18 @@ async function registerLinearTools(pi) {
     name: 'linear_issue',
     label: 'Linear Issue',
     description: 'Interact with Linear issues.',
-    promptSnippet: 'Interact with Linear issues (list, view, images, activity, create, update, comment, start, delete)',
+    promptSnippet: 'Interact with Linear issues (list, view, images, download, activity, create, update, comment, start, delete)',
     parameters: {
       type: 'object',
       properties: {
         action: {
           type: 'string',
-          enum: ['list', 'view', 'images', 'activity', 'create', 'update', 'comment', 'start', 'delete'],
+          enum: ['list', 'view', 'images', 'download', 'activity', 'create', 'update', 'comment', 'start', 'delete'],
           description: 'Action to perform on issue(s)',
         },
         issue: {
           type: 'string',
-          description: 'Issue key (ABC-123) or Linear issue ID (for view, images, activity, update, comment, start, delete)',
+          description: 'Issue key (ABC-123) or Linear issue ID (for view, images, download, activity, update, comment, start, delete)',
         },
         project: {
           type: 'string',
@@ -673,11 +674,46 @@ async function registerLinearTools(pi) {
         },
         limit: {
           type: 'integer',
-          description: 'Maximum number of issues or activity entries to list',
+          description: 'Maximum number of issues, activity entries, or images to fetch',
         },
         includeComments: {
           type: 'boolean',
-          description: 'Include comments when viewing issue (default: true)',
+          description: 'Include comments when viewing an issue or fetching images (default: true)',
+        },
+        attachmentId: {
+          type: 'string',
+          description: 'Attachment ID to download (for download). Use exactly one attachment selector when multiple attachments exist.',
+        },
+        attachmentTitle: {
+          type: 'string',
+          description: 'Attachment title to download (for download). Must uniquely match an issue attachment.',
+        },
+        attachmentUrl: {
+          type: 'string',
+          description: 'Attachment URL to download (for download). Must uniquely match an issue attachment.',
+        },
+        attachmentIndex: {
+          type: 'integer',
+          description: '1-based attachment index from the issue attachment list (for download).',
+          minimum: 1,
+        },
+        directory: {
+          type: 'string',
+          description: 'Relative destination directory for attachment downloads. Missing directories are created.',
+        },
+        filename: {
+          type: 'string',
+          description: 'Optional output filename for attachment downloads. Unsafe characters are sanitized.',
+        },
+        overwrite: {
+          type: 'boolean',
+          description: 'Overwrite existing file during download (default: false). Requires allow_overwrite_files=true in config.',
+        },
+        maxBytes: {
+          type: 'integer',
+          description: 'Maximum bytes to fetch. For images, applies per image with a 10 MiB handler limit. For download, default/max is 52428800.',
+          minimum: 1,
+          maximum: 52428800,
         },
         title: {
           type: 'string',
@@ -801,6 +837,8 @@ async function registerLinearTools(pi) {
               return await executeIssueView(client, params);
             case 'images':
               return await executeIssueImages(client, params);
+            case 'download':
+              return await executeIssueDownload(client, params, { settings });
             case 'activity':
               return await executeIssueActivity(client, params);
             case 'create':
@@ -1121,7 +1159,7 @@ export default async function piLinearToolsExtension(pi) {
   // Safety wrapper: never let extension errors crash pi
   try {
   pi.registerCommand('linear-tools-config', {
-    description: 'Configure pi-linear-tools settings (API key, default team, rate limit debug)',
+    description: 'Configure pi-linear-tools settings (API key, default team, rate limit debug, file overwrite guard)',
     handler: async (argsText, ctx) => {
       const args = parseArgs(argsText);
       const apiKey = readFlag(args, '--api-key');
@@ -1129,6 +1167,7 @@ export default async function piLinearToolsExtension(pi) {
       const projectTeam = readFlag(args, '--team');
       const projectName = readFlag(args, '--project');
       const rateLimitDebug = readFlag(args, '--rate-limit-debug');
+      const allowOverwriteFiles = readFlag(args, '--allow-overwrite-files');
 
       if (apiKey) {
         const settings = await loadSettings();
@@ -1156,6 +1195,17 @@ export default async function piLinearToolsExtension(pi) {
         await saveSettings(settings);
         if (ctx?.hasUI) {
           ctx.ui.notify(`Rate limit debug ${enabled ? 'enabled' : 'disabled'}`, 'info');
+        }
+        return;
+      }
+
+      if (allowOverwriteFiles) {
+        const settings = await loadSettings();
+        const enabled = allowOverwriteFiles === 'true' || allowOverwriteFiles === '1';
+        settings.allow_overwrite_files = enabled;
+        await saveSettings(settings);
+        if (ctx?.hasUI) {
+          ctx.ui.notify(`File overwrite guard ${enabled ? 'allows overwrites' : 'blocks overwrites'}`, 'info');
         }
         return;
       }
@@ -1203,13 +1253,13 @@ export default async function piLinearToolsExtension(pi) {
         return;
       }
 
-      if (!apiKey && !defaultTeam && !projectTeam && !projectName && !rateLimitDebug && ctx?.hasUI && ctx?.ui) {
+      if (!apiKey && !defaultTeam && !projectTeam && !projectName && !rateLimitDebug && !allowOverwriteFiles && ctx?.hasUI && ctx?.ui) {
         await runInteractiveConfigFlow(ctx, pi);
         return;
       }
 
       // Show current settings if no valid action was specified
-      if (apiKey || defaultTeam || projectTeam || projectName || rateLimitDebug) {
+      if (apiKey || defaultTeam || projectTeam || projectName || rateLimitDebug || allowOverwriteFiles) {
         // Actions above already handled and returned
         return;
       }
@@ -1220,7 +1270,7 @@ export default async function piLinearToolsExtension(pi) {
 
       pi.sendMessage({
         customType: 'pi-linear-tools',
-        content: `Configuration:\n  LINEAR_API_KEY: ${hasKey ? 'configured' : 'not set'} (source: ${keySource})\n  Default workspace: ${settings.defaultWorkspace?.name || 'not set'}\n  Default team: ${settings.defaultTeam || 'not set'}\n  Rate limit debug: ${settings.rateLimitDebug ? 'enabled' : 'disabled'}\n  Project team mappings: ${Object.keys(settings.projects || {}).length}\n\nCommands:\n  /linear-tools-config --api-key lin_xxx\n  /linear-tools-config --default-team ENG\n  /linear-tools-config --team ENG --project MyProject\n  /linear-tools-config --rate-limit-debug true|false\n\nNote: environment LINEAR_API_KEY takes precedence over settings file.`,
+        content: `Configuration:\n  LINEAR_API_KEY: ${hasKey ? 'configured' : 'not set'} (source: ${keySource})\n  Default workspace: ${settings.defaultWorkspace?.name || 'not set'}\n  Default team: ${settings.defaultTeam || 'not set'}\n  Rate limit debug: ${settings.rateLimitDebug ? 'enabled' : 'disabled'}\n  Allow overwrite files: ${settings.allow_overwrite_files ? 'enabled' : 'disabled'}\n  Project team mappings: ${Object.keys(settings.projects || {}).length}\n\nCommands:\n  /linear-tools-config --api-key lin_xxx\n  /linear-tools-config --default-team ENG\n  /linear-tools-config --team ENG --project MyProject\n  /linear-tools-config --rate-limit-debug true|false\n  /linear-tools-config --allow-overwrite-files true|false\n\nNote: environment LINEAR_API_KEY takes precedence over settings file.`,
         display: true,
       });
     },
@@ -1246,7 +1296,7 @@ export default async function piLinearToolsExtension(pi) {
       const showMilestoneTool = await shouldExposeMilestoneTool();
       const toolLines = [
         'LLM-callable tools:',
-        '  linear_issue (list/view/images/activity/create/update/comment/start/delete)',
+        '  linear_issue (list/view/images/download/activity/create/update/comment/start/delete)',
         '  linear_project (list/view/create/update/delete/archive/unarchive)',
         '  linear_project_update (list/view/create/update/archive/unarchive)',
         '  linear_team (list)',
@@ -1266,6 +1316,7 @@ export default async function piLinearToolsExtension(pi) {
           '  /linear-tools-config --default-team <team-key>',
           '  /linear-tools-config --team <team-key> --project <project-name-or-id>',
           '  /linear-tools-config --rate-limit-debug true|false',
+          '  /linear-tools-config --allow-overwrite-files true|false',
           '  /linear-tools-help',
           '  /linear-tools-reload',
           '',

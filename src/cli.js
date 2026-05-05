@@ -19,6 +19,7 @@ import {
   executeIssueList,
   executeIssueView,
   executeIssueImages,
+  executeIssueDownload,
   executeIssueActivity,
   executeIssueCreate,
   executeIssueUpdate,
@@ -165,6 +166,8 @@ Other commands:
   config                        Show current configuration
   config --api-key <key>        Set Linear API key (legacy)
   config --default-team <key>   Set default team
+  config --allow-overwrite-files true|false
+                                Allow issue download overwrites when requested
 
 Auth Actions:
   login    Authenticate with Linear via OAuth 2.0
@@ -174,7 +177,9 @@ Auth Actions:
 Issue Actions:
   list [--project X] [--states X,Y] [--assignee me|all] [--team X] [--limit N]
   view <issue> [--no-comments]
-  images <issue> [--no-comments] [--limit N]
+  images <issue> [--no-comments] [--limit N] [--max-bytes N]
+  download <issue> --directory DIR [--attachment-id ID|--attachment-title TITLE|--attachment-url URL|--attachment-index N]
+         [--filename NAME] [--overwrite true|false] [--max-bytes N]
   activity <issue> [--limit N] [--include-archived true|false]
   create --title X [--team X] [--project X] [--description X] [--priority 0-4|name] [--assignee me|ID]
   update <issue> [--title X] [--description X] [--state X] [--priority 0-4|name]
@@ -295,6 +300,7 @@ Actions:
   view      View issue details
   images    Fetch image attachments embedded in issue markdown/comments
   activity  View issue activity/history
+  download  Download a Linear issue attachment
   create    Create a new issue
   update    Update an existing issue
   comment   Add a comment to an issue
@@ -316,6 +322,18 @@ Images Options:
   <issue>          Issue key (e.g., ENG-123), ID, or issue URL
   --no-comments    Exclude images from comments
   --limit N        Max images to fetch (default: 10)
+  --max-bytes N    Max bytes per image (default/max: 10485760)
+
+Download Options:
+  <issue>              Issue key, ID, or issue URL
+  --directory DIR      Relative destination directory (required)
+  --attachment-id ID   Attachment ID selector
+  --attachment-title X Attachment title selector (must be unique)
+  --attachment-url URL Attachment URL selector
+  --attachment-index N 1-based attachment index selector
+  --filename NAME      Optional output filename
+  --overwrite X        true or false (default: false; requires config guard)
+  --max-bytes N        Max download bytes (default/max: 52428800)
 
 Activity Options:
   <issue>          Issue key, ID, or issue URL
@@ -360,6 +378,7 @@ Examples:
   pi-linear-tools issue comment ENG-123 --body "Ready for review"
   pi-linear-tools issue activity ENG-123 --limit 20
   pi-linear-tools issue activity https://linear.app/workspace/issue/ENG-123/example --limit 20
+  pi-linear-tools issue download ENG-123 --attachment-index 1 --directory downloads
 `);
 }
 
@@ -738,6 +757,7 @@ async function handleConfig(args) {
   const defaultTeam = readFlag(args, '--default-team');
   const projectTeam = readFlag(args, '--team');
   const projectName = readFlag(args, '--project');
+  const allowOverwriteFiles = readFlag(args, '--allow-overwrite-files');
 
   if (apiKey) {
     const settings = await loadSettings();
@@ -754,6 +774,19 @@ async function handleConfig(args) {
     settings.defaultTeam = defaultTeam;
     await saveSettings(settings);
     console.log(`Default team set to: ${defaultTeam}`);
+    return;
+  }
+
+  if (allowOverwriteFiles !== undefined) {
+    const enabled = parseBoolean(allowOverwriteFiles);
+    if (enabled === undefined) {
+      throw new Error('Invalid value for --allow-overwrite-files. Use true or false.');
+    }
+
+    const settings = await loadSettings();
+    settings.allow_overwrite_files = enabled;
+    await saveSettings(settings);
+    console.log(`File overwrite guard ${enabled ? 'allows overwrites' : 'blocks overwrites'}`);
     return;
   }
 
@@ -786,12 +819,14 @@ async function handleConfig(args) {
   console.log(`Configuration:
   LINEAR_API_KEY: ${hasKey ? 'configured' : 'not set'} (source: ${keySource})
   Default team: ${settings.defaultTeam || 'not set'}
+  Allow overwrite files: ${settings.allow_overwrite_files ? 'enabled' : 'disabled'}
   Project team mappings: ${Object.keys(settings.projects || {}).length}
 
 Commands:
   pi-linear-tools config --api-key lin_xxx
   pi-linear-tools config --default-team ENG
-  pi-linear-tools config --team ENG --project MyProject`);
+  pi-linear-tools config --team ENG --project MyProject
+  pi-linear-tools config --allow-overwrite-files true|false`);
 }
 
 // ===== ISSUE HANDLERS =====
@@ -840,6 +875,7 @@ async function handleIssueImages(args) {
     issue: positional[0],
     includeComments: !hasFlag(args, '--no-comments'),
     limit: parseNumber(readFlag(args, '--limit')),
+    maxBytes: parseNumber(readFlag(args, '--max-bytes')),
   };
 
   const result = await executeIssueImages(client, params);
@@ -861,6 +897,32 @@ async function handleIssueActivity(args) {
   };
 
   const result = await executeIssueActivity(client, params);
+  console.log(result.content[0].text);
+}
+
+async function handleIssueDownload(args) {
+  const client = await createAuthenticatedClient();
+  const settings = await loadSettings();
+
+  const positional = args.filter((a) => !a.startsWith('-'));
+  if (positional.length === 0) {
+    throw new Error('Missing required argument: issue key or ID');
+  }
+
+  const overwrite = parseBoolean(readFlag(args, '--overwrite'));
+  const params = {
+    issue: positional[0],
+    attachmentId: readFlag(args, '--attachment-id'),
+    attachmentTitle: readFlag(args, '--attachment-title'),
+    attachmentUrl: readFlag(args, '--attachment-url'),
+    attachmentIndex: parseNumber(readFlag(args, '--attachment-index')),
+    directory: readFlag(args, '--directory'),
+    filename: readFlag(args, '--filename'),
+    overwrite: overwrite === undefined ? undefined : overwrite,
+    maxBytes: parseNumber(readFlag(args, '--max-bytes')),
+  };
+
+  const result = await executeIssueDownload(client, params, { settings });
   console.log(result.content[0].text);
 }
 
@@ -979,6 +1041,8 @@ async function handleIssue(args) {
       return handleIssueView(rest);
     case 'images':
       return handleIssueImages(rest);
+    case 'download':
+      return handleIssueDownload(rest);
     case 'activity':
       return handleIssueActivity(rest);
     case 'create':
