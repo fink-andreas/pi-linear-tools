@@ -6,6 +6,7 @@ This document contains smoke tests for all Linear MCP tools. Run these tests per
 
 - Ensure Linear API credentials are configured
 - Be aware of rate limiting (avoid running too many tests in succession)
+- For image/attachment issue tests, use an issue that contains at least one markdown-embedded image in the description or comments and at least one Linear attachment. Replace `INN-259` below if needed.
 
 ---
 
@@ -111,11 +112,42 @@ linear_issue(action="view", issue="INN-259")
 ```
 **Expected:** Returns full issue details including state, team, project, assignee, priority, comments, and attachments when present.
 
-### Test 13a: Download Issue Attachment
+### Test 13a: Fetch Issue Images
+```
+linear_issue(action="images", issue="INN-259", limit=5)
+```
+**Expected:** Returns a text summary plus `image` content items for markdown/HTML images embedded in the issue description or comments. Reports failed image fetches without failing the whole request.
+
+### Test 13b: Fetch Issue Images Without Comments
+```
+linear_issue(action="images", issue="INN-259", includeComments=false, limit=5)
+```
+**Expected:** Returns only images embedded in the issue description, excluding comment images.
+
+### Test 13c: Download Issue Attachment by Index
 ```
 linear_issue(action="download", issue="INN-259", attachmentIndex=1, directory="downloads", overwrite=false)
 ```
-**Expected:** Downloads the first Linear issue attachment into the relative `downloads` directory. Existing files are not overwritten unless `overwrite=true` and `/linear-tools-config --allow-overwrite-files true` has been set.
+**Expected:** Downloads the first Linear issue attachment into the relative `downloads` directory and returns the destination path, source URL, and bytes written. Existing files are not overwritten by default.
+
+### Test 13d: Download Issue Attachment by Explicit Selector
+```
+linear_issue(
+  action="download",
+  issue="INN-259",
+  attachmentTitle="<ATTACHMENT_TITLE>",
+  directory="downloads",
+  filename="smoke-test-attachment",
+  overwrite=false
+)
+```
+**Expected:** Downloads the matching attachment using the provided safe filename. If multiple attachments share the same title, the tool asks for a more specific selector such as `attachmentId`.
+
+### Test 13e: Attachment Download Overwrite Guard
+```
+linear_issue(action="download", issue="INN-259", attachmentIndex=1, directory="downloads", overwrite=true)
+```
+**Expected:** Fails unless overwrite support has been explicitly enabled with `/linear-tools-config --allow-overwrite-files true`. Re-run with `overwrite=false` or enable the guard only when intentionally replacing local files.
 
 ### Test 14: Create Issue
 ```
@@ -381,3 +413,4 @@ After running smoke tests, clean up test data:
 - [ ] Delete test milestones: `linear_milestone(action="delete", milestone="<ID>")`
 - [ ] Delete test projects: `linear_project(action="delete", project="<ID>")`
 - [ ] Archive test project updates: `linear_project_update(action="archive", projectUpdate="<ID>")`
+- [ ] Remove downloaded smoke-test files from `downloads/` if attachment tests were run
