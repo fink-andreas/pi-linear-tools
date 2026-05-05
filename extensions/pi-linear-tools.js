@@ -48,6 +48,7 @@ try {
 import {
   executeIssueList,
   executeIssueView,
+  executeIssueImages,
   executeIssueActivity,
   executeIssueCreate,
   executeIssueUpdate,
@@ -640,18 +641,18 @@ async function registerLinearTools(pi) {
     name: 'linear_issue',
     label: 'Linear Issue',
     description: 'Interact with Linear issues.',
-    promptSnippet: 'Interact with Linear issues (list, view, activity, create, update, comment, start, delete)',
+    promptSnippet: 'Interact with Linear issues (list, view, images, activity, create, update, comment, start, delete)',
     parameters: {
       type: 'object',
       properties: {
         action: {
           type: 'string',
-          enum: ['list', 'view', 'activity', 'create', 'update', 'comment', 'start', 'delete'],
+          enum: ['list', 'view', 'images', 'activity', 'create', 'update', 'comment', 'start', 'delete'],
           description: 'Action to perform on issue(s)',
         },
         issue: {
           type: 'string',
-          description: 'Issue key (ABC-123) or Linear issue ID (for view, activity, update, comment, start, delete)',
+          description: 'Issue key (ABC-123) or Linear issue ID (for view, images, activity, update, comment, start, delete)',
         },
         project: {
           type: 'string',
@@ -798,6 +799,8 @@ async function registerLinearTools(pi) {
               return await executeIssueList(client, params);
             case 'view':
               return await executeIssueView(client, params);
+            case 'images':
+              return await executeIssueImages(client, params);
             case 'activity':
               return await executeIssueActivity(client, params);
             case 'create':
@@ -1243,7 +1246,7 @@ export default async function piLinearToolsExtension(pi) {
       const showMilestoneTool = await shouldExposeMilestoneTool();
       const toolLines = [
         'LLM-callable tools:',
-        '  linear_issue (list/view/activity/create/update/comment/start/delete)',
+        '  linear_issue (list/view/images/activity/create/update/comment/start/delete)',
         '  linear_project (list/view/create/update/delete/archive/unarchive)',
         '  linear_project_update (list/view/create/update/archive/unarchive)',
         '  linear_team (list)',

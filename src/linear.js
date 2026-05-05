@@ -2903,6 +2903,145 @@ export async function fetchIssueDetails(client, issueRef, options = {}) {
   }, 'fetchIssueDetails');
 }
 
+function extractMarkdownImages(markdown, source) {
+  if (!markdown || typeof markdown !== 'string') return [];
+
+  const images = [];
+  const markdownImagePattern = /!\[([^\]]*)\]\(([^\s)]+)(?:\s+"[^"]*")?\)/g;
+  const htmlImagePattern = /<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/gi;
+
+  let match;
+  while ((match = markdownImagePattern.exec(markdown)) !== null) {
+    images.push({ alt: match[1] || null, url: match[2], source });
+  }
+  while ((match = htmlImagePattern.exec(markdown)) !== null) {
+    images.push({ alt: null, url: match[1], source });
+  }
+
+  return images;
+}
+
+function isImageUrl(url) {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function isLinearUploadUrl(url) {
+  try {
+    const hostname = new URL(url).hostname.toLowerCase();
+    return hostname === 'uploads.linear.app' || hostname.endsWith('.uploads.linear.app');
+  } catch {
+    return false;
+  }
+}
+
+function getLinearAuthHeaderValue(client, mode = 'raw') {
+  const token = client?.__piLinearTrackerKey || client?.apiKey || null;
+  if (!token || token === 'default') return null;
+  return mode === 'bearer' ? `Bearer ${token}` : token;
+}
+
+async function fetchImageUrl(client, url, options = {}) {
+  const { maxBytes = 10 * 1024 * 1024 } = options;
+  const attempts = [{ headers: {} }];
+
+  if (isLinearUploadUrl(url)) {
+    const rawAuth = getLinearAuthHeaderValue(client, 'raw');
+    const bearerAuth = getLinearAuthHeaderValue(client, 'bearer');
+    if (rawAuth) attempts.push({ headers: { authorization: rawAuth } });
+    if (bearerAuth) attempts.push({ headers: { authorization: bearerAuth } });
+  }
+
+  let lastError = null;
+  for (const attempt of attempts) {
+    try {
+      const response = await fetch(url, { headers: attempt.headers, redirect: 'follow' });
+      if (!response.ok) {
+        lastError = new Error(`HTTP ${response.status} ${response.statusText}`);
+        continue;
+      }
+
+      const contentType = response.headers.get('content-type') || 'application/octet-stream';
+      if (!contentType.toLowerCase().startsWith('image/')) {
+        lastError = new Error(`URL did not return an image (content-type: ${contentType})`);
+        continue;
+      }
+
+      const contentLength = Number(response.headers.get('content-length') || 0);
+      if (contentLength > maxBytes) {
+        throw new Error(`Image is too large (${contentLength} bytes, max ${maxBytes})`);
+      }
+
+      const buffer = Buffer.from(await response.arrayBuffer());
+      if (buffer.length > maxBytes) {
+        throw new Error(`Image is too large (${buffer.length} bytes, max ${maxBytes})`);
+      }
+
+      return {
+        data: buffer.toString('base64'),
+        mimeType: contentType.split(';')[0].trim() || 'application/octet-stream',
+        sizeBytes: buffer.length,
+      };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError || new Error('Failed to fetch image');
+}
+
+export async function fetchIssueImages(client, issueRef, options = {}) {
+  return withLinearErrorHandling(async () => {
+    const { includeComments = true, limit = 10, maxBytes = 10 * 1024 * 1024 } = options;
+    const issueData = await fetchIssueDetails(client, issueRef, { includeComments });
+    const candidates = [];
+
+    candidates.push(...extractMarkdownImages(issueData.description, 'description'));
+    if (includeComments) {
+      for (const comment of issueData.comments || []) {
+        candidates.push(...extractMarkdownImages(comment.body, `comment:${comment.id}`));
+      }
+    }
+
+    const seen = new Set();
+    const uniqueCandidates = candidates
+      .filter((candidate) => candidate.url && isImageUrl(candidate.url))
+      .filter((candidate) => {
+        if (seen.has(candidate.url)) return false;
+        seen.add(candidate.url);
+        return true;
+      })
+      .slice(0, limit);
+
+    const images = [];
+    const failures = [];
+    for (const candidate of uniqueCandidates) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const image = await fetchImageUrl(client, candidate.url, { maxBytes });
+        images.push({ ...candidate, ...image });
+      } catch (error) {
+        failures.push({ ...candidate, error: error?.message || String(error) });
+      }
+    }
+
+    return {
+      issue: {
+        identifier: issueData.identifier,
+        title: issueData.title,
+        url: issueData.url,
+      },
+      images,
+      failures,
+      totalCandidates: candidates.length,
+    };
+  }, 'fetchIssueImages');
+}
+
 export async function fetchIssueActivity(client, issueRef, options = {}) {
   return withLinearErrorHandling(async () => {
     const limit = normalizePositiveInteger(options.limit, 'limit', 20);
