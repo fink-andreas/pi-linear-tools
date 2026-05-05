@@ -6,6 +6,7 @@ import {
   createIssue,
   deleteIssue,
   fetchIssueDetails,
+  fetchIssueImages,
   fetchProjectMilestones,
   fetchProjects,
   fetchTeams,
@@ -495,7 +496,67 @@ async function run() {
     console.log('✓ fetchIssueDetails comment query path');
   }
 
-  // Test 13: createIssue uses GraphQL mutation path when available
+  // Test 13: fetchIssueImages extracts markdown images and authenticates Linear uploads
+  {
+    const issueId = '99999999-1234-1234-1234-123456789abe';
+    const imageUrl = 'https://uploads.linear.app/workspace/asset/image-id';
+    let rawRequestCalls = 0;
+    let fetchCalls = 0;
+    const originalFetch = globalThis.fetch;
+
+    const client = {
+      apiKey: 'lin_test_raw_key',
+      __piLinearTrackerKey: 'lin_test_raw_key',
+      rawRequest: async (_query, variables) => {
+        rawRequestCalls += 1;
+        if (variables.id !== issueId) {
+          throw new Error(`Unexpected issue id: ${variables.id}`);
+        }
+        return {
+          data: {
+            issue: {
+              id: issueId,
+              identifier: 'ENG-203',
+              title: 'Issue with image',
+              description: `Screenshot ![screen](${imageUrl})`,
+              url: 'https://linear.app/example/issue/ENG-203',
+              state: { id: 'state-1', name: 'Backlog', color: '#ccc', type: 'backlog' },
+              team: { id: 'team-1', key: 'ENG', name: 'Engineering' },
+              labels: { nodes: [] },
+              children: { nodes: [] },
+              attachments: { nodes: [] },
+              comments: { nodes: [] },
+            },
+          },
+          headers: new Headers(),
+        };
+      },
+    };
+
+    try {
+      globalThis.fetch = async (url, options = {}) => {
+        fetchCalls += 1;
+        if (url !== imageUrl) {
+          throw new Error(`Unexpected fetch URL: ${url}`);
+        }
+        if (options.headers?.authorization !== 'lin_test_raw_key') {
+          return new Response('{"error":"unauthorized"}', { status: 401, headers: { 'content-type': 'application/json' } });
+        }
+        return new Response(Buffer.from('png-bytes'), { status: 200, headers: { 'content-type': 'image/png', 'content-length': '9' } });
+      };
+
+      const result = await fetchIssueImages(client, issueId, { includeComments: true });
+      if (rawRequestCalls !== 1 || fetchCalls !== 2 || result.images.length !== 1 || result.images[0].mimeType !== 'image/png') {
+        console.error('✗ fetchIssueImages authenticated upload path failed', { rawRequestCalls, fetchCalls, result });
+        process.exit(1);
+      }
+      console.log('✓ fetchIssueImages authenticated upload path');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }
+
+  // Test 14: createIssue uses GraphQL mutation path when available
   {
     let rawRequestCalls = 0;
     const client = {

@@ -21,6 +21,7 @@ import {
   resolveMilestoneRef,
   getTeamWorkflowStates,
   fetchIssueDetails,
+  fetchIssueImages,
   fetchIssueActivity,
   formatIssueAsMarkdown,
   formatIssueActivityAsMarkdown,
@@ -86,6 +87,7 @@ function parseRefList(value) {
 }
 
 const DEFAULT_MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024;
+const DEFAULT_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
 function hasValue(value) {
   return value !== undefined && value !== null && String(value).trim() !== '';
@@ -215,6 +217,18 @@ function normalizeMaxBytes(value) {
   }
   if (maxBytes > DEFAULT_MAX_DOWNLOAD_BYTES) {
     throw new Error(`maxBytes cannot exceed ${DEFAULT_MAX_DOWNLOAD_BYTES} bytes`);
+  }
+  return maxBytes;
+}
+
+function normalizeImageMaxBytes(value) {
+  if (value === undefined || value === null || value === '') return DEFAULT_MAX_IMAGE_BYTES;
+  const maxBytes = Number(value);
+  if (!Number.isInteger(maxBytes) || maxBytes <= 0) {
+    throw new Error('maxBytes must be a positive integer');
+  }
+  if (maxBytes > DEFAULT_MAX_IMAGE_BYTES) {
+    throw new Error(`maxBytes cannot exceed ${DEFAULT_MAX_IMAGE_BYTES} bytes for images`);
   }
   return maxBytes;
 }
@@ -454,6 +468,61 @@ export async function executeIssueView(client, params) {
       title: issueData.title,
       state: issueData.state,
       url: issueData.url,
+    },
+  };
+}
+
+export async function executeIssueImages(client, params) {
+  const issue = ensureNonEmpty(params.issue, 'issue');
+  const includeComments = params.includeComments !== false;
+  const maxBytes = normalizeImageMaxBytes(params.maxBytes);
+  const imageData = await fetchIssueImages(client, issue, {
+    includeComments,
+    limit: params.limit || 10,
+    maxBytes,
+  });
+
+  const lines = [
+    `# Images for ${imageData.issue.identifier}: ${imageData.issue.title}`,
+    '',
+  ];
+
+  if (imageData.images.length === 0) {
+    lines.push('No fetchable markdown images found.');
+  } else {
+    lines.push(`Fetched ${imageData.images.length} image${imageData.images.length === 1 ? '' : 's'}.`);
+    lines.push('');
+    imageData.images.forEach((image, index) => {
+      lines.push(`- **Image ${index + 1}**${image.alt ? ` (${image.alt})` : ''}: ${image.url}`);
+      lines.push(`  _${image.mimeType}, ${image.sizeBytes} bytes, source: ${image.source}_`);
+    });
+  }
+
+  if (imageData.failures.length > 0) {
+    lines.push('');
+    lines.push('## Failed image fetches');
+    lines.push('');
+    for (const failure of imageData.failures) {
+      lines.push(`- ${failure.url} — ${failure.error}`);
+    }
+  }
+
+  return {
+    content: [
+      { type: 'text', text: lines.join('\n') },
+      ...imageData.images.map((image) => ({
+        type: 'image',
+        data: image.data,
+        mimeType: image.mimeType,
+      })),
+    ],
+    details: {
+      issue: imageData.issue,
+      imageCount: imageData.images.length,
+      failureCount: imageData.failures.length,
+      totalCandidates: imageData.totalCandidates,
+      images: imageData.images.map(({ data, ...image }) => image),
+      failures: imageData.failures,
     },
   };
 }

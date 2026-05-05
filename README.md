@@ -68,7 +68,9 @@ Reference conventions:
 ## LLM-callable tools
 
 ### `linear_issue`
-Actions: `list`, `view`, `download`, `activity`, `create`, `update`, `comment`, `start`, `delete`
+Actions: `list`, `view`, `images`, `download`, `activity`, `create`, `update`, `comment`, `start`, `delete`
+
+`images` fetches image URLs embedded in issue markdown/comments and returns image content inline.
 
 `download` fetches Linear issue attachments only. Destination directories must be relative paths. Existing files are not overwritten unless both `overwrite: true` is provided and the config guard is enabled with `/linear-tools-config --allow-overwrite-files true`.
 
@@ -102,7 +104,7 @@ pi-linear-tools config --allow-overwrite-files true|false
 
 ### Issue commands
 
-Use `update` to change the issue itself. Use `comment` to add discussion. Use `activity` to read the Activity timeline shown in Linear.
+Use `update` to change the issue itself. Use `comment` to add discussion. Use `activity` to read the Activity timeline shown in Linear. Use `images` to fetch image attachments embedded in issue markdown/comments.
 
 ```bash
 # List issues
@@ -113,6 +115,10 @@ pi-linear-tools issue list --project "My Project" --assignee me
 # View issue details
 pi-linear-tools issue view ENG-123
 pi-linear-tools issue view ENG-123 --no-comments
+
+# Fetch markdown-embedded issue/comment images
+pi-linear-tools issue images ENG-123
+pi-linear-tools issue images ENG-123 --limit 5
 
 # Read Activity timeline
 pi-linear-tools issue activity ENG-123 --limit 20

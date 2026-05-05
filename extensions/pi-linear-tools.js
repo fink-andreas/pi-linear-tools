@@ -48,6 +48,7 @@ try {
 import {
   executeIssueList,
   executeIssueView,
+  executeIssueImages,
   executeIssueDownload,
   executeIssueActivity,
   executeIssueCreate,
@@ -641,18 +642,18 @@ async function registerLinearTools(pi) {
     name: 'linear_issue',
     label: 'Linear Issue',
     description: 'Interact with Linear issues.',
-    promptSnippet: 'Interact with Linear issues (list, view, download, activity, create, update, comment, start, delete)',
+    promptSnippet: 'Interact with Linear issues (list, view, images, download, activity, create, update, comment, start, delete)',
     parameters: {
       type: 'object',
       properties: {
         action: {
           type: 'string',
-          enum: ['list', 'view', 'download', 'activity', 'create', 'update', 'comment', 'start', 'delete'],
+          enum: ['list', 'view', 'images', 'download', 'activity', 'create', 'update', 'comment', 'start', 'delete'],
           description: 'Action to perform on issue(s)',
         },
         issue: {
           type: 'string',
-          description: 'Issue key (ABC-123) or Linear issue ID (for view, download, activity, update, comment, start, delete)',
+          description: 'Issue key (ABC-123) or Linear issue ID (for view, images, download, activity, update, comment, start, delete)',
         },
         project: {
           type: 'string',
@@ -673,11 +674,11 @@ async function registerLinearTools(pi) {
         },
         limit: {
           type: 'integer',
-          description: 'Maximum number of issues or activity entries to list',
+          description: 'Maximum number of issues, activity entries, or images to fetch',
         },
         includeComments: {
           type: 'boolean',
-          description: 'Include comments when viewing issue (default: true)',
+          description: 'Include comments when viewing an issue or fetching images (default: true)',
         },
         attachmentId: {
           type: 'string',
@@ -710,7 +711,7 @@ async function registerLinearTools(pi) {
         },
         maxBytes: {
           type: 'integer',
-          description: 'Maximum download size in bytes (default/max: 52428800).',
+          description: 'Maximum bytes to fetch. For images, applies per image with a 10 MiB handler limit. For download, default/max is 52428800.',
           minimum: 1,
           maximum: 52428800,
         },
@@ -834,6 +835,8 @@ async function registerLinearTools(pi) {
               return await executeIssueList(client, params);
             case 'view':
               return await executeIssueView(client, params);
+            case 'images':
+              return await executeIssueImages(client, params);
             case 'download':
               return await executeIssueDownload(client, params, { settings });
             case 'activity':
@@ -1293,7 +1296,7 @@ export default async function piLinearToolsExtension(pi) {
       const showMilestoneTool = await shouldExposeMilestoneTool();
       const toolLines = [
         'LLM-callable tools:',
-        '  linear_issue (list/view/download/activity/create/update/comment/start/delete)',
+        '  linear_issue (list/view/images/download/activity/create/update/comment/start/delete)',
         '  linear_project (list/view/create/update/delete/archive/unarchive)',
         '  linear_project_update (list/view/create/update/archive/unarchive)',
         '  linear_team (list)',

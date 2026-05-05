@@ -76,6 +76,7 @@ async function testRegistrationIncludesMilestoneWithDefaultApiKeyMode() {
     assert.ok(issueTool);
     assert.equal(issueTool.description, 'Interact with Linear issues.');
     assert.ok(issueTool.parameters.properties.action.enum.includes('activity'));
+    assert.ok(issueTool.parameters.properties.action.enum.includes('images'));
     assert.ok(issueTool.parameters.properties.action.enum.includes('download'));
     assert.equal(issueTool.parameters.properties.maxBytes.maximum, 52428800);
     assert.equal(issueTool.parameters.properties.directory.type, 'string');

@@ -18,6 +18,7 @@ import {
 import {
   executeIssueList,
   executeIssueView,
+  executeIssueImages,
   executeIssueDownload,
   executeIssueActivity,
   executeIssueCreate,
@@ -176,6 +177,7 @@ Auth Actions:
 Issue Actions:
   list [--project X] [--states X,Y] [--assignee me|all] [--team X] [--limit N]
   view <issue> [--no-comments]
+  images <issue> [--no-comments] [--limit N] [--max-bytes N]
   download <issue> --directory DIR [--attachment-id ID|--attachment-title TITLE|--attachment-url URL|--attachment-index N]
          [--filename NAME] [--overwrite true|false] [--max-bytes N]
   activity <issue> [--limit N] [--include-archived true|false]
@@ -291,10 +293,12 @@ Guidance:
   Use "update" to change the issue itself: title, description, state, assignee, milestone, or parent.
   Use "comment" to add a discussion entry.
   Use "activity" to read the Activity timeline shown in Linear.
+  Use "images" to fetch image attachments embedded in issue markdown/comments.
 
 Actions:
   list      List issues in a project
   view      View issue details
+  images    Fetch image attachments embedded in issue markdown/comments
   activity  View issue activity/history
   download  Download a Linear issue attachment
   create    Create a new issue
@@ -313,6 +317,12 @@ List Options:
 View Options:
   <issue>          Issue key (e.g., ENG-123), ID, or issue URL
   --no-comments    Exclude comments from output
+
+Images Options:
+  <issue>          Issue key (e.g., ENG-123), ID, or issue URL
+  --no-comments    Exclude images from comments
+  --limit N        Max images to fetch (default: 10)
+  --max-bytes N    Max bytes per image (default/max: 10485760)
 
 Download Options:
   <issue>              Issue key, ID, or issue URL
@@ -853,6 +863,25 @@ async function handleIssueView(args) {
   console.log(result.content[0].text);
 }
 
+async function handleIssueImages(args) {
+  const client = await createAuthenticatedClient();
+
+  const positional = args.filter((a) => !a.startsWith('-'));
+  if (positional.length === 0) {
+    throw new Error('Missing required argument: issue key or ID');
+  }
+
+  const params = {
+    issue: positional[0],
+    includeComments: !hasFlag(args, '--no-comments'),
+    limit: parseNumber(readFlag(args, '--limit')),
+    maxBytes: parseNumber(readFlag(args, '--max-bytes')),
+  };
+
+  const result = await executeIssueImages(client, params);
+  console.log(result.content[0].text);
+}
+
 async function handleIssueActivity(args) {
   const client = await createAuthenticatedClient();
 
@@ -1010,6 +1039,8 @@ async function handleIssue(args) {
       return handleIssueList(rest);
     case 'view':
       return handleIssueView(rest);
+    case 'images':
+      return handleIssueImages(rest);
     case 'download':
       return handleIssueDownload(rest);
     case 'activity':
