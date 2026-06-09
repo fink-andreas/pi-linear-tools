@@ -1,5 +1,36 @@
 # Changelog
 
+## v0.7.1 (2026-06-09)
+
+Patch release for issue creation milestone assignment and configuration text cleanup.
+
+### Bug Fixes
+- **Fixed issue create milestone assignment**: `linear_issue create` now assigns project milestones when `milestone` or `projectMilestoneId` is provided.
+- **Fixed configuration text typo**: Corrected config command/help text in the pi extension.
+
+### Release Maintenance
+- Updated package metadata to `0.7.1`.
+
+## v0.7.0 (2026-06-09)
+
+Issue image fetching and file download release.
+
+### New Features
+- **Issue image fetching**: Added `linear_issue(action="images")` to fetch embedded markdown/HTML images from issue descriptions and comments as tool image content.
+- **Issue attachment downloads**: Added `linear_issue(action="download")` to download Linear issue attachments to validated local paths with filename sanitization and overwrite controls.
+- **Workspace-wide issue listing**: `linear_issue list` can now list across the workspace without requiring a project context.
+- **Overwrite configuration**: Added `allow_overwrite_files` config support via `/linear-tools-config` and `pi-linear-tools config`.
+
+### Bug Fixes
+- Fixed project archive mutation so `archiveProject` archives instead of deleting projects.
+- Fixed comment rendering so submitted comment text appears in `linear_issue comment` results.
+- Fixed rate-limit display to reflect actual complexity-based limits instead of a hardcoded total.
+- Added project and project-update rate-limit pre-checks.
+
+### Documentation
+- Added smoke test coverage for image and attachment workflows.
+- Added dedicated release notes in `docs/RELEASE_NOTES_v0.7.0.md`.
+
 ## v0.6.0 (2026-04-23)
 
 Rate-limit resilience for milestone operations.
