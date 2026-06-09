@@ -3150,6 +3150,7 @@ export async function setIssueState(client, issueId, stateId) {
  * @param {string} [input.projectId] - Project ID
  * @param {number|string} [input.priority] - Issue priority: 0=None, 1=Urgent, 2=High, 3=Medium, 4=Low; or none/urgent/high/medium/low
  * @param {string} [input.assigneeId] - Assignee ID
+ * @param {string} [input.projectMilestoneId] - Project milestone ID
  * @param {string} [input.parentId] - Parent issue ID for sub-issues
  * @returns {Promise<Object>} Created issue
  */
@@ -3202,6 +3203,10 @@ export async function createIssue(client, input) {
       createInput.stateId = input.stateId;
     }
 
+    if (input.projectMilestoneId !== undefined) {
+      createInput.projectMilestoneId = input.projectMilestoneId;
+    }
+
     if (getRawRequest(client)) {
       const payload = await executeGraphQL(client, ISSUE_CREATE_MUTATION, { input: createInput });
       if (!payload?.issueCreate?.success) {
@@ -3245,6 +3250,9 @@ export async function createIssue(client, input) {
         state: null,
         team: null,
         project: null,
+        projectMilestone: createInput.projectMilestoneId
+          ? { id: createInput.projectMilestoneId, name: 'Unknown' }
+          : null,
         assignee: null,
       };
     }
@@ -3259,6 +3267,9 @@ export async function createIssue(client, input) {
       state: null,
       team: null,
       project: null,
+      projectMilestone: createInput.projectMilestoneId
+        ? { id: createInput.projectMilestoneId, name: 'Unknown' }
+        : null,
       assignee: null,
     };
   }, 'createIssue');

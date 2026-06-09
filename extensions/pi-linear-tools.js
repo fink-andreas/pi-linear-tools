@@ -748,11 +748,11 @@ async function registerLinearTools(pi) {
         },
         milestone: {
           type: 'string',
-          description: 'For update: milestone name/ID, or "none" to clear milestone assignment.',
+          description: 'For create/update: milestone name/ID. For create, also provide project so names can be resolved. Use "none" to clear on update.',
         },
         projectMilestoneId: {
           type: 'string',
-          description: 'Optional explicit milestone ID alias for update.',
+          description: 'Optional explicit milestone ID alias for create/update.',
         },
         subIssueOf: {
           type: 'string',

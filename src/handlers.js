@@ -690,6 +690,22 @@ export async function executeIssueCreate(client, params, options = {}) {
     createInput.projectId = resolvedProject.id;
   }
 
+  if (params.projectMilestoneId !== undefined && params.projectMilestoneId !== null) {
+    createInput.projectMilestoneId = params.projectMilestoneId;
+  } else if (params.milestone !== undefined && params.milestone !== null) {
+    const milestoneRef = String(params.milestone || '').trim();
+    const clearMilestoneValues = new Set(['', 'none', 'null', 'unassigned', 'clear']);
+
+    if (!clearMilestoneValues.has(milestoneRef.toLowerCase())) {
+      if (!resolvedProject?.id) {
+        throw new Error('Missing required field: project. Provide project when assigning milestone by name during issue create, or use projectMilestoneId.');
+      }
+
+      const milestone = await resolveMilestoneRef(client, milestoneRef, resolvedProject.id);
+      createInput.projectMilestoneId = milestone.id;
+    }
+  }
+
   const issue = await createIssue(client, createInput);
 
   const identifier = issue.identifier || issue.id || 'unknown';
@@ -700,8 +716,11 @@ export async function executeIssueCreate(client, params, options = {}) {
   const stateLabel = issue.state?.name || 'Unknown';
   const assigneeLabel = issue.assignee?.displayName || 'Unassigned';
 
+  const milestoneLabel = issue.projectMilestone?.name || null;
+
   const metaParts = [`Team: ${team.name}`, `Project: ${projectLabel}`, `State: ${stateLabel}`, `Assignee: ${assigneeLabel}`];
   if (priorityLabel) metaParts.push(`Priority: ${priorityLabel}`);
+  if (milestoneLabel) metaParts.push(`Milestone: ${milestoneLabel}`);
 
   return toTextResult(
     `Created issue **${identifier}**: ${issue.title}\n${metaParts.join(' | ')}`,
@@ -713,6 +732,7 @@ export async function executeIssueCreate(client, params, options = {}) {
       project: issue.project,
       state: issue.state,
       assignee: issue.assignee,
+      projectMilestone: issue.projectMilestone,
       url: issue.url,
     }
   );
