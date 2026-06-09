@@ -358,7 +358,7 @@ async function runInteractiveConfigFlow(ctx, pi) {
   }
 
   if (!client) {
-    const selectedAuthMethod = await ctx.ui.select('Select authentication method', ['API Key (recommended for full functionlaity)', 'OAuth']);
+    const selectedAuthMethod = await ctx.ui.select('Select authentication method', ['API Key (recommended for full functionality)', 'OAuth']);
 
     if (!selectedAuthMethod) {
       ctx.ui.notify('Configuration cancelled', 'warning');
