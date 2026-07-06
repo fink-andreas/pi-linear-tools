@@ -839,6 +839,7 @@ async function handleIssueList(args) {
     states: parseArrayValue(readFlag(args, '--states')),
     assignee: readFlag(args, '--assignee'),
     team: readFlag(args, '--team'),
+    query: readFlag(args, '--query'),
     limit: parseNumber(readFlag(args, '--limit')),
   };
 

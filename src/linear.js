@@ -2050,7 +2050,7 @@ export async function fetchIssues(client, assigneeId, openStates, limit) {
  */
 export async function fetchIssuesByProject(client, projectId, states, options = {}) {
   return withLinearErrorHandling(async () => {
-    const { assigneeId = null, teamId = null, limit = 20 } = options;
+    const { assigneeId = null, teamId = null, limit = 20, query = null } = options;
 
     const filter = {
       project: { id: { eq: projectId } },
@@ -2066,6 +2066,13 @@ export async function fetchIssuesByProject(client, projectId, states, options = 
 
     if (teamId) {
       filter.team = { id: { eq: teamId } };
+    }
+
+    if (query) {
+      filter.or = [
+        { title: { contains: query } },
+        { description: { contains: query } },
+      ];
     }
 
     // Use optimized rawRequest to fetch issues with ALL relations in ONE request
