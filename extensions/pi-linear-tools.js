@@ -791,6 +791,10 @@ async function registerLinearTools(pi) {
           type: 'string',
           description: 'Team key (e.g. ENG) or name (optional if default team configured)',
         },
+        query: {
+          type: 'string',
+          description: 'Free-text search query across issue titles and descriptions (for list only)',
+        },
         parentId: {
           type: 'string',
           description: 'Parent issue ID for sub-issues (for create)',
