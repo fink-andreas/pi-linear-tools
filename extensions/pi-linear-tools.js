@@ -615,15 +615,16 @@ async function executeToolSafely(operationLabel, operation, options = {}) {
 }
 
 // Conservative column width used only by the plain-text fallback renderer:
-// printable ASCII counts as 1 column, everything else as 2. This overestimates
-// some narrow non-ASCII characters but never underestimates wide ones (CJK,
-// emoji), so rendered lines stay within the terminal width and pi-tui's
-// over-width guard never fires.
+// printable ASCII counts as 1 column, tabs as 3 (matching pi-tui), and every
+// other code point as 2. This overestimates narrow non-ASCII characters but
+// never underestimates terminal display width, so rendered lines stay within
+// the terminal width and pi-tui's over-width guard never fires.
 function fallbackColumnWidth(codePoint) {
+  if (codePoint === 0x09) return 3;
   return codePoint >= 0x20 && codePoint <= 0x7e ? 1 : 2;
 }
 
-function truncateLineToColumns(line, maxColumns) {
+export function truncateLineToColumns(line, maxColumns) {
   let columns = 0;
   let end = 0;
   for (const char of line) {
@@ -635,33 +636,34 @@ function truncateLineToColumns(line, maxColumns) {
   return line.slice(0, end);
 }
 
-function renderMarkdownResult(result, _options, _theme) {
+export function createPlainTextFallbackRenderer(text) {
+  const lines = text.split('\n');
+  return {
+    render: (width) => lines.map((line) => (width ? truncateLineToColumns(line, width) : line)),
+    invalidate: () => {},
+  };
+}
+
+export function renderMarkdownResult(result, _options, _theme, renderer = { Markdown, Text, getMarkdownTheme }) {
   const text = result.content?.[0]?.text || '';
+  const { Markdown: markdown, Text: textComponent, getMarkdownTheme: getTheme } = renderer;
 
   // Fall back to plain text if markdown packages not available
-  if (!Markdown || !getMarkdownTheme) {
-    const lines = text.split('\n');
-    return {
-      render: (width) => lines.map((line) => (width && line.length > width ? truncateLineToColumns(line, width) : line)),
-      invalidate: () => {},
-    };
+  if (!markdown || !getTheme) {
+    return createPlainTextFallbackRenderer(text);
   }
 
   // Return Markdown component directly - the TUI will call its render() method
   try {
-    const mdTheme = getMarkdownTheme();
-    return new Markdown(text, 0, 0, mdTheme, _theme ? { color: (t) => _theme.fg('toolOutput', t) } : undefined);
+    const mdTheme = getTheme();
+    return new markdown(text, 0, 0, mdTheme, _theme ? { color: (t) => _theme.fg('toolOutput', t) } : undefined);
   } catch (error) {
     // If markdown rendering fails for any reason, show a visible error so we can diagnose.
     const msg = `[pi-linear-tools] Markdown render failed: ${String(error?.message || error)}`;
-    if (Text) {
-      return new Text((_theme ? _theme.fg('error', msg) : msg) + `\n\n` + text, 0, 0);
+    if (textComponent) {
+      return new textComponent((_theme ? _theme.fg('error', msg) : msg) + `\n\n` + text, 0, 0);
     }
-    const lines = (msg + '\n\n' + text).split('\n');
-    return {
-      render: (width) => lines.map((line) => (width && line.length > width ? truncateLineToColumns(line, width) : line)),
-      invalidate: () => {},
-    };
+    return createPlainTextFallbackRenderer(msg + '\n\n' + text);
   }
 }
 
