@@ -18,7 +18,7 @@ export function isPiCodingAgentRoot(dir) {
   if (!fs.existsSync(pkgPath)) return false;
   try {
     const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-    return pkg?.name === '@mariozechner/pi-coding-agent';
+    return pkg?.name === '@mariozechner/pi-coding-agent' || pkg?.name === '@earendil-works/pi-coding-agent';
   } catch {
     return false;
   }
@@ -50,9 +50,11 @@ export function findPiCodingAgentRoot() {
   {
     const binDir = path.dirname(entry);
     const prefix = path.resolve(binDir, '..');
-    const candidate = path.join(prefix, 'lib', 'node_modules', '@mariozechner', 'pi-coding-agent');
-    if (isPiCodingAgentRoot(candidate)) {
-      return candidate;
+    for (const scope of ['@mariozechner', '@earendil-works']) {
+      const candidate = path.join(prefix, 'lib', 'node_modules', scope, 'pi-coding-agent');
+      if (isPiCodingAgentRoot(candidate)) {
+        return candidate;
+      }
     }
   }
 
@@ -60,6 +62,9 @@ export function findPiCodingAgentRoot() {
   for (const candidate of [
     '/usr/local/lib/node_modules/@mariozechner/pi-coding-agent',
     '/usr/lib/node_modules/@mariozechner/pi-coding-agent',
+    '/usr/local/lib/node_modules/@earendil-works/pi-coding-agent',
+    '/usr/lib/node_modules/@earendil-works/pi-coding-agent',
+    '/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent',
   ]) {
     if (isPiCodingAgentRoot(candidate)) {
       return candidate;

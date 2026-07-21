@@ -12,7 +12,11 @@ async function importPiCodingAgent() {
   try {
     return await import('@mariozechner/pi-coding-agent');
   } catch {
-    return importFromPiRoot('dist/index.js');
+    try {
+      return await import('@earendil-works/pi-coding-agent');
+    } catch {
+      return importFromPiRoot('dist/index.js');
+    }
   }
 }
 
@@ -20,8 +24,16 @@ async function importPiTui() {
   try {
     return await import('@mariozechner/pi-tui');
   } catch {
-    // pi-tui is a dependency of pi-coding-agent and may be nested under it
-    return importFromPiRoot('node_modules/@mariozechner/pi-tui/dist/index.js');
+    try {
+      return await import('@earendil-works/pi-tui');
+    } catch {
+      // pi-tui is a dependency of pi-coding-agent and may be nested under it
+      try {
+        return await importFromPiRoot('node_modules/@mariozechner/pi-tui/dist/index.js');
+      } catch {
+        return importFromPiRoot('node_modules/@earendil-works/pi-tui/dist/index.js');
+      }
+    }
   }
 }
 
@@ -602,6 +614,27 @@ async function executeToolSafely(operationLabel, operation, options = {}) {
   }
 }
 
+// Conservative column width used only by the plain-text fallback renderer:
+// printable ASCII counts as 1 column, everything else as 2. This overestimates
+// some narrow non-ASCII characters but never underestimates wide ones (CJK,
+// emoji), so rendered lines stay within the terminal width and pi-tui's
+// over-width guard never fires.
+function fallbackColumnWidth(codePoint) {
+  return codePoint >= 0x20 && codePoint <= 0x7e ? 1 : 2;
+}
+
+function truncateLineToColumns(line, maxColumns) {
+  let columns = 0;
+  let end = 0;
+  for (const char of line) {
+    const width = fallbackColumnWidth(char.codePointAt(0));
+    if (columns + width > maxColumns) break;
+    columns += width;
+    end += char.length;
+  }
+  return line.slice(0, end);
+}
+
 function renderMarkdownResult(result, _options, _theme) {
   const text = result.content?.[0]?.text || '';
 
@@ -609,7 +642,7 @@ function renderMarkdownResult(result, _options, _theme) {
   if (!Markdown || !getMarkdownTheme) {
     const lines = text.split('\n');
     return {
-      render: (width) => lines.map((line) => (width && line.length > width ? line.slice(0, width) : line)),
+      render: (width) => lines.map((line) => (width && line.length > width ? truncateLineToColumns(line, width) : line)),
       invalidate: () => {},
     };
   }
@@ -626,7 +659,7 @@ function renderMarkdownResult(result, _options, _theme) {
     }
     const lines = (msg + '\n\n' + text).split('\n');
     return {
-      render: (width) => lines.map((line) => (width && line.length > width ? line.slice(0, width) : line)),
+      render: (width) => lines.map((line) => (width && line.length > width ? truncateLineToColumns(line, width) : line)),
       invalidate: () => {},
     };
   }
