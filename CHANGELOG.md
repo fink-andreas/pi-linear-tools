@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.7.2 (2026-07-21)
+
+Patch release for Pi package rename compatibility and terminal-safe fallback rendering.
+
+### Bug Fixes
+- **Support renamed Pi packages**: The extension now supports both legacy `@mariozechner/*` imports and the current `@earendil-works/*` package scope, including globally installed Pi paths.
+- **Prevent CJK fallback-rendering crashes**: Plain-text fallback output now truncates by terminal columns, preventing over-width lines from CJK/non-ASCII text and tabs from triggering Pi TUI's width guard.
+
+### Tests
+- Added fallback-renderer regression coverage for CJK text, tabs, unavailable Markdown dependencies, and Markdown rendering failures.
+
 ## v0.7.1 (2026-06-09)
 
 Patch release for issue creation milestone assignment and configuration text cleanup.
