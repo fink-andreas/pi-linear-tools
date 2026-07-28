@@ -46,6 +46,7 @@ import {
   withHandlerErrorHandling,
   getViewer,
 } from './linear.js';
+import { withIssueRelationScopeHint } from './error-hints.js';
 import { debug } from './logger.js';
 
 function toTextResult(text, details = {}) {
@@ -804,7 +805,12 @@ export async function executeIssueUpdate(client, params) {
     projectMilestoneId: updatePatch.projectMilestoneId,
   });
 
-  const result = await updateIssue(client, issue, updatePatch);
+  let result;
+  try {
+    result = await updateIssue(client, issue, updatePatch);
+  } catch (error) {
+    throw withIssueRelationScopeHint(error, updatePatch);
+  }
 
   const friendlyChanges = result.changed.map((field) => {
     if (field === 'stateId') return 'state';
