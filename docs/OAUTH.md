@@ -116,6 +116,8 @@ Linear relies on a granular scope model. Security best practices, particularly f
 |comments:create|Targeted comment creation.|Optimal for appending continuous integration logs or deployment statuses to existing issues.|
 |admin|Full administrative workspace access.|Extremely dangerous. Must never be requested by a standard developer CLI under any circumstances.1|
 
+> **Note (this fork):** `OAUTH_SCOPES` in `src/auth/constants.js` additionally includes `write`. This is required so the `linear_issue` tool can set **issue relations** (`blockedBy` / `blocking` / `relatedTo` / `duplicateOf`), which go through the `issueRelationCreate` mutation — Linear gates that mutation behind the `write` scope, while `issueUpdate` (title/description/state/assignee/`parentId`) is permitted under `issues:create`. Without `write`, relation params are accepted by the tool but rejected by Linear with `Invalid scope: write required`. Existing OAuth tokens minted before this change must re-auth (`pi-linear-tools auth login`) to obtain a `write`-scoped token. See upstream issue #27.
+
 If the CLI attempts to execute a GraphQL mutation (e.g., issueCreate) without having requested and been granted the corresponding scope, Linear's API will respond differently than standard REST APIs. Rather than returning a blunt HTTP 403 Forbidden, the GraphQL endpoint often returns an HTTP 200 OK status, but the response body will contain an errors array detailing the authorization failure at the specific field level.7 The CLI must be engineered to inspect the GraphQL response payload for errors, regardless of the HTTP status code.
 
 ### 2.4 Access Token Lifecycle and the 2025 Mandate
