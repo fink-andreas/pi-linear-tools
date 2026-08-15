@@ -41,6 +41,7 @@ async function importPiTui() {
 let Markdown = null;
 let Text = null;
 let getMarkdownTheme = null;
+let getToolExpandKeyText = null;
 
 try {
   const piTui = await importPiTui();
@@ -53,6 +54,7 @@ try {
 try {
   const piCodingAgent = await importPiCodingAgent();
   getMarkdownTheme = piCodingAgent?.getMarkdownTheme || null;
+  getToolExpandKeyText = piCodingAgent?.keyText || null;
 } catch {
   // ignore
 }
@@ -650,20 +652,34 @@ export function createPlainTextFallbackRenderer(text) {
 // options.expanded is true.
 export const COLLAPSED_PREVIEW_LINES = 20;
 
-const COLLAPSE_HINT_PLAIN = 'Ctrl+O to expand';
+const DEFAULT_COLLAPSE_HINT = 'Ctrl+O to expand';
+
+export function getCollapseHint(keyTextFn = getToolExpandKeyText) {
+  try {
+    const configuredKey = typeof keyTextFn === 'function'
+      ? keyTextFn('app.tools.expand')
+      : '';
+    if (typeof configuredKey === 'string' && configuredKey.trim()) {
+      return `${configuredKey} to expand`;
+    }
+  } catch {
+    // Fall back when Pi's keybinding registry is unavailable or uninitialized.
+  }
+  return DEFAULT_COLLAPSE_HINT;
+}
 
 // Collapse long text to a leading preview window plus a hint, matching the
 // contract Pi expects from renderResult: options.expanded === true shows the
 // full output, otherwise the output is bounded. Text at or under the limit is
 // returned unchanged.
-export function collapseToPreview(text, maxLines = COLLAPSED_PREVIEW_LINES) {
+export function collapseToPreview(text, maxLines = COLLAPSED_PREVIEW_LINES, expandHint = getCollapseHint()) {
   const lines = text.split('\n');
   if (lines.length <= maxLines) {
     return text;
   }
   const kept = lines.slice(0, maxLines);
   const remaining = lines.length - maxLines;
-  return `${kept.join('\n')}\n\n... (${remaining} more lines, ${COLLAPSE_HINT_PLAIN})`;
+  return `${kept.join('\n')}\n\n... (${remaining} more lines, ${expandHint})`;
 }
 
 export function renderMarkdownResult(result, options = {}, _theme, _context, renderer = { Markdown, Text, getMarkdownTheme }) {

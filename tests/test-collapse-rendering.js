@@ -10,6 +10,7 @@ import {
   truncateLineToColumns,
   COLLAPSED_PREVIEW_LINES,
   collapseToPreview,
+  getCollapseHint,
 } from '../extensions/pi-linear-tools.js';
 
 const HINT = 'Ctrl+O to expand';
@@ -57,6 +58,27 @@ function testCollapseLongText() {
   const atLimit = Array.from({ length: maxLines }, (_, i) => `line ${i + 1}`).join('\n');
   if (collapseToPreview(atLimit, maxLines) !== atLimit) {
     throw new Error('Text at the line limit should not be collapsed');
+  }
+}
+
+function testCustomCollapseHint() {
+  const body = Array.from({ length: 40 }, (_, i) => `line ${i + 1}`).join('\n');
+  const customHint = 'alt+e to expand';
+  const configuredHint = getCollapseHint(() => 'alt+e');
+  if (configuredHint !== customHint) {
+    throw new Error(`Expected configured key hint "${customHint}", got "${configuredHint}"`);
+  }
+
+  const out = collapseToPreview(body, COLLAPSED_PREVIEW_LINES, configuredHint);
+  if (!out.includes(`(20 more lines, ${customHint})`)) {
+    throw new Error(`Custom collapse hint should be included, got:\n${out}`);
+  }
+  if (out.includes(HINT)) {
+    throw new Error('Custom collapse hint should replace the default hint');
+  }
+
+  if (getCollapseHint(() => '') !== HINT) {
+    throw new Error(`Missing keybinding should fall back to "${HINT}"`);
   }
 }
 
@@ -164,6 +186,9 @@ async function run() {
 
   testCollapseLongText();
   console.log('✓ Long text is collapsed to a bounded preview with a hint');
+
+  testCustomCollapseHint();
+  console.log('✓ Custom collapse hints are supported');
 
   testFallbackRendererCollapsed();
   console.log('✓ Plain-text fallback collapses when expanded=false');
