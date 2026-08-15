@@ -94,6 +94,26 @@ linear_issue(action="list", states=["Backlog", "Todo"], limit=5)
 ```
 **Expected:** Returns only issues in specified states.
 
+### Test 10a: List Issues with Text Query
+```
+linear_issue(action="list", project="pi-linear-test-repo", query="smoke", limit=10)
+```
+**Expected:** Returns only issues whose title or description contains the query text.
+
+Combine the query with the existing filters to verify the intersection of conditions:
+```
+linear_issue(
+  action="list",
+  project="pi-linear-test-repo",
+  query="smoke",
+  states=["Todo"],
+  assignee="me",
+  team="INN",
+  limit=10
+)
+```
+**Expected:** Every returned issue matches the query and all supplied state, assignee, and team filters. This is read-only and does not create test data.
+
 ### Test 11: List Issues Assigned to Me
 ```
 linear_issue(action="list", assignee="me", limit=5)

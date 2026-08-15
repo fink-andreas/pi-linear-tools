@@ -384,6 +384,7 @@ async function startGitBranch(branchName, fromRef = 'HEAD', onBranchExists = 'sw
  * @param {string[]} [params.states] - State names to filter by
  * @param {string} [params.assignee] - "me" or "all" for assignee filtering
  * @param {string} [params.team] - Team key or ID to filter by
+ * @param {string} [params.query] - Free-text search across issue titles and descriptions
  * @param {number} [params.limit] - Maximum results (default: 20)
  * @returns {Promise<{content: Array, details: Object}>}
  */
@@ -413,6 +414,7 @@ export async function executeIssueList(client, params) {
       assigneeId,
       teamId,
       limit: params.limit || 20,
+      query: params.query || null,
     });
 
     if (issues.length === 0) {

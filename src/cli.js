@@ -175,7 +175,7 @@ Auth Actions:
   status   Show current authentication status
 
 Issue Actions:
-  list [--project X] [--states X,Y] [--assignee me|all] [--team X] [--limit N]
+  list [--project X] [--states X,Y] [--assignee me|all] [--team X] [--query X] [--limit N]
   view <issue> [--no-comments]
   images <issue> [--no-comments] [--limit N] [--max-bytes N]
   download <issue> --directory DIR [--attachment-id ID|--attachment-title TITLE|--attachment-url URL|--attachment-index N]
@@ -269,6 +269,7 @@ Examples:
   pi-linear-tools sync-doc run
   pi-linear-tools sync-doc check
   pi-linear-tools issue list --project MyProject --states "In Progress,Backlog"
+  pi-linear-tools issue list --project MyProject --query "smoke test"
   pi-linear-tools issue view ENG-123
   pi-linear-tools issue create --title "Fix bug" --team ENG --priority 2
   pi-linear-tools issue start ENG-123
@@ -312,6 +313,7 @@ List Options:
   --states X,Y     Filter by state names (comma-separated)
   --assignee X     Filter by assignee: "me" or "all"
   --team X         Filter by team key (e.g., ENG) or ID
+  --query X        Free-text search in issue titles and descriptions
   --limit N        Max results (default: 50)
 
 View Options:
@@ -839,6 +841,7 @@ async function handleIssueList(args) {
     states: parseArrayValue(readFlag(args, '--states')),
     assignee: readFlag(args, '--assignee'),
     team: readFlag(args, '--team'),
+    query: readFlag(args, '--query'),
     limit: parseNumber(readFlag(args, '--limit')),
   };
 

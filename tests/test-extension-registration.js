@@ -107,6 +107,10 @@ async function testRegistrationIncludesMilestoneWithDefaultApiKeyMode() {
         minimum: 0,
       }
     );
+    assert.deepEqual(issueTool.parameters.properties.query, {
+      type: 'string',
+      description: 'Free-text search query across issue titles and descriptions (for list only)',
+    });
 
     const projectTool = pi.tools.get('linear_project');
     assert.ok(projectTool);
