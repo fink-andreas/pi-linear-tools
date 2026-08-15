@@ -278,6 +278,59 @@ The smoke test answers: **Does the built/user-facing path work outside isolated 
 
 Choose smoke tests based on the changed surface. Do not perform live mutations against production data.
 
+### Custom smoke-test guide requirements
+
+A generic instruction such as "run a smoke test" is not sufficient. For each PR, provide a short, copy/pasteable guide for the exact surface that changed. The guide should let another operator reproduce the check without guessing which package, Pi session, command, resource, or expected result to use.
+
+Every custom guide should state:
+
+- **Changed surface:** package, CLI, Pi extension, renderer, or live Linear workflow.
+- **Prerequisites:** checkout/package location, authentication state, designated test workspace/project, fixture data, and rate-limit or keybinding constraints.
+- **Exact setup and launch path:** distinguish shell commands from Pi commands. For a local unpublished Pi extension that is not already loaded, launch the checkout directly:
+
+  ```bash
+  cd /path/to/pi-linear-tools
+  pi -e ./index.js
+  ```
+
+  For extension source installation/removal, use the exact source shown by `pi list`, then `pi remove <source>` and `pi install .`; fully restart Pi before validating. `/reload` is a useful follow-up for already-loaded code changes but is not a reliable replacement for a restart after source add/remove.
+
+- **Registration check:** after Pi starts, run `/linear-tools-help` and confirm the changed command/tool is registered. If the change adds parameters, confirm the schema/help exposes them.
+- **Feature-specific action:** give the exact read-only CLI command or Pi tool call, with realistic placeholders and all required arguments. These must be labeled as shell commands or Pi tool calls; do not present one as the other.
+- **Observable assertions:** describe what must be visible in the result, what must be present in structured details, and which success and expected-error paths must be exercised. Assert behavior, not merely that the command did not throw.
+- **Surface-specific interaction:** include steps such as preview/expand/collapse, custom keybindings, Markdown rendering, CLI output, or Linear filter composition only when the changed surface requires them.
+- **Evidence:** record the redacted invocation, timestamp, exit/result status, result count or identifiers, and pass/fail decision. Never record credentials, tokens, or unnecessary private data.
+- **Cleanup and safety:** state whether the test is read-only. If temporary Linear data is created, use unique names, delete/archive it with the supported action, and verify cleanup. If no cleanup is applicable, say so explicitly.
+- **Failure handling:** explain how authentication failures, rate limits, no-result responses, malformed output, and crashes should be classified.
+
+Use this template when adding a custom guide:
+
+````markdown
+### Smoke test: <feature or changed surface>
+
+**Prerequisites:** <checkout/package, credentials, designated test resource, fixture, and limits>
+
+**Setup (shell commands):**
+```bash
+<exact setup and launch commands>
+```
+
+**Pi session / tool calls:**
+1. Run `/linear-tools-help`; confirm `<command/tool/parameter>` is registered.
+2. Run `<exact read-only command or tool call>`.
+3. Confirm `<visible result>` and `<structured result>`.
+4. Confirm `<feature-specific interaction or expected error>`.
+
+**Expected result:** <observable pass criteria>
+
+**Evidence:** <what to record, with secrets and private data excluded>
+
+**Cleanup:** <exact cleanup commands and verification, or "read-only; no Linear cleanup">
+```
+````
+
+The following sections provide surface-specific examples. Keep their concrete launch, registration, user-action, assertion, and cleanup steps when adapting them; do not reduce a custom guide to a generic test command.
+
 ### 6.1 Package and CLI smoke test
 
 ```bash
@@ -592,6 +645,7 @@ Copy this checklist into a PR comment or review note:
 - [ ] `npm test` passes (`set -o pipefail; npm test 2>&1 | tail -n 15`)
 - [ ] Package/release checks run when applicable
 - [ ] Pi/CLI smoke test passed or marked not applicable
+- [ ] Custom smoke-test guide matches the changed surface and includes exact setup, registration, user actions, assertions, evidence, and cleanup
 - [ ] Custom Pi rendering and remapped keybinding behavior tested when applicable
 - [ ] Live Linear smoke test passed and temporary data cleaned up, or marked not applicable
 - [ ] All blocker/major findings resolved
