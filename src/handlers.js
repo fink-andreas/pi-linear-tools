@@ -46,6 +46,7 @@ import {
   withHandlerErrorHandling,
   getViewer,
 } from './linear.js';
+import { withIssueRelationScopeHint } from './error-hints.js';
 import { debug } from './logger.js';
 
 function toTextResult(text, details = {}) {
@@ -383,6 +384,7 @@ async function startGitBranch(branchName, fromRef = 'HEAD', onBranchExists = 'sw
  * @param {string[]} [params.states] - State names to filter by
  * @param {string} [params.assignee] - "me" or "all" for assignee filtering
  * @param {string} [params.team] - Team key or ID to filter by
+ * @param {string} [params.query] - Free-text search across issue titles and descriptions
  * @param {number} [params.limit] - Maximum results (default: 20)
  * @returns {Promise<{content: Array, details: Object}>}
  */
@@ -805,7 +807,12 @@ export async function executeIssueUpdate(client, params) {
     projectMilestoneId: updatePatch.projectMilestoneId,
   });
 
-  const result = await updateIssue(client, issue, updatePatch);
+  let result;
+  try {
+    result = await updateIssue(client, issue, updatePatch);
+  } catch (error) {
+    throw withIssueRelationScopeHint(error, updatePatch);
+  }
 
   const friendlyChanges = result.changed.map((field) => {
     if (field === 'stateId') return 'state';

@@ -74,6 +74,8 @@ Actions: `list`, `view`, `images`, `download`, `activity`, `create`, `update`, `
 
 `download` fetches Linear issue attachments only. Destination directories must be relative paths. Existing files are not overwritten unless both `overwrite: true` is provided and the config guard is enabled with `/linear-tools-config --allow-overwrite-files true`.
 
+`linear_issue` `list` accepts an optional `query` string to search issue titles and descriptions. It can be combined with the project, state, assignee, and team filters.
+
 ### `linear_project`
 Actions: `list`, `view`, `create`, `update`, `delete`, `archive`, `unarchive`
 
@@ -111,6 +113,7 @@ Use `update` to change the issue itself. Use `comment` to add discussion. Use `a
 pi-linear-tools issue list --project "My Project"
 pi-linear-tools issue list --project "My Project" --states "In Progress,Backlog"
 pi-linear-tools issue list --project "My Project" --assignee me
+pi-linear-tools issue list --project "My Project" --query "smoke test"
 
 # View issue details
 pi-linear-tools issue view ENG-123

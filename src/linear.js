@@ -2045,6 +2045,7 @@ export async function fetchIssues(client, assigneeId, openStates, limit) {
  * @param {Object} options
  * @param {string|null} options.assigneeId - Assignee ID to filter by (null = all assignees)
  * @param {string|null} options.teamId - Team ID to filter by (null = all teams)
+ * @param {string|null} options.query - Free-text search across issue titles and descriptions
  * @param {number} options.limit - Maximum number of issues to fetch
  * @returns {Promise<{issues: Array, truncated: boolean}>}
  */

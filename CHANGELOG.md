@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.7.3 (2026-07-28)
+
+Patch release that fixes Linear issue-relation updates for OAuth users.
+
+### Bug Fixes
+- **Enable issue relations with default OAuth**: New OAuth grants now request Linear's `write` scope, allowing `linear_issue update` to set `blockedBy`, `blocking`, `relatedTo`, and `duplicateOf` relations.
+- **Explain legacy-token remediation**: Relation updates rejected because `write` is missing now direct OAuth users to run `pi-linear-tools auth login`; API-key users are told to use a key with write access.
+
+### Tests
+- Added regression coverage for the default OAuth authorization URL scope and issue-relation scope guidance.
+
+### Upgrade note
+Existing OAuth tokens cannot gain the newly requested scope automatically. Re-authenticate with `pi-linear-tools auth login` before creating issue relations.
+
+## v0.7.2 (2026-07-21)
+
+Patch release for Pi package rename compatibility and terminal-safe fallback rendering.
+
+### Bug Fixes
+- **Support renamed Pi packages**: The extension now supports both legacy `@mariozechner/*` imports and the current `@earendil-works/*` package scope, including globally installed Pi paths.
+- **Prevent CJK fallback-rendering crashes**: Plain-text fallback output now truncates by terminal columns, preventing over-width lines from CJK/non-ASCII text and tabs from triggering Pi TUI's width guard.
+
+### Tests
+- Added fallback-renderer regression coverage for CJK text, tabs, unavailable Markdown dependencies, and Markdown rendering failures.
+
 ## v0.7.1 (2026-06-09)
 
 Patch release for issue creation milestone assignment and configuration text cleanup.
