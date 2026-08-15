@@ -666,7 +666,7 @@ export function collapseToPreview(text, maxLines = COLLAPSED_PREVIEW_LINES) {
   return `${kept.join('\n')}\n\n... (${remaining} more lines, ${COLLAPSE_HINT_PLAIN})`;
 }
 
-export function renderMarkdownResult(result, options = {}, _theme, renderer = { Markdown, Text, getMarkdownTheme }) {
+export function renderMarkdownResult(result, options = {}, _theme, _context, renderer = { Markdown, Text, getMarkdownTheme }) {
   const text = result.content?.[0]?.text || '';
   const { Markdown: markdown, Text: textComponent, getMarkdownTheme: getTheme } = renderer;
 

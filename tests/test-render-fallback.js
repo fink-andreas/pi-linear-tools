@@ -48,6 +48,7 @@ function testMissingMarkdownDependenciesUseSafeFallback() {
     { content: [{ text: '漢'.repeat(100) }] },
     null,
     null,
+    undefined,
     { Markdown: null, Text: null, getMarkdownTheme: null }
   );
 
@@ -66,6 +67,7 @@ function testMarkdownConstructionFailureUsesSafeFallback() {
     { content: [{ text: '漢'.repeat(100) }] },
     null,
     null,
+    undefined,
     { Markdown: BrokenMarkdown, Text: null, getMarkdownTheme: () => ({}) }
   );
 

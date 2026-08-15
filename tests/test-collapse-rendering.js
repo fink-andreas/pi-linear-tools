@@ -7,7 +7,6 @@
 
 import {
   renderMarkdownResult,
-  createPlainTextFallbackRenderer,
   truncateLineToColumns,
   COLLAPSED_PREVIEW_LINES,
   collapseToPreview,
@@ -66,7 +65,7 @@ function testFallbackRendererCollapsed() {
   // No Markdown/getMarkdownTheme -> plain-text fallback path.
   const renderer = { Markdown: null, Text: null, getMarkdownTheme: null };
 
-  const collapsed = renderMarkdownResult({ content: [{ text: body }] }, { expanded: false }, undefined, renderer);
+  const collapsed = renderMarkdownResult({ content: [{ text: body }] }, { expanded: false }, undefined, undefined, renderer);
   const collapsedText = plainTextFromComponent(collapsed);
 
   if (collapsedText.includes('line 21')) {
@@ -81,7 +80,7 @@ function testFallbackRendererExpanded() {
   const body = Array.from({ length: 40 }, (_, i) => `line ${i + 1}`).join('\n');
   const renderer = { Markdown: null, Text: null, getMarkdownTheme: null };
 
-  const expanded = renderMarkdownResult({ content: [{ text: body }] }, { expanded: true }, undefined, renderer);
+  const expanded = renderMarkdownResult({ content: [{ text: body }] }, { expanded: true }, undefined, undefined, renderer);
   const expandedText = plainTextFromComponent(expanded);
 
   if (!expandedText.includes('line 40')) {
@@ -97,7 +96,7 @@ function testFallbackRendererDefaultCollapsed() {
   const body = Array.from({ length: 40 }, (_, i) => `line ${i + 1}`).join('\n');
   const renderer = { Markdown: null, Text: null, getMarkdownTheme: null };
 
-  const out = plainTextFromComponent(renderMarkdownResult({ content: [{ text: body }] }, {}, undefined, renderer));
+  const out = plainTextFromComponent(renderMarkdownResult({ content: [{ text: body }] }, {}, undefined, undefined, renderer));
   if (out.includes('line 21')) {
     throw new Error(`Default (no expanded) should collapse output:\n${out}`);
   }
@@ -116,8 +115,23 @@ function testMockMarkdownRenderer() {
   };
 
   const body = Array.from({ length: 40 }, (_, i) => `line ${i + 1}`).join('\n');
+  // Pi supplies ToolRenderContext as the fourth argument; test dependencies are fifth.
+  const piRenderContext = {
+    args: {},
+    toolCallId: 'test-tool-call',
+    invalidate: () => {},
+    lastComponent: undefined,
+    state: {},
+    cwd: process.cwd(),
+    executionStarted: true,
+    argsComplete: true,
+    isPartial: false,
+    expanded: false,
+    showImages: false,
+    isError: false,
+  };
 
-  renderMarkdownResult({ content: [{ text: body }] }, { expanded: false }, undefined, renderer);
+  renderMarkdownResult({ content: [{ text: body }] }, { expanded: false }, undefined, piRenderContext, renderer);
   if (!captured || !captured.includes(`(${20} more lines, ${HINT})`)) {
     throw new Error(`Markdown path should receive collapsed text, got:\n${captured}`);
   }
@@ -125,7 +139,7 @@ function testMockMarkdownRenderer() {
     throw new Error(`Markdown path collapsed text must truncate past preview:\n${captured}`);
   }
 
-  renderMarkdownResult({ content: [{ text: body }] }, { expanded: true }, undefined, renderer);
+  renderMarkdownResult({ content: [{ text: body }] }, { expanded: true }, undefined, piRenderContext, renderer);
   if (!captured || !captured.includes('line 40')) {
     throw new Error(`Markdown path expanded text should be full, got:\n${captured}`);
   }
