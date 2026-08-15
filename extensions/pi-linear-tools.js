@@ -41,6 +41,7 @@ async function importPiTui() {
 let Markdown = null;
 let Text = null;
 let getMarkdownTheme = null;
+let getToolExpandKeyText = null;
 
 try {
   const piTui = await importPiTui();
@@ -53,6 +54,7 @@ try {
 try {
   const piCodingAgent = await importPiCodingAgent();
   getMarkdownTheme = piCodingAgent?.getMarkdownTheme || null;
+  getToolExpandKeyText = piCodingAgent?.keyText || null;
 } catch {
   // ignore
 }
@@ -644,26 +646,65 @@ export function createPlainTextFallbackRenderer(text) {
   };
 }
 
-export function renderMarkdownResult(result, _options, _theme, renderer = { Markdown, Text, getMarkdownTheme }) {
+// When tool output is collapsed (Ctrl+O / app.tools.expand toggles expansion),
+// how many leading lines of the markdown/text result to keep as a preview. This
+// mirrors pi's built-in tool renderers, which collapse long output unless
+// options.expanded is true.
+export const COLLAPSED_PREVIEW_LINES = 20;
+
+const DEFAULT_COLLAPSE_HINT = 'Ctrl+O to expand';
+
+export function getCollapseHint(keyTextFn = getToolExpandKeyText) {
+  try {
+    const configuredKey = typeof keyTextFn === 'function'
+      ? keyTextFn('app.tools.expand')
+      : '';
+    if (typeof configuredKey === 'string' && configuredKey.trim()) {
+      return `${configuredKey} to expand`;
+    }
+  } catch {
+    // Fall back when Pi's keybinding registry is unavailable or uninitialized.
+  }
+  return DEFAULT_COLLAPSE_HINT;
+}
+
+// Collapse long text to a leading preview window plus a hint, matching the
+// contract Pi expects from renderResult: options.expanded === true shows the
+// full output, otherwise the output is bounded. Text at or under the limit is
+// returned unchanged.
+export function collapseToPreview(text, maxLines = COLLAPSED_PREVIEW_LINES, expandHint = getCollapseHint()) {
+  const lines = text.split('\n');
+  if (lines.length <= maxLines) {
+    return text;
+  }
+  const kept = lines.slice(0, maxLines);
+  const remaining = lines.length - maxLines;
+  return `${kept.join('\n')}\n\n... (${remaining} more lines, ${expandHint})`;
+}
+
+export function renderMarkdownResult(result, options = {}, _theme, _context, renderer = { Markdown, Text, getMarkdownTheme }) {
   const text = result.content?.[0]?.text || '';
   const { Markdown: markdown, Text: textComponent, getMarkdownTheme: getTheme } = renderer;
 
+  // Honor Pi's expand/collapse contract: collapse long output unless expanded.
+  const displayText = options?.expanded === true ? text : collapseToPreview(text);
+
   // Fall back to plain text if markdown packages not available
   if (!markdown || !getTheme) {
-    return createPlainTextFallbackRenderer(text);
+    return createPlainTextFallbackRenderer(displayText);
   }
 
   // Return Markdown component directly - the TUI will call its render() method
   try {
     const mdTheme = getTheme();
-    return new markdown(text, 0, 0, mdTheme, _theme ? { color: (t) => _theme.fg('toolOutput', t) } : undefined);
+    return new markdown(displayText, 0, 0, mdTheme, _theme ? { color: (t) => _theme.fg('toolOutput', t) } : undefined);
   } catch (error) {
     // If markdown rendering fails for any reason, show a visible error so we can diagnose.
     const msg = `[pi-linear-tools] Markdown render failed: ${String(error?.message || error)}`;
     if (textComponent) {
-      return new textComponent((_theme ? _theme.fg('error', msg) : msg) + `\n\n` + text, 0, 0);
+      return new textComponent((_theme ? _theme.fg('error', msg) : msg) + `\n\n` + displayText, 0, 0);
     }
-    return createPlainTextFallbackRenderer(msg + '\n\n' + text);
+    return createPlainTextFallbackRenderer(msg + '\n\n' + displayText);
   }
 }
 
