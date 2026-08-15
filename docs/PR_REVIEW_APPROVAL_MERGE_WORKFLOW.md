@@ -111,6 +111,25 @@ git diff --stat "origin/main...HEAD" | head -n 80
 git diff --check "origin/main...HEAD"
 ```
 
+### 3.3 Cross-fork PR heads
+
+A PR head branch may live in the author's fork rather than in the base repository's `origin`. Identify the real head repository and ref before pushing review fixes:
+
+```bash
+gh api "repos/$REPO/pulls/$PR_NUMBER" \
+  --jq '{headRepo:.head.repo.full_name,headOwner:.head.user.login,headRef:.head.ref,headSha:.head.sha,baseRef:.base.ref,maintainerCanModify:.maintainer_can_modify}'
+```
+
+When `.head.repo.full_name` is available, push explicitly to that repository and branch:
+
+```bash
+HEAD_REPO=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.head.repo.full_name')
+HEAD_REF=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.head.ref')
+git push "https://github.com/$HEAD_REPO.git" "HEAD:refs/heads/$HEAD_REF"
+```
+
+If the head repository is unavailable, ask the author to push the fix instead of guessing a base-repository branch. Verify the resulting `headRefOid` with `gh pr view` before reviewing or merging; `maintainerCanModify` does not make a fork branch part of the base repository's `origin`.
+
 ## 4. Gate 1: code review
 
 The code review answers: **Does the implementation do the right thing, safely, without breaking existing behavior?**
@@ -137,6 +156,7 @@ For each changed area, check:
 - **Correctness:** normal path, empty input, invalid input, missing data, retries, and error paths.
 - **Regression risk:** existing callers, public tool schemas, CLI flags, return shapes, and compatibility with supported Node/Pi versions.
 - **API contracts:** GraphQL variables, field names, mutation behavior, null handling, pagination, and rate-limit behavior.
+- **Host callback contracts:** For Pi custom tools, validate the actual `renderResult(result, options, theme, context)` signature. Do not use the fourth `context` argument as a test-only dependency-injection slot. If mocks are needed, use a separate fifth test parameter or a factory, and test with a real context-shaped fourth argument. A pre-existing bug in a touched function should be labeled as pre-existing, but must not be hidden by an invalid mock.
 - **Security:** credentials, OAuth scopes, file paths, shell execution, URL handling, downloads, and accidental secret logging.
 - **Data safety:** destructive actions require explicit intent, and failures do not silently report success.
 - **Performance:** avoid unbounded API calls, repeated lookups, or unnecessary full-list queries.
@@ -250,6 +270,8 @@ npm pack --dry-run 2>&1 | tail -n 30
 
 Record the command, exit status, and a concise result in the PR.
 
+If `gh pr checks` reports `no checks reported`, record that explicitly as **no CI checks configured/reported**. Do not describe this as a green CI result; local test evidence is still required, and `--admin` must not be used to bypass repository policy.
+
 ## 6. Gate 3: smoke test
 
 The smoke test answers: **Does the built/user-facing path work outside isolated unit tests?**
@@ -290,6 +312,33 @@ Exercise the changed tool or command in the real Pi session. Confirm both the vi
 - The command returns the expected text.
 - The structured result contains the expected identifiers/status fields.
 - An expected error is rendered as a useful tool result rather than crashing Pi.
+
+#### Rendering-specific Pi smoke test
+
+For a local, unpublished renderer change, launch the checkout directly when it is not already auto-loaded:
+
+```bash
+cd /path/to/pi-linear-tools
+pi -e ./index.js
+```
+
+In the Pi session:
+
+1. Run `/linear-tools-help` and confirm the changed tool is registered.
+2. Invoke a **read-only** Linear `view`/`list` operation that produces more than the preview limit (for example, an issue with comments).
+3. Confirm the initial result shows the leading preview and an expansion hint.
+4. Press the configured `app.tools.expand` key, normally `Ctrl+O`, and confirm the complete result appears; press it again to collapse.
+5. Confirm Markdown headings, emphasis, lists, links, and structured details still render correctly.
+
+To verify custom keybindings, use a disposable Pi configuration or merge this setting into a temporary config:
+
+```json
+{
+  "app.tools.expand": "alt+e"
+}
+```
+
+Run `/reload`, then confirm the hint changes to `alt+e to expand` and `Alt+E` toggles the result. Do not overwrite a user's real keybinding file just for a review. For rendering-only changes, a live Linear mutation is not applicable; use an existing read-only resource and record that no test data was created.
 
 ### 6.3 Live Linear smoke test
 
@@ -466,6 +515,8 @@ git push origin main
 
 Do not push directly to `main` when the repository policy requires GitHub PR merges.
 
+For a squash merge, the original feature commits may not be ancestors of `main`; retain the GitHub merge commit as the authoritative post-merge identifier.
+
 ## 10. Gate 7: post-merge verification
 
 After merging, verify the external result and the repository state:
@@ -501,15 +552,25 @@ git revert -m 1 <merge-commit-sha>
 git push origin <revert-branch>
 ```
 
+After a confirmed squash merge, update the local checkout before cleaning up:
+
+```bash
+git switch main
+git pull --ff-only origin main
+```
+
+Only with explicit cleanup authorization, delete the now-merged local feature branch. `git branch -d` can reject a squash-merged branch because its original commits are not ancestors of `main`; after verifying the merge commit, `git branch -D <feature-branch>` is acceptable. Preserve unrelated untracked files and never use a reset to force cleanup.
+
 ## 11. Required evidence record
 
 The PR should retain enough information for another maintainer to reproduce the decision:
 
-- PR URL, base branch, head commit, and final merge commit.
+- PR URL, base branch, head repository/ref, pushed head SHA, and final merge commit.
 - Changed-file summary and scope decision.
 - Code-review findings and their disposition.
 - Test-review summary and commands run with exit status.
-- Smoke-test path, test data scope, and cleanup result.
+- CI status, including an explicit `no checks reported` result when applicable.
+- Smoke-test path, configured keybinding/result behavior, test data scope, and cleanup result.
 - Approval identity/time and merge method.
 - Post-merge verification result.
 - Deferred risks, follow-up issue links, or rollback instructions.
@@ -524,16 +585,18 @@ Copy this checklist into a PR comment or review note:
 ### PR review gate
 - [ ] Scope, target branch, author, and linked issue confirmed
 - [ ] Worktree/diff inspected; unrelated changes and secrets excluded
+- [ ] Host API/callback contracts verified against the actual runtime invocation
 - [ ] Code review complete
 - [ ] Test review complete
 - [ ] Focused tests pass
 - [ ] `npm test` passes (`set -o pipefail; npm test 2>&1 | tail -n 15`)
 - [ ] Package/release checks run when applicable
 - [ ] Pi/CLI smoke test passed or marked not applicable
+- [ ] Custom Pi rendering and remapped keybinding behavior tested when applicable
 - [ ] Live Linear smoke test passed and temporary data cleaned up, or marked not applicable
 - [ ] All blocker/major findings resolved
 - [ ] Minor findings and deferred risks recorded
-- [ ] Final CI checks are green and branch is mergeable
+- [ ] Final CI checks are green, or the absence of reported checks is explicitly recorded, and the branch is mergeable
 - [ ] Approval recorded on the final commit
 - [ ] Merge performed using the agreed strategy
 - [ ] Post-merge commit/state verified
