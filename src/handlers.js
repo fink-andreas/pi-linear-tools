@@ -437,7 +437,7 @@ export async function executeIssueList(client, params) {
       const metaParts = [`[${stateLabel}]`, `@${assigneeLabel}`];
       if (priorityLabel) metaParts.push(priorityLabel);
 
-      lines.push(`- **${issue.identifier}**: ${issue.title} _${metaParts.join(' ')}_`);
+      lines.push(`- **${issue.identifier}**: ${issue.title} (${metaParts.join(' ')})`);
     }
 
     if (truncated) {

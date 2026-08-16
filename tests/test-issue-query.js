@@ -102,7 +102,8 @@ async function testIssueListQueryCombineWithStatesAndAssignee() {
       { description: { contains: 'smoke' } },
     ],
   });
-  assert.match(result.content[0].text, /PAT-2/);
+  assert.match(result.content[0].text, /- \*\*PAT-2\*\*: Smoke test the login flow \(\[In Progress\] @Viewer Medium\)/);
+  assert.doesNotMatch(result.content[0].text, /_\[In Progress\] @Viewer Medium_/);
 }
 
 async function testIssueListWithoutQueryDoesNotIncludeOrFilter() {
