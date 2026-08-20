@@ -214,7 +214,7 @@ async function testConfigSavesAllowOverwriteFiles() {
   });
 }
 
-async function testIssueToolReturnsSafeResultWhenAuthMissing() {
+async function testIssueToolThrowsWhenAuthMissing() {
   const prev = process.env.LINEAR_API_KEY;
   delete process.env.LINEAR_API_KEY;
 
@@ -224,13 +224,41 @@ async function testIssueToolReturnsSafeResultWhenAuthMissing() {
       await extension(pi);
 
       const issueTool = pi.tools.get('linear_issue');
-      const result = await issueTool.execute('call-1', { action: 'list', project: 'demo' });
 
-      assert.match(result.content[0].text, /No Linear authentication configured|LINEAR_API_KEY not set/);
-      assert.equal(result.details.error, true);
-      assert.equal(result.details.rateLimited, false);
+      await assert.rejects(
+        () => issueTool.execute('call-1', { action: 'list', project: 'demo' }),
+        /No Linear authentication configured|LINEAR_API_KEY not set/
+      );
     });
   } finally {
+    process.env.LINEAR_API_KEY = prev;
+  }
+}
+
+async function testIssueToolThrowsForRejectedApiRequest() {
+  const prev = process.env.LINEAR_API_KEY;
+  process.env.LINEAR_API_KEY = 'lin_test';
+
+  try {
+    const apiError = new Error('Invalid issue identifier: BAD-999');
+    apiError.type = 'invalid_request';
+
+    setTestClientFactory(() => ({
+      issue: async () => {
+        throw apiError;
+      },
+    }));
+
+    const pi = createMockPi();
+    await extension(pi);
+
+    const issueTool = pi.tools.get('linear_issue');
+    await assert.rejects(
+      () => issueTool.execute('call-rejected-api-request', { action: 'view', issue: 'BAD-999' }),
+      /Linear API error: Invalid issue identifier: BAD-999/
+    );
+  } finally {
+    resetTestClientFactory();
     process.env.LINEAR_API_KEY = prev;
   }
 }
@@ -513,10 +541,11 @@ async function testMilestoneScopeErrorHint() {
     await extension(pi);
 
     const milestoneTool = pi.tools.get('linear_milestone');
-    const result = await milestoneTool.execute('call-m3', { action: 'create', project: 'demo', name: 'Test' });
 
-    assert.match(result.content[0].text, /Use API key auth for milestone management/);
-    assert.equal(result.details.error, true);
+    await assert.rejects(
+      () => milestoneTool.execute('call-m3', { action: 'create', project: 'demo', name: 'Test' }),
+      /Use API key auth for milestone management/
+    );
   } finally {
     resetTestClientFactory();
     process.env.LINEAR_API_KEY = prev;
@@ -742,7 +771,8 @@ async function main() {
   await testConfigSavesApiKey();
   await testConfigSavesDefaultTeam();
   await testConfigSavesAllowOverwriteFiles();
-  await testIssueToolReturnsSafeResultWhenAuthMissing();
+  await testIssueToolThrowsWhenAuthMissing();
+  await testIssueToolThrowsForRejectedApiRequest();
   await testIssueToolReturnsSafeResultWhenCachedRateLimited();
   await testProjectToolsReturnSafeResultWhenCachedRateLimited();
   await testIssueToolReturnsSafeResultWhenRequestRateLimited();
