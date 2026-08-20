@@ -134,12 +134,16 @@ pi-linear-tools issue download ENG-123 --attachment-id att_xxx --directory downl
 # Create issue
 pi-linear-tools issue create --title "Fix login bug" --team ENG
 pi-linear-tools issue create --title "New feature" --team ENG --project "My Project" --priority 2 --assignee me
+pi-linear-tools issue create --title "Add labels" --team ENG --labels frontend,ux
+pi-linear-tools issue create --title "Link PR" --team ENG --link "https://github.com/org/repo/pull/1|PR #1"
 
 # Update issue
 pi-linear-tools issue update ENG-123 --state "In Progress"
 pi-linear-tools issue update ENG-123 --title "Updated title" --assignee me
 pi-linear-tools issue update ENG-123 --milestone "Sprint 1"
 pi-linear-tools issue update ENG-123 --sub-issue-of ENG-100
+pi-linear-tools issue update ENG-123 --labels frontend,ux
+pi-linear-tools issue update ENG-123 --link "https://example.com/docs|DOC"
 
 # Issue priority uses Linear's native scale: 0=None, 1=Urgent, 2=High, 3=Medium, 4=Low.
 # You can also use aliases: none, urgent, high, medium, low.
@@ -157,8 +161,16 @@ pi-linear-tools issue start ENG-123 --from-ref main --on-branch-exists suffix
 pi-linear-tools issue delete ENG-123
 ```
 
-### Project commands
+# Issue label commands
+pi-linear-tools issue labels
+pi-linear-tools issue labels --name front --team ENG
+pi-linear-tools issue labels create --name backend --team ENG --color "#123456" --description "Backend work"
 
+# Project label commands
+pi-linear-tools project labels
+pi-linear-tools project labels --name infra
+
+# Project commands
 Use `project update` to change the project record itself: name, teams, dates, lead, description, priority, color, or icon.
 
 ```bash

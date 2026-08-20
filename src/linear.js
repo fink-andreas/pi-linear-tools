@@ -730,6 +730,80 @@ const ISSUE_DETAILS_WITH_COMMENTS_QUERY = `
   }
 `;
 
+const ISSUE_LABELS_QUERY = `
+  query IssueLabels($first: Int!, $filter: IssueLabelFilter) {
+    issueLabels(first: $first, filter: $filter) {
+      nodes {
+        id
+        name
+        color
+        description
+        isGroup
+        team {
+          id
+          key
+          name
+        }
+        parent {
+          id
+          name
+        }
+      }
+    }
+  }
+`;
+
+const PROJECT_LABELS_QUERY = `
+  query ProjectLabels($first: Int!, $filter: ProjectLabelFilter) {
+    projectLabels(first: $first, filter: $filter) {
+      nodes {
+        id
+        name
+        color
+        description
+      }
+    }
+  }
+`;
+
+const ISSUE_LABEL_CREATE_MUTATION = `
+  mutation IssueLabelCreate($input: IssueLabelCreateInput!) {
+    issueLabelCreate(input: $input) {
+      success
+      issueLabel {
+        id
+        name
+        color
+        description
+        isGroup
+        team {
+          id
+          key
+          name
+        }
+        parent {
+          id
+          name
+        }
+      }
+    }
+  }
+`;
+
+const ATTACHMENT_CREATE_MUTATION = `
+  mutation AttachmentCreate($input: AttachmentCreateInput!) {
+    attachmentCreate(input: $input) {
+      success
+      attachment {
+        id
+        title
+        url
+        subtitle
+      }
+    }
+  }
+`;
+
 const ISSUE_CREATE_MUTATION = `
   mutation IssueCreate($input: IssueCreateInput!) {
     issueCreate(input: $input) {
@@ -1167,6 +1241,31 @@ function transformRawProjectMinimal(rawProject) {
     name: rawProject.name,
     slugId: rawProject.slugId ?? null,
     archivedAt: rawProject.archivedAt ?? null,
+  };
+}
+
+function transformRawIssueLabel(rawLabel) {
+  if (!rawLabel) return null;
+
+  return {
+    id: rawLabel.id,
+    name: rawLabel.name,
+    color: rawLabel.color ?? null,
+    description: rawLabel.description ?? null,
+    isGroup: rawLabel.isGroup ?? false,
+    team: rawLabel.team ? { id: rawLabel.team.id, key: rawLabel.team.key, name: rawLabel.team.name } : null,
+    parent: rawLabel.parent ? { id: rawLabel.parent.id, name: rawLabel.parent.name } : null,
+  };
+}
+
+function transformRawProjectLabel(rawLabel) {
+  if (!rawLabel) return null;
+
+  return {
+    id: rawLabel.id,
+    name: rawLabel.name,
+    color: rawLabel.color ?? null,
+    description: rawLabel.description ?? null,
   };
 }
 
@@ -3215,6 +3314,10 @@ export async function createIssue(client, input) {
       createInput.projectMilestoneId = input.projectMilestoneId;
     }
 
+    if (input.labelIds !== undefined) {
+      createInput.labelIds = input.labelIds;
+    }
+
     if (getRawRequest(client)) {
       const payload = await executeGraphQL(client, ISSUE_CREATE_MUTATION, { input: createInput });
       if (!payload?.issueCreate?.success) {
@@ -3432,6 +3535,10 @@ export async function updateIssue(client, issueRef, patch = {}) {
 
     if (patch.assigneeId !== undefined) {
       updateInput.assigneeId = patch.assigneeId;
+    }
+
+    if (patch.labelIds !== undefined) {
+      updateInput.labelIds = patch.labelIds;
     }
 
     if (patch.projectMilestoneId !== undefined) {
@@ -3764,6 +3871,141 @@ export async function fetchProjectMilestones(client, projectId) {
     return milestones;
   }, 'fetchProjectMilestones');
 }
+
+// ===== LABEL & LINK FUNCTIONS =====
+
+/**
+ * Fetch issue labels, optionally filtered by name or team.
+ * @param {LinearClient} client - Linear SDK client
+ * @param {Object} params - { name?, team?, teamId? } (team is a resolvable ref; teamId is a raw team UUID)
+ * @returns {Promise<Array<Object>>} Array of issue labels
+ */
+export async function fetchIssueLabels(client, params = {}) {
+  return withLinearErrorHandling(async () => {
+    const filter = {};
+    if (params.name) {
+      filter.name = { containsIgnoreCase: params.name };
+    }
+    if (params.teamId) {
+      filter.team = { id: { eq: params.teamId } };
+    } else if (params.team) {
+      const team = await resolveTeamRef(client, params.team);
+      filter.team = { id: { eq: team.id } };
+    }
+
+    const data = await executeGraphQL(client, ISSUE_LABELS_QUERY, { first: 250, filter });
+    return (data?.issueLabels?.nodes || []).map(transformRawIssueLabel).filter(Boolean);
+  }, 'fetchIssueLabels');
+}
+
+/**
+ * Create an issue label.
+ * @param {LinearClient} client - Linear SDK client
+ * @param {Object} input - { name (required), description?, color?, teamId? }
+ * @returns {Promise<Object>} Created issue label
+ */
+export async function createIssueLabel(client, input) {
+  return withLinearErrorHandling(async () => {
+    const name = String(input.name || '').trim();
+    if (!name) {
+      throw new Error('Missing required field: name');
+    }
+
+    const createInput = { name };
+    if (input.description !== undefined) {
+      createInput.description = String(input.description);
+    }
+    if (input.color !== undefined) {
+      createInput.color = String(input.color);
+    }
+    if (input.teamId !== undefined) {
+      createInput.teamId = input.teamId;
+    }
+
+    const data = await executeGraphQL(client, ISSUE_LABEL_CREATE_MUTATION, { input: createInput });
+    if (!data?.issueLabelCreate?.success) {
+      throw new Error('Failed to create issue label');
+    }
+    return transformRawIssueLabel(data.issueLabelCreate.issueLabel ?? null);
+  }, 'createIssueLabel');
+}
+
+/**
+ * Fetch project labels, optionally filtered by name.
+ * @param {LinearClient} client - Linear SDK client
+ * @param {Object} params - { name? }
+ * @returns {Promise<Array<Object>>} Array of project labels
+ */
+export async function fetchProjectLabels(client, params = {}) {
+  return withLinearErrorHandling(async () => {
+    const filter = {};
+    if (params.name) {
+      filter.name = { containsIgnoreCase: params.name };
+    }
+
+    const data = await executeGraphQL(client, PROJECT_LABELS_QUERY, { first: 250, filter });
+    return (data?.projectLabels?.nodes || []).map(transformRawProjectLabel).filter(Boolean);
+  }, 'fetchProjectLabels');
+}
+
+/**
+ * Resolve issue label references (names or IDs) to a list of label IDs.
+ * Matches by exact name, then case-insensitive name; passes through raw IDs.
+ * @param {LinearClient} client - Linear SDK client
+ * @param {Array<string>} refs - Label names or IDs
+ * @param {string|null} teamId - Optional team ID to scope name matching
+ * @returns {Promise<Array<string>>} Resolved label IDs
+ */
+export async function resolveLabelIds(client, refs, teamId = null) {
+  if (!Array.isArray(refs) || refs.length === 0) return [];
+
+  const labels = await fetchIssueLabels(client, teamId ? { teamId } : {});
+  const normalized = refs.map((r) => String(r || '').trim()).filter(Boolean);
+
+  const ids = [];
+  for (const ref of normalized) {
+    if (labels.some((l) => l.id === ref)) {
+      ids.push(ref);
+      continue;
+    }
+    const lower = ref.toLowerCase();
+    const match = labels.find((l) => l.name === ref) || labels.find((l) => l.name?.toLowerCase() === lower);
+    if (!match) {
+      throw new Error(`Label not found: ${ref}. Available labels: ${labels.map((l) => l.name).join(', ')}`);
+    }
+    ids.push(match.id);
+  }
+  return ids;
+}
+
+/**
+ * Add link attachments (url + title) to an issue.
+ * @param {LinearClient} client - Linear SDK client
+ * @param {string} issueId - Issue ID or identifier
+ * @param {Array<{url: string, title?: string}>} links - Link attachments to create
+ * @returns {Promise<Array<Object>>} Created attachments
+ */
+export async function addIssueLinks(client, issueId, links) {
+  if (!Array.isArray(links) || links.length === 0) return [];
+
+  const created = [];
+  for (const link of links) {
+    const url = String(link?.url || '').trim();
+    const title = String(link?.title || '').trim() || url;
+    if (!url) {
+      throw new Error('Link URL is required for each link');
+    }
+    const data = await executeGraphQL(client, ATTACHMENT_CREATE_MUTATION, {
+      input: { issueId, url, title },
+    });
+    const attachment = data?.attachmentCreate?.attachment;
+    if (attachment) {
+      created.push({ id: attachment.id, title: attachment.title, url: attachment.url, subtitle: attachment.subtitle ?? null });
+    }
+  }
+  return created;
+}
+
 
 /**
  * Fetch milestone details including associated issues

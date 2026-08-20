@@ -630,9 +630,9 @@ Extract and fetch images from markdown content. Use this to view screenshots, di
 | | `linear_delete_comment` | `id` |
 | Status | `linear_list_issue_statuses` | `team` |
 | | `linear_get_issue_status` | `id`, `name`, `team` |
-| Labels | `linear_list_issue_labels` | - |
-| | `linear_create_issue_label` | `name` |
-| Attachments | `linear_create_attachment` | `issue`, `base64Content`, `filename`, `contentType` |
+| Labels | `linear_list_issue_labels` | `linear_issue labels` (subAction list) |
+| | `linear_create_issue_label` | `linear_issue labels` (subAction create) |
+| Attachments | `linear_create_attachment` | `linear_issue create/update` --link (URL links) |
 | | `linear_get_attachment` | `id` |
 | | `linear_delete_attachment` | `id` |
 | Projects | `linear_list_projects` | - |
@@ -653,6 +653,6 @@ Extract and fetch images from markdown content. Use this to view screenshots, di
 | Users | `linear_list_users` | - |
 | | `linear_get_user` | `query` |
 | Cycles | `linear_list_cycles` | `teamId` |
-| Project Labels | `linear_list_project_labels` | - |
+| Project Labels | `linear_list_project_labels` | `linear_project labels` |
 | Other | `linear_search_documentation` | `query` |
 | | `linear_extract_images` | `markdown` |
