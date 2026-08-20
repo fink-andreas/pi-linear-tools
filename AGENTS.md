@@ -2,6 +2,7 @@
 
 - Run `npm test` with `tail` to keep output shorter (for example: `npm test | tail -n 15`).
 - Never commit `PLAN.md` or `TODO.md` unless the user explicitly asks for that.
+- Use the GitHub CLI (`gh`) for GitHub issues, pull requests, checks, and other GitHub interactions. Do not use a browser for GitHub unless the task specifically requires browser/UI behavior.
 
 ## Linear GraphQL API Schema
 
