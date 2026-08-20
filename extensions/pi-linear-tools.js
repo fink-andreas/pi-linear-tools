@@ -733,7 +733,7 @@ async function registerLinearTools(pi) {
         },
         project: {
           type: 'string',
-          description: 'Project name or ID for listing/creating issues (default: current repo directory name)',
+          description: 'Project name or ID for listing/creating issues (default: repository name from the git remote origin, else the current directory name)',
         },
         states: {
           type: 'array',

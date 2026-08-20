@@ -47,6 +47,7 @@ import {
   getViewer,
 } from './linear.js';
 import { withIssueRelationScopeHint } from './error-hints.js';
+import { resolveDefaultProject } from './shared.js';
 import { debug } from './logger.js';
 
 function toTextResult(text, details = {}) {
@@ -392,7 +393,7 @@ export async function executeIssueList(client, params) {
   return withHandlerErrorHandling(async () => {
     let projectRef = params.project;
     if (!projectRef) {
-      projectRef = path.basename(process.cwd());
+      projectRef = resolveDefaultProject();
     }
 
     const resolved = await resolveProjectRef(client, projectRef);
@@ -627,7 +628,7 @@ export async function executeIssueCreate(client, params, options = {}) {
 
   let projectRef = params.project;
   if (!projectRef) {
-    projectRef = path.basename(process.cwd());
+    projectRef = resolveDefaultProject();
   }
 
   let projectId = null;
@@ -1365,7 +1366,7 @@ export async function executeTeamList(client) {
 export async function executeMilestoneList(client, params) {
   let projectRef = params.project;
   if (!projectRef) {
-    projectRef = path.basename(process.cwd());
+    projectRef = resolveDefaultProject();
   }
 
   const resolved = await resolveProjectRef(client, projectRef);
@@ -1431,7 +1432,7 @@ export async function executeMilestoneView(client, params) {
     // Need project context to resolve milestone name
     let projectRef = params.project;
     if (!projectRef) {
-      projectRef = path.basename(process.cwd());
+      projectRef = resolveDefaultProject();
     }
     const resolvedProject = await resolveProjectRef(client, projectRef);
     projectId = resolvedProject.id;
@@ -1510,7 +1511,7 @@ export async function executeMilestoneCreate(client, params) {
 
   let projectRef = params.project;
   if (!projectRef) {
-    projectRef = path.basename(process.cwd());
+    projectRef = resolveDefaultProject();
   }
 
   const resolved = await resolveProjectRef(client, projectRef);
@@ -1571,7 +1572,7 @@ export async function executeMilestoneUpdate(client, params) {
     // Need project context to resolve milestone name
     let projectRef = params.project;
     if (!projectRef) {
-      projectRef = path.basename(process.cwd());
+      projectRef = resolveDefaultProject();
     }
     const resolvedProject = await resolveProjectRef(client, projectRef);
     projectId = resolvedProject.id;
@@ -1628,7 +1629,7 @@ export async function executeMilestoneDelete(client, params) {
     // Need project context to resolve milestone name
     let projectRef = params.project;
     if (!projectRef) {
-      projectRef = path.basename(process.cwd());
+      projectRef = resolveDefaultProject();
     }
     const resolvedProject = await resolveProjectRef(client, projectRef);
     projectId = resolvedProject.id;
