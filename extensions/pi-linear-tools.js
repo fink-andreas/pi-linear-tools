@@ -582,17 +582,6 @@ function handleToolExecutionError(error, operationLabel, options = {}) {
   throw new Error(`${operationLabel}: ${errorMessage}`);
 }
 
-function buildGenericToolErrorResult(error, operationLabel) {
-  const errorType = error?.type || error?.name || 'Error';
-  const errorMessage = String(error?.message || error || 'Unknown error');
-
-  return toToolTextResult(`${operationLabel}: ${errorMessage}`, {
-    error: true,
-    errorType,
-    rateLimited: false,
-  });
-}
-
 async function executeToolSafely(operationLabel, operation, options = {}) {
   try {
     return await operation();
@@ -603,16 +592,13 @@ async function executeToolSafely(operationLabel, operation, options = {}) {
       error: String(error?.message || error || 'unknown'),
     });
 
-    try {
-      return handleToolExecutionError(error, operationLabel, options);
-    } catch (handledError) {
-      debug('[pi-linear-tools] returning generic safe tool error result', {
-        operationLabel,
-        errorType: handledError?.type || handledError?.name || null,
-        error: String(handledError?.message || handledError || 'unknown'),
-      });
-      return buildGenericToolErrorResult(handledError, operationLabel);
-    }
+    // handleToolExecutionError returns a value only for the recoverable
+    // rate-limit case ("try again later"). Every other failure it throws, and
+    // a thrown error is what marks the tool result as failed -- see
+    // docs/extensions.md, "Signaling errors". Let that throw escape instead
+    // of flattening it back into a value: a rejected call must reach the
+    // model as an error, not as a successful empty result.
+    return handleToolExecutionError(error, operationLabel, options);
   }
 }
 
