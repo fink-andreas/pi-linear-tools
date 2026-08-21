@@ -1512,6 +1512,12 @@ export function isRateLimitError(error) {
  * @param {Error} error - The original error
  * @returns {Error|unknown} Formatted error with user-friendly message, or original if unhandled
  */
+function createFormattedLinearError(message, error) {
+  const formattedError = new Error(message, { cause: error });
+  if (error?.type) formattedError.type = error.type;
+  return formattedError;
+}
+
 function formatLinearError(error) {
   const message = String(error?.message || error || 'Unknown error');
   const errorType = error?.type || 'Unknown';
@@ -1522,39 +1528,44 @@ function formatLinearError(error) {
       ? new Date(error.requestsResetAt).toLocaleTimeString()
       : '1 hour';
 
-    return new Error(
+    return createFormattedLinearError(
       `Linear API rate limit exceeded. Please wait before making more requests.\n` +
       `Rate limit resets at: ${resetAt}\n` +
-      `Hint: Reduce request frequency or wait before retrying.`
+      `Hint: Reduce request frequency or wait before retrying.`,
+      error
     );
   }
 
   // Auth/permission failures: prompt to check credentials
   if (errorType === 'Forbidden' || errorType === 'AuthenticationError' ||
     message.toLowerCase().includes('forbidden') || message.toLowerCase().includes('unauthorized')) {
-    return new Error(
-      `${message}\nHint: Check your Linear API key or OAuth token permissions.`
+    return createFormattedLinearError(
+      `${message}\nHint: Check your Linear API key or OAuth token permissions.`,
+      error
     );
   }
 
   // Network errors
   if (errorType === 'NetworkError' || message.toLowerCase().includes('network')) {
-    return new Error(
-      `Network error while communicating with Linear API.\nHint: Check your internet connection and try again.`
+    return createFormattedLinearError(
+      `Network error while communicating with Linear API.\nHint: Check your internet connection and try again.`,
+      error
     );
   }
 
   // Internal server errors
   if (errorType === 'InternalError' || (error?.status >= 500 && error?.status < 600)) {
-    return new Error(
-      `Linear API server error (${error?.status || 'unknown'}).\nHint: Linear may be experiencing issues. Try again later.`
+    return createFormattedLinearError(
+      `Linear API server error (${error?.status || 'unknown'}).\nHint: Linear may be experiencing issues. Try again later.`,
+      error
     );
   }
 
   // Generic Linear API error
   if (isLinearError(error)) {
-    return new Error(
-      `Linear API error: ${message}`
+    return createFormattedLinearError(
+      `Linear API error: ${message}`,
+      error
     );
   }
 

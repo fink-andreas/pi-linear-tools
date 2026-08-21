@@ -240,27 +240,45 @@ async function testIssueToolThrowsWhenAuthMissing() {
   }
 }
 
-async function testIssueToolThrowsForRejectedApiRequest() {
+async function testIssueToolPrefixesNonRateLimitErrors() {
   const prev = process.env.LINEAR_API_KEY;
   process.env.LINEAR_API_KEY = 'lin_test';
 
   try {
     const apiError = new Error('Invalid issue identifier: BAD-999');
     apiError.type = 'invalid_request';
+    const genericError = new Error('Connection closed unexpectedly');
+    let errorToThrow = apiError;
 
     setTestClientFactory(() => ({
       issue: async () => {
-        throw apiError;
+        throw errorToThrow;
       },
     }));
 
     const pi = createMockPi();
     await extension(pi);
-
     const issueTool = pi.tools.get('linear_issue');
+
     await assert.rejects(
       () => issueTool.execute('call-rejected-api-request', { action: 'view', issue: 'BAD-999' }),
-      /Linear API error: Invalid issue identifier: BAD-999/
+      (error) => {
+        assert.equal(error.message, 'Linear issue operation failed: Linear API error: Invalid issue identifier: BAD-999');
+        assert.equal(error.type, 'invalid_request');
+        assert.equal(error.cause?.message, 'Linear API error: Invalid issue identifier: BAD-999');
+        assert.equal(error.cause?.cause, apiError);
+        return true;
+      }
+    );
+
+    errorToThrow = genericError;
+    await assert.rejects(
+      () => issueTool.execute('call-generic-error', { action: 'view', issue: 'BAD-999' }),
+      (error) => {
+        assert.equal(error.message, 'Linear issue operation failed: Connection closed unexpectedly');
+        assert.equal(error.cause, genericError);
+        return true;
+      }
     );
   } finally {
     resetTestClientFactory();
@@ -777,7 +795,7 @@ async function main() {
   await testConfigSavesDefaultTeam();
   await testConfigSavesAllowOverwriteFiles();
   await testIssueToolThrowsWhenAuthMissing();
-  await testIssueToolThrowsForRejectedApiRequest();
+  await testIssueToolPrefixesNonRateLimitErrors();
   await testIssueToolReturnsSafeResultWhenCachedRateLimited();
   await testProjectToolsReturnSafeResultWhenCachedRateLimited();
   await testIssueToolReturnsSafeResultWhenRequestRateLimited();

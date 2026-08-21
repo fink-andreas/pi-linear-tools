@@ -569,6 +569,12 @@ Please wait before making more requests, or reduce the frequency of API calls.`,
   );
 }
 
+/**
+ * Converts rate limits to recoverable tool results. Every other failure rejects
+ * with its operation label, retaining the original error as `cause` and its
+ * Linear `type` when available so callers receive a consistent, actionable
+ * error contract without losing diagnostic metadata.
+ */
 function handleToolExecutionError(error, operationLabel, options = {}) {
   const transformedError = options.transformError ? options.transformError(error) : error;
   const errorType = error?.type || transformedError?.type || '';
@@ -578,11 +584,9 @@ function handleToolExecutionError(error, operationLabel, options = {}) {
     return buildRateLimitToolResult(transformedError, { viaCachedPreCheck: options.viaCachedPreCheck });
   }
 
-  if (errorMessage.includes('Linear API error:')) {
-    throw transformedError;
-  }
-
-  throw new Error(`${operationLabel}: ${errorMessage}`);
+  const wrappedError = new Error(`${operationLabel}: ${errorMessage}`, { cause: transformedError });
+  if (errorType) wrappedError.type = errorType;
+  throw wrappedError;
 }
 
 async function executeToolSafely(operationLabel, operation, options = {}) {
