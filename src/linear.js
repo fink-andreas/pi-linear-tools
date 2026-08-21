@@ -3966,7 +3966,9 @@ export async function fetchProjectLabels(client, params = {}) {
 export async function resolveLabelIds(client, refs, teamId = null) {
   if (!Array.isArray(refs) || refs.length === 0) return [];
 
-  const labels = await fetchIssueLabels(client, teamId ? { teamId } : {});
+  // Workspace labels are valid for every team, so a team-scoped query would
+  // incorrectly hide them. Fetch all labels, then prefer a matching team label.
+  const labels = await fetchIssueLabels(client);
   const normalized = refs.map((r) => String(r || '').trim()).filter(Boolean);
 
   const ids = [];
@@ -3976,7 +3978,13 @@ export async function resolveLabelIds(client, refs, teamId = null) {
       continue;
     }
     const lower = ref.toLowerCase();
-    const match = labels.find((l) => l.name === ref) || labels.find((l) => l.name?.toLowerCase() === lower);
+    const matches = labels.filter((label) => label.name === ref);
+    const candidates = matches.length > 0
+      ? matches
+      : labels.filter((label) => label.name?.toLowerCase() === lower);
+    const match = (teamId ? candidates.find((label) => label.team?.id === teamId) : null)
+      || candidates.find((label) => !label.team)
+      || candidates[0];
     if (!match) {
       throw new Error(`Label not found: ${ref}. Available labels: ${labels.map((l) => l.name).join(', ')}`);
     }

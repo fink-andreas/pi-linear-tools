@@ -148,12 +148,14 @@ async function testProjectLabelList() {
 async function testIssueCreateWithLabelsResolvesAndAddsLinks() {
   const created = [];
   const attachments = [];
+  let receivedLabelFilter = null;
   const client = {
     viewer: Promise.resolve({ id: 'viewer-1', displayName: 'Viewer' }),
     projects: async () => ({ nodes: [{ id: 'project-1', name: 'demo-project' }] }),
     teams: async () => ({ nodes: [{ id: 'team-1', key: 'ENG', name: 'Engineering' }] }),
     rawRequest: async (query, variables) => {
       if (query.includes('IssueLabels')) {
+        receivedLabelFilter = variables.filter;
         return {
           data: {
             issueLabels: {
@@ -202,6 +204,8 @@ async function testIssueCreateWithLabelsResolvesAndAddsLinks() {
     links: [{ url: 'https://example.com/pr', title: 'PR #1' }],
   });
 
+  // Workspace labels remain available when creating an issue in a team.
+  assert.deepEqual(receivedLabelFilter, {});
   // labelIds resolved from names
   assert.deepEqual(created[0].labelIds, ['label-frontend', 'label-backend']);
   // attachment created against created issue
