@@ -4,7 +4,7 @@
  * Common functions used by both CLI and extension entry points.
  */
 
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -117,8 +117,6 @@ export function readFlag(args, flag) {
   return undefined;
 }
 
-let cachedDefaultProject;
-
 /**
  * Resolve the default Linear project name when a handler receives no explicit
  * `project` argument.
@@ -127,26 +125,30 @@ let cachedDefaultProject;
  * worktree, subdirectory, or bare checkout), and falls back to the current
  * directory's basename when no remote is resolvable -- the former cwd default.
  *
+ * @param {string} [cwd=process.cwd()] Directory from which to resolve Git.
  * @returns {string}
  */
-export function resolveDefaultProject() {
-  if (cachedDefaultProject !== undefined) return cachedDefaultProject;
-  cachedDefaultProject = getRemoteRepoName() || path.basename(process.cwd());
-  return cachedDefaultProject;
+export function resolveDefaultProject(cwd = process.cwd()) {
+  const resolvedCwd = path.resolve(cwd);
+  return getRemoteRepoName(resolvedCwd) || path.basename(resolvedCwd);
 }
 
-function getRemoteRepoName() {
+function getRemoteRepoName(cwd) {
   let remoteUrl;
   try {
-    remoteUrl = String(execSync('git remote get-url origin 2>/dev/null', { encoding: 'utf8' })).trim();
+    remoteUrl = execFileSync('git', ['remote', 'get-url', 'origin'], {
+      cwd,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 2_000,
+      windowsHide: true,
+    }).trim();
   } catch {
     // Not a git repo, or no origin remote is configured. Fall back to cwd.
     return null;
   }
 
-  if (!remoteUrl) return null;
-  const firstLine = remoteUrl.split('\n')[0].trim();
-  return repoNameFromRemoteUrl(firstLine);
+  return remoteUrl ? repoNameFromRemoteUrl(remoteUrl) : null;
 }
 
 function repoNameFromRemoteUrl(remoteUrl) {
