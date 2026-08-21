@@ -43,6 +43,11 @@ import {
   archiveProjectUpdate,
   unarchiveProjectUpdate,
   deleteIssue,
+  fetchIssueLabels,
+  createIssueLabel,
+  fetchProjectLabels,
+  resolveLabelIds,
+  addIssueLinks,
   withHandlerErrorHandling,
   getViewer,
 } from './linear.js';
@@ -84,6 +89,14 @@ function parseRefList(value) {
   }
   return String(value)
     .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function parseLabelRefs(value) {
+  const values = Array.isArray(value) ? value : [value];
+  return values
+    .flatMap((item) => String(item || '').split(','))
     .map((item) => item.trim())
     .filter(Boolean);
 }
@@ -710,7 +723,19 @@ export async function executeIssueCreate(client, params, options = {}) {
     }
   }
 
+  if (params.labels !== undefined && params.labels !== null) {
+    const labelRefs = parseLabelRefs(params.labels);
+    if (labelRefs.length > 0) {
+      createInput.labelIds = await resolveLabelIds(client, labelRefs, team.id);
+    }
+  }
+
   const issue = await createIssue(client, createInput);
+
+  let links = [];
+  if (params.links !== undefined && params.links !== null && issue?.id) {
+    links = await addIssueLinks(client, issue.id, params.links);
+  }
 
   const identifier = issue.identifier || issue.id || 'unknown';
   const projectLabel = issue.project?.name || 'No project';
@@ -725,6 +750,7 @@ export async function executeIssueCreate(client, params, options = {}) {
   const metaParts = [`Team: ${team.name}`, `Project: ${projectLabel}`, `State: ${stateLabel}`, `Assignee: ${assigneeLabel}`];
   if (priorityLabel) metaParts.push(`Priority: ${priorityLabel}`);
   if (milestoneLabel) metaParts.push(`Milestone: ${milestoneLabel}`);
+  if (links.length > 0) metaParts.push(`Links: ${links.length}`);
 
   return toTextResult(
     `Created issue **${identifier}**: ${issue.title}\n${metaParts.join(' | ')}`,
@@ -738,6 +764,7 @@ export async function executeIssueCreate(client, params, options = {}) {
       assignee: issue.assignee,
       projectMilestone: issue.projectMilestone,
       url: issue.url,
+      links,
     }
   );
 }
@@ -782,6 +809,13 @@ export async function executeIssueUpdate(client, params) {
     duplicateOf: params.duplicateOf,
   };
 
+  if (params.labels !== undefined && params.labels !== null) {
+    const labelRefs = parseLabelRefs(params.labels);
+    if (labelRefs.length > 0) {
+      updatePatch.labelIds = await resolveLabelIds(client, labelRefs, null);
+    }
+  }
+
   if (params.assignee !== undefined && params.assigneeId !== undefined) {
     debug('executeIssueUpdate: both assignee and assigneeId provided; assignee takes precedence', {
       issue,
@@ -810,7 +844,9 @@ export async function executeIssueUpdate(client, params) {
 
   let result;
   try {
-    result = await updateIssue(client, issue, updatePatch);
+    result = await updateIssue(client, issue, updatePatch, {
+      allowEmpty: Array.isArray(params.links) && params.links.length > 0,
+    });
   } catch (error) {
     throw withIssueRelationScopeHint(error, updatePatch);
   }
@@ -820,6 +856,7 @@ export async function executeIssueUpdate(client, params) {
     if (field === 'assigneeId') return 'assignee';
     if (field === 'projectMilestoneId') return 'milestone';
     if (field === 'parentId') return 'subIssueOf';
+    if (field === 'labelIds') return 'labels';
     return field;
   });
   const changeSummaryParts = [];
@@ -848,6 +885,14 @@ export async function executeIssueUpdate(client, params) {
     }
   }
 
+  let links = [];
+  if (params.links !== undefined && params.links !== null && result.issue?.id) {
+    links = await addIssueLinks(client, result.issue.id, params.links);
+  }
+  if (links.length > 0) {
+    changeSummaryParts.push(`links: ${links.length}`);
+  }
+
   const suffix = changeSummaryParts.length > 0
     ? ` (${changeSummaryParts.join(', ')})`
     : '';
@@ -866,6 +911,7 @@ export async function executeIssueUpdate(client, params) {
       priority: result.issue.priority,
       projectMilestone: result.issue.projectMilestone,
       usedRateLimitFallback: !!result.usedRateLimitFallback,
+      links,
     }
   );
 }
@@ -950,6 +996,67 @@ export async function executeIssueDelete(client, params) {
       issueId: result.issueId,
       identifier: result.identifier,
       success: result.success,
+    }
+  );
+}
+
+// ===== ISSUE LABEL HANDLERS =====
+
+/**
+ * List issue labels, optionally filtered by name or team.
+ */
+export async function executeIssueLabelList(client, params) {
+  const labels = await fetchIssueLabels(client, {
+    name: params.name,
+    team: params.team,
+  });
+
+  if (labels.length === 0) {
+    return toTextResult('No issue labels found', { labelCount: 0 });
+  }
+
+  const lines = [`## Issue Labels (${labels.length})\n`];
+  for (const label of labels) {
+    const scope = label.team ? ` [${label.team.key}]` : ' [workspace]';
+    lines.push(`- **${label.name}**${scope} \`${label.id}\``);
+    if (label.color) lines.push(`  color: ${label.color}`);
+    if (label.description) lines.push(`  ${label.description.split('\n')[0].slice(0, 120)}`);
+  }
+
+  return toTextResult(lines.join('\n'), {
+    labelCount: labels.length,
+    labels: labels.map((l) => ({ id: l.id, name: l.name, color: l.color, team: l.team?.key ?? null })),
+  });
+}
+
+/**
+ * Create an issue label.
+ */
+export async function executeIssueLabelCreate(client, params) {
+  const name = ensureNonEmpty(params.name, 'name');
+
+  let teamId = null;
+  if (params.team) {
+    const team = await resolveTeamRef(client, params.team);
+    teamId = team.id;
+  }
+
+  const label = await createIssueLabel(client, {
+    name,
+    description: params.description,
+    color: params.color,
+    teamId,
+  });
+
+  const scope = label.team ? ` [${label.team.key}]` : ' [workspace]';
+  return toTextResult(
+    `Created issue label **${label.name}**${scope} \`${label.id}\``,
+    {
+      labelId: label.id,
+      name: label.name,
+      color: label.color,
+      description: label.description,
+      team: label.team?.key ?? null,
     }
   );
 }
@@ -1185,6 +1292,33 @@ export async function executeProjectUnarchive(client, params) {
       }
     );
   }, 'executeProjectUnarchive');
+}
+
+// ===== PROJECT LABEL HANDLERS =====
+
+/**
+ * List project labels, optionally filtered by name.
+ */
+export async function executeProjectLabelList(client, params) {
+  const labels = await fetchProjectLabels(client, {
+    name: params.name,
+  });
+
+  if (labels.length === 0) {
+    return toTextResult('No project labels found', { labelCount: 0 });
+  }
+
+  const lines = [`## Project Labels (${labels.length})\n`];
+  for (const label of labels) {
+    lines.push(`- **${label.name}** \`${label.id}\``);
+    if (label.color) lines.push(`  color: ${label.color}`);
+    if (label.description) lines.push(`  ${label.description.split('\n')[0].slice(0, 120)}`);
+  }
+
+  return toTextResult(lines.join('\n'), {
+    labelCount: labels.length,
+    labels: labels.map((l) => ({ id: l.id, name: l.name, color: l.color })),
+  });
 }
 
 // ===== PROJECT UPDATE HANDLERS =====

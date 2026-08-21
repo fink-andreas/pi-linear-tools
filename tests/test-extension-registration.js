@@ -78,6 +78,10 @@ async function testRegistrationIncludesMilestoneWithDefaultApiKeyMode() {
     assert.ok(issueTool.parameters.properties.action.enum.includes('activity'));
     assert.ok(issueTool.parameters.properties.action.enum.includes('images'));
     assert.ok(issueTool.parameters.properties.action.enum.includes('download'));
+    assert.ok(issueTool.parameters.properties.action.enum.includes('labels'));
+    assert.ok(issueTool.parameters.properties.labels);
+    assert.ok(issueTool.parameters.properties.links);
+    assert.ok(issueTool.parameters.properties.subAction);
     assert.equal(issueTool.parameters.properties.maxBytes.maximum, 52428800);
     assert.equal(issueTool.parameters.properties.directory.type, 'string');
     assert.equal(issueTool.parameters.properties.overwrite.type, 'boolean');
@@ -115,6 +119,7 @@ async function testRegistrationIncludesMilestoneWithDefaultApiKeyMode() {
     const projectTool = pi.tools.get('linear_project');
     assert.ok(projectTool);
     assert.equal(projectTool.description, 'Interact with Linear projects.');
+    assert.ok(projectTool.parameters.properties.action.enum.includes('labels'));
 
     const projectUpdateTool = pi.tools.get('linear_project_update');
     assert.ok(projectUpdateTool);

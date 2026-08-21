@@ -70,6 +70,8 @@ import {
   executeIssueComment,
   executeIssueStart,
   executeIssueDelete,
+  executeIssueLabelList,
+  executeIssueLabelCreate,
   executeProjectList,
   executeProjectView,
   executeProjectCreate,
@@ -83,6 +85,7 @@ import {
   executeProjectUpdateUpdate,
   executeProjectUpdateArchive,
   executeProjectUpdateUnarchive,
+  executeProjectLabelList,
   executeTeamList,
   executeMilestoneList,
   executeMilestoneView,
@@ -704,13 +707,13 @@ async function registerLinearTools(pi) {
     name: 'linear_issue',
     label: 'Linear Issue',
     description: 'Interact with Linear issues.',
-    promptSnippet: 'Interact with Linear issues (list, view, images, download, activity, create, update, comment, start, delete)',
+    promptSnippet: 'Interact with Linear issues (list, view, images, download, activity, create, update, comment, start, delete, labels)',
     parameters: {
       type: 'object',
       properties: {
         action: {
           type: 'string',
-          enum: ['list', 'view', 'images', 'download', 'activity', 'create', 'update', 'comment', 'start', 'delete'],
+          enum: ['list', 'view', 'images', 'download', 'activity', 'create', 'update', 'comment', 'start', 'delete', 'labels'],
           description: 'Action to perform on issue(s)',
         },
         issue: {
@@ -844,6 +847,37 @@ async function registerLinearTools(pi) {
           type: 'string',
           description: 'For update: mark this issue as duplicate of the given issue key/ID.',
         },
+        labels: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Issue label names or IDs to set (for create/update): an issue labels action also drives list/create. Labels by capital-sensitive team scope.',
+        },
+        links: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              url: { type: 'string' },
+              title: { type: 'string' },
+            },
+            required: ['url'],
+            additionalProperties: false,
+          },
+          description: 'Link attachments to add (append-only, for create/update): [{url, title}].',
+        },
+        name: {
+          type: 'string',
+          description: 'Label name (for labels subAction create).',
+        },
+        color: {
+          type: 'string',
+          description: 'Label color as HEX (for labels subAction create).',
+        },
+        subAction: {
+          type: 'string',
+          enum: ['list', 'create'],
+          description: 'Sub-action for the labels action (default: list).',
+        },
         estimate: {
           type: 'integer',
           description: 'Estimate/story points for the issue (non-negative integer, for create/update)',
@@ -921,6 +955,11 @@ async function registerLinearTools(pi) {
               });
             case 'delete':
               return await executeIssueDelete(client, params);
+            case 'labels':
+              if (params.subAction === 'create') {
+                return await executeIssueLabelCreate(client, params);
+              }
+              return await executeIssueLabelList(client, params);
             default:
               throw new Error(`Unknown action: ${params.action}`);
           }
@@ -933,13 +972,13 @@ async function registerLinearTools(pi) {
     name: 'linear_project',
     label: 'Linear Project',
     description: 'Interact with Linear projects.',
-    promptSnippet: 'Interact with Linear projects (list, view, create, update, delete, archive, unarchive)',
+    promptSnippet: 'Interact with Linear projects (list, view, create, update, delete, archive, unarchive, labels)',
     parameters: {
       type: 'object',
       properties: {
         action: {
           type: 'string',
-          enum: ['list', 'view', 'create', 'update', 'delete', 'archive', 'unarchive'],
+          enum: ['list', 'view', 'create', 'update', 'delete', 'archive', 'unarchive', 'labels'],
           description: 'Action to perform on project(s)',
         },
         project: {
@@ -948,7 +987,7 @@ async function registerLinearTools(pi) {
         },
         name: {
           type: 'string',
-          description: 'Project name (required for create, optional for update)',
+          description: 'Project name (required for create, optional for update); label name filter for the labels action',
         },
         teams: {
           type: 'string',
@@ -1018,6 +1057,8 @@ async function registerLinearTools(pi) {
               return await executeProjectArchive(client, params);
             case 'unarchive':
               return await executeProjectUnarchive(client, params);
+            case 'labels':
+              return await executeProjectLabelList(client, params);
             default:
               throw new Error(`Unknown action: ${params.action}`);
           }

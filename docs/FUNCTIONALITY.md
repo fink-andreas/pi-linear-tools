@@ -7,6 +7,8 @@
 Included:
 - extension configuration command (`/linear-tools-config`)
 - issue/project/milestone tools powered by `@linear/sdk`
+- issue label list/create and project label list actions
+- `labels` and `links` parameters on issue create/update
 - issue start flow with optional git branch creation/switch
 - settings persistence for API key/default team/project team mapping
 
@@ -20,7 +22,7 @@ Excluded:
 ## Core modules
 
 - `src/linear-client.js`: Linear SDK client factory
-- `src/linear.js`: issue/project/milestone operations and formatting helpers
+- `src/linear.js`: issue/project/milestone/label operations and formatting helpers
 - `src/settings.js`: settings defaults/validation/load/save
 - `src/logger.js`: structured logging
 - `extensions/pi-linear-tools.js`: command and tool registration

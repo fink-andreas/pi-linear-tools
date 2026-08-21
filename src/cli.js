@@ -45,6 +45,9 @@ import {
   executeMilestoneCreate,
   executeMilestoneUpdate,
   executeMilestoneDelete,
+  executeIssueLabelList,
+  executeIssueLabelCreate,
+  executeProjectLabelList,
 } from './handlers.js';
 import { withMilestoneScopeHint } from './error-hints.js';
 
@@ -181,10 +184,11 @@ Issue Actions:
   download <issue> --directory DIR [--attachment-id ID|--attachment-title TITLE|--attachment-url URL|--attachment-index N]
          [--filename NAME] [--overwrite true|false] [--max-bytes N]
   activity <issue> [--limit N] [--include-archived true|false]
-  create --title X [--team X] [--project X] [--description X] [--priority 0-4|name] [--assignee me|ID]
+  create --title X [--team X] [--project X] [--description X] [--priority 0-4|name] [--assignee me|ID] [--labels X,Y] [--link URL|TITLE]
   update <issue> [--title X] [--description X] [--state X] [--priority 0-4|name]
-         [--assignee me|ID] [--milestone X] [--sub-issue-of X]
-  comment <issue> --body X
+         [--assignee me|ID] [--milestone X] [--sub-issue-of X] [--labels X,Y] [--link URL|TITLE]
+  labels [--name X] [--team X]      List issue labels
+  labels create --name X [--color X] [--description X] [--team X]   Create an issue label  comment <issue> --body X
   start <issue> [--from-ref X] [--on-branch-exists switch|suffix]
   delete <issue>
 
@@ -196,6 +200,7 @@ Project Actions:
   delete <project>
   archive <project>
   unarchive <project>
+  labels [--name X]   List project labels
 
 Project Update Actions:
   list --project X [--limit N] [--include-archived true|false]
@@ -307,6 +312,7 @@ Actions:
   comment   Add a comment to an issue
   start     Start working on an issue (create branch, set In Progress)
   delete    Delete an issue
+  labels    List issue labels, or create one with labels create
 
 List Options:
   --project X      Project name or ID (default: remote origin repo name, else current directory name)
@@ -350,6 +356,8 @@ Create Options:
   --priority N     Issue priority: 0=None, 1=Urgent, 2=High, 3=Medium, 4=Low; or none, urgent, high, medium, low
   --assignee X     "me" or assignee ID
   --parent-id X    Parent issue ID for sub-issues
+  --labels X,Y     Label names or IDs to set
+  --link URL|TITLE Link attachment to add (repeat; URL, or URL|Title)
 
 Update Options:
   <issue>          Issue key or ID
@@ -360,6 +368,16 @@ Update Options:
   --assignee X     "me" or assignee ID
   --milestone X    Milestone name/ID, or "none" to clear
   --sub-issue-of X Parent issue key/ID, or "none" to clear
+  --labels X,Y     Label names or IDs to set
+  --link URL|TITLE Link attachment to add (repeat; URL, or URL|Title)
+
+Labels Options:
+  list             List issue labels (--name filter, --team filter)
+  create           Create an issue label
+  --name X         Label name (required for create)
+  --color X        Label color (hex)
+  --description X  Label description
+  --team X         Team to scope the label/list
 
 Comment Options:
   <issue>          Issue key or ID
@@ -402,6 +420,7 @@ Actions:
   delete    Delete a project
   archive   Archive a project
   unarchive Restore an archived project
+  labels    List project labels (--name filter)
 
 View Options:
   <project>        Project name or ID
@@ -437,6 +456,9 @@ Archive Options:
 
 Unarchive Options:
   <project>        Project name or ID
+
+Labels Options:
+  --name X         Label name filter
 
 Examples:
   pi-linear-tools project view "Roadmap Refresh"
@@ -941,7 +963,19 @@ async function handleIssueCreate(args) {
     assignee: readFlag(args, '--assignee'),
     parentId: readFlag(args, '--parent-id'),
     state: readFlag(args, '--state'),
+    labels: readMultiFlag(args, '--labels'),
   };
+
+  const links = readMultiFlag(args, '--link');
+  if (links.length > 0) {
+    params.links = links.map((raw) => {
+      const separator = raw.indexOf('|');
+      if (separator >= 0) {
+        return { url: raw.slice(0, separator), title: raw.slice(separator + 1) };
+      }
+      return { url: raw, title: raw };
+    });
+  }
 
   if (!params.title) {
     throw new Error('Missing required flag: --title');
@@ -968,7 +1002,19 @@ async function handleIssueUpdate(args) {
     assignee: readFlag(args, '--assignee'),
     milestone: readFlag(args, '--milestone'),
     subIssueOf: readFlag(args, '--sub-issue-of'),
+    labels: readMultiFlag(args, '--labels'),
   };
+
+  const links = readMultiFlag(args, '--link');
+  if (links.length > 0) {
+    params.links = links.map((raw) => {
+      const separator = raw.indexOf('|');
+      if (separator >= 0) {
+        return { url: raw.slice(0, separator), title: raw.slice(separator + 1) };
+      }
+      return { url: raw, title: raw };
+    });
+  }
 
   const result = await executeIssueUpdate(client, params);
   console.log(result.content[0].text);
@@ -1029,6 +1075,33 @@ async function handleIssueDelete(args) {
   console.log(result.content[0].text);
 }
 
+async function handleIssueLabels(args) {
+  const client = await createAuthenticatedClient();
+  const [subAction] = args;
+
+  if (subAction === 'create') {
+    const params = {
+      subAction: 'create',
+      name: readFlag(args, '--name'),
+      description: readFlag(args, '--description'),
+      color: readFlag(args, '--color'),
+      team: readFlag(args, '--team'),
+    };
+    if (!params.name) {
+      throw new Error('Missing required flag: --name for labels create');
+    }
+    const result = await executeIssueLabelCreate(client, params);
+    console.log(result.content[0].text);
+    return;
+  }
+
+  const result = await executeIssueLabelList(client, {
+    name: readFlag(args, '--name'),
+    team: readFlag(args, '--team'),
+  });
+  console.log(result.content[0].text);
+}
+
 async function handleIssue(args) {
   const [action, ...rest] = args;
 
@@ -1058,6 +1131,8 @@ async function handleIssue(args) {
       return handleIssueStart(rest);
     case 'delete':
       return handleIssueDelete(rest);
+    case 'labels':
+      return handleIssueLabels(rest);
     default:
       throw new Error(`Unknown issue action: ${action}`);
   }
@@ -1196,9 +1271,19 @@ async function handleProject(args) {
       return handleProjectArchive(args.slice(1));
     case 'unarchive':
       return handleProjectUnarchive(args.slice(1));
+    case 'labels':
+      return handleProjectLabelList(args.slice(1));
     default:
       throw new Error(`Unknown project action: ${action}`);
   }
+}
+
+async function handleProjectLabelList(args) {
+  const client = await createAuthenticatedClient();
+  const result = await executeProjectLabelList(client, {
+    name: readFlag(args, '--name'),
+  });
+  console.log(result.content[0].text);
 }
 
 // ===== PROJECT UPDATE HANDLERS =====
