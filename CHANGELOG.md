@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.8.0 (2026-08-21)
+
+Minor release adding labels, links, and issue search, plus reliability improvements to tool execution and rendering.
+
+### New Features
+- **Manage issue labels and links**: `linear_issue` can list and create labels, and issue create/update operations can set labels and append link attachments. The CLI exposes matching commands and `--labels` / `--link` flags.
+- **List project labels**: `linear_project(action="labels")` lists project labels, optionally filtered by name.
+- **Search issue text**: `linear_issue(action="list")` accepts `query` to search issue titles and descriptions.
+
+### Bug Fixes
+- **Resolve the default project from Git origin**: Project defaults now use the repository origin name, which works reliably in worktrees and nested directories.
+- **Honor Ctrl+O tool-result expansion**: Long Linear tool output now collapses to a preview and expands correctly.
+- **Surface failed Linear operations as errors**: Rejected API operations no longer appear as successful empty results; their error messages now consistently include the operation label.
+- **Resolve labels for team issues and support link-only updates**: Label resolution handles workspace/team labels, comma-separated labels work, and link-only updates are accepted.
+
+### Tests
+- Added coverage for labels and links, issue text queries, collapsed rendering, default-project resolution, and surfaced error handling.
+
+### Contributors
+- [@elecnix](https://github.com/elecnix) (Nicolas Marchildon) — [#24](https://github.com/fink-andreas/pi-linear-tools/pull/24), [#29](https://github.com/fink-andreas/pi-linear-tools/pull/29), [#32](https://github.com/fink-andreas/pi-linear-tools/pull/32), [#33](https://github.com/fink-andreas/pi-linear-tools/pull/33), [#35](https://github.com/fink-andreas/pi-linear-tools/pull/35)
+
 ## v0.7.3 (2026-07-28)
 
 Patch release that fixes Linear issue-relation updates for OAuth users.
