@@ -309,7 +309,7 @@ Actions:
   delete    Delete an issue
 
 List Options:
-  --project X      Project name or ID (default: current directory name)
+  --project X      Project name or ID (default: remote origin repo name, else current directory name)
   --states X,Y     Filter by state names (comma-separated)
   --assignee X     Filter by assignee: "me" or "all"
   --team X         Filter by team key (e.g., ENG) or ID
@@ -585,7 +585,7 @@ Actions:
   delete    Delete a milestone
 
 List Options:
-  --project X      Project name or ID (default: current directory name)
+  --project X      Project name or ID (default: remote origin repo name, else current directory name)
 
 View Options:
   <milestone-id>   Milestone ID
