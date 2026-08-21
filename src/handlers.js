@@ -93,6 +93,14 @@ function parseRefList(value) {
     .filter(Boolean);
 }
 
+function parseLabelRefs(value) {
+  const values = Array.isArray(value) ? value : [value];
+  return values
+    .flatMap((item) => String(item || '').split(','))
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 const DEFAULT_MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024;
 const DEFAULT_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
@@ -716,9 +724,7 @@ export async function executeIssueCreate(client, params, options = {}) {
   }
 
   if (params.labels !== undefined && params.labels !== null) {
-    const labelRefs = Array.isArray(params.labels)
-      ? params.labels
-      : String(params.labels).split(',').map((s) => s.trim()).filter(Boolean);
+    const labelRefs = parseLabelRefs(params.labels);
     if (labelRefs.length > 0) {
       createInput.labelIds = await resolveLabelIds(client, labelRefs, team.id);
     }
@@ -804,9 +810,7 @@ export async function executeIssueUpdate(client, params) {
   };
 
   if (params.labels !== undefined && params.labels !== null) {
-    const labelRefs = Array.isArray(params.labels)
-      ? params.labels
-      : String(params.labels).split(',').map((s) => s.trim()).filter(Boolean);
+    const labelRefs = parseLabelRefs(params.labels);
     if (labelRefs.length > 0) {
       updatePatch.labelIds = await resolveLabelIds(client, labelRefs, null);
     }
@@ -840,7 +844,9 @@ export async function executeIssueUpdate(client, params) {
 
   let result;
   try {
-    result = await updateIssue(client, issue, updatePatch);
+    result = await updateIssue(client, issue, updatePatch, {
+      allowEmpty: Array.isArray(params.links) && params.links.length > 0,
+    });
   } catch (error) {
     throw withIssueRelationScopeHint(error, updatePatch);
   }

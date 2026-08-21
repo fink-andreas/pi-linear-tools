@@ -156,7 +156,12 @@ async function testIssueCreateWithLabelsResolvesAndAddsLinks() {
       if (query.includes('IssueLabels')) {
         return {
           data: {
-            issueLabels: { nodes: [createLabel({ id: 'label-frontend', name: 'frontend' })] },
+            issueLabels: {
+              nodes: [
+                createLabel({ id: 'label-frontend', name: 'frontend' }),
+                createLabel({ id: 'label-backend', name: 'backend' }),
+              ],
+            },
           },
           headers: new Headers(),
         };
@@ -193,12 +198,12 @@ async function testIssueCreateWithLabelsResolvesAndAddsLinks() {
   const result = await executeIssueCreate(client, {
     title: 'Add labels',
     team: 'ENG',
-    labels: ['frontend'],
+    labels: ['frontend, backend'],
     links: [{ url: 'https://example.com/pr', title: 'PR #1' }],
   });
 
   // labelIds resolved from names
-  assert.deepEqual(created[0].labelIds, ['label-frontend']);
+  assert.deepEqual(created[0].labelIds, ['label-frontend', 'label-backend']);
   // attachment created against created issue
   assert.equal(attachments[0].issueId, 'issue-1');
   assert.equal(attachments[0].url, 'https://example.com/pr');
@@ -214,7 +219,12 @@ async function testIssueUpdateWithLabelsAndLinks() {
       if (query.includes('IssueLabels')) {
         return {
           data: {
-            issueLabels: { nodes: [createLabel({ id: 'label-ux', name: 'ux' })] },
+            issueLabels: {
+              nodes: [
+                createLabel({ id: 'label-ux', name: 'ux' }),
+                createLabel({ id: 'label-frontend', name: 'frontend' }),
+              ],
+            },
           },
           headers: new Headers(),
         };
@@ -291,12 +301,51 @@ async function testIssueUpdateWithLabelsAndLinks() {
 
   const result = await executeIssueUpdate(client, {
     issue: 'ENG-5',
-    labels: ['ux'],
+    labels: ['ux, frontend'],
     links: [{ url: 'https://example.com/docs', title: 'DOC' }],
   });
 
-  assert.deepEqual(patches[0].labelIds, ['label-ux']);
+  assert.deepEqual(patches[0].labelIds, ['label-ux', 'label-frontend']);
   assert.equal(attachments[0].issueId, 'issue-5');
+  assert.match(result.content[0].text, /links: 1/);
+}
+
+async function testIssueUpdateWithLinksOnly() {
+  const attachments = [];
+  const client = {
+    rawRequest: async (query, variables) => {
+      if (query.includes('IssueMinimalByTeamAndNumber')) {
+        return {
+          data: {
+            issues: {
+              nodes: [{
+                id: 'issue-6',
+                identifier: 'ENG-6',
+                title: 'Link only',
+                team: { id: 'team-1', key: 'ENG', name: 'Engineering' },
+              }],
+            },
+          },
+          headers: new Headers(),
+        };
+      }
+      if (query.includes('AttachmentCreate')) {
+        attachments.push(variables.input);
+        return {
+          data: { attachmentCreate: { success: true, attachment: { id: 'att-10', title: variables.input.title, url: variables.input.url } } },
+          headers: new Headers(),
+        };
+      }
+      throw new Error(`Unexpected query: ${query.slice(0, 80)}`);
+    },
+  };
+
+  const result = await executeIssueUpdate(client, {
+    issue: 'ENG-6',
+    links: [{ url: 'https://example.com/only-link', title: 'Only link' }],
+  });
+
+  assert.equal(attachments[0].issueId, 'issue-6');
   assert.match(result.content[0].text, /links: 1/);
 }
 
@@ -307,6 +356,7 @@ async function run() {
   await testProjectLabelList();
   await testIssueCreateWithLabelsResolvesAndAddsLinks();
   await testIssueUpdateWithLabelsAndLinks();
+  await testIssueUpdateWithLinksOnly();
   console.log('✓ test-labels-links.js passed');
 }
 

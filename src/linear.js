@@ -3476,7 +3476,7 @@ function buildFallbackUpdatedIssue(targetIssue, updateInput) {
   return fallback;
 }
 
-export async function updateIssue(client, issueRef, patch = {}) {
+export async function updateIssue(client, issueRef, patch = {}, options = {}) {
   return withLinearErrorHandling(async () => {
     const targetIssue = await resolveIssue(client, issueRef);
     const updateInput = {};
@@ -3615,7 +3615,14 @@ export async function updateIssue(client, issueRef, patch = {}) {
     if (Object.keys(updateInput).length === 0
       && relationCreates.length === 0
       && parentOfRefs.length === 0) {
-      throw new Error('No update fields provided');
+      if (!options.allowEmpty) {
+        throw new Error('No update fields provided');
+      }
+      return {
+        issue: targetIssue,
+        changed: [],
+        usedRateLimitFallback: false,
+      };
     }
 
     if (Object.keys(updateInput).length > 0) {
