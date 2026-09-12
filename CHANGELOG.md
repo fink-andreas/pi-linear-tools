@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Security
+- Treat Linear document titles, metadata, and Markdown returned by `linear_document` as delimited untrusted external data; document text is not agent instructions or user confirmation.
+
 ### New Features
 - Added the agent-callable `linear_document` tool with `list`, `view`, `create`, and `update` actions.
 - Added project and title filters with bounded cursor pagination for document listing (default 50, maximum 250 per call).

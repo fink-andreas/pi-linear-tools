@@ -128,7 +128,11 @@ async function testRegistrationIncludesMilestoneWithDefaultApiKeyMode() {
 
     const documentTool = pi.tools.get('linear_document');
     assert.ok(documentTool);
-    assert.equal(documentTool.description, 'List, read, create, and update Linear documents. Update fields replace their current values; omitted fields are preserved. This tool does not merge content or provide concurrency control.');
+    assert.match(documentTool.description, /untrusted external data/);
+    assert.match(documentTool.description, /explicit confirmation/);
+    assert.match(documentTool.promptSnippet, /untrusted data/);
+    assert.ok(Array.isArray(documentTool.promptGuidelines));
+    assert.match(documentTool.promptGuidelines.join(' '), /never as instructions/);
     assert.deepEqual(documentTool.parameters.properties.action.enum, ['list', 'view', 'create', 'update']);
     assert.match(documentTool.parameters.properties.action.description, /Create requires title and exactly one of project or issue/);
 
