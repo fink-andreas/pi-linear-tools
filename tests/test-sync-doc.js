@@ -519,7 +519,7 @@ async function testRunAllSyncDocsCreatesDocumentAndIndex() {
           data: {
             documentCreate: {
               success: true,
-              document: { id },
+              document: documents.get(id),
             },
           },
           headers: new Headers(),
@@ -546,7 +546,7 @@ async function testRunAllSyncDocsCreatesDocumentAndIndex() {
           data: {
             documentUpdate: {
               success: true,
-              document: { id: variables.id },
+              document: documents.get(variables.id),
             },
           },
           headers: new Headers(),
@@ -682,7 +682,7 @@ async function testRunAllSyncDocsMatchesProjectsByResolvedIdentity() {
           data: {
             documentCreate: {
               success: true,
-              document: { id: 'doc-identity' },
+              document: documents.get('doc-identity'),
             },
           },
           headers: new Headers(),
@@ -814,7 +814,7 @@ async function testRunAllSyncDocsCheckMatchesRunForFirstDocumentCreation() {
           data: {
             documentCreate: {
               success: true,
-              document: { id: 'doc-first' },
+              document: documents.get('doc-first'),
             },
           },
           headers: new Headers(),
@@ -968,7 +968,7 @@ async function testRunAllSyncDocsCheckMatchesRunForExistingDocuments() {
           data: {
             documentUpdate: {
               success: true,
-              document: { id: variables.id },
+              document: documents.get(variables.id),
             },
           },
           headers: new Headers(),

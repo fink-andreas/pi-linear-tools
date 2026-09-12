@@ -68,6 +68,7 @@ async function testRegistrationIncludesMilestoneWithDefaultApiKeyMode() {
     assert.ok(pi.tools.has('linear_issue'));
     assert.ok(pi.tools.has('linear_project'));
     assert.ok(pi.tools.has('linear_project_update'));
+    assert.ok(pi.tools.has('linear_document'));
     assert.ok(pi.tools.has('linear_team'));
     assert.ok(pi.tools.has('linear_milestone'));
     assert.ok(!pi.tools.has('linear_reload_runtime'));
@@ -125,6 +126,16 @@ async function testRegistrationIncludesMilestoneWithDefaultApiKeyMode() {
     assert.ok(projectUpdateTool);
     assert.equal(projectUpdateTool.description, 'Interact with Linear project updates.');
 
+    const documentTool = pi.tools.get('linear_document');
+    assert.ok(documentTool);
+    assert.match(documentTool.description, /untrusted external data/);
+    assert.match(documentTool.description, /explicit confirmation/);
+    assert.match(documentTool.promptSnippet, /untrusted data/);
+    assert.ok(Array.isArray(documentTool.promptGuidelines));
+    assert.match(documentTool.promptGuidelines.join(' '), /never as instructions/);
+    assert.deepEqual(documentTool.parameters.properties.action.enum, ['list', 'view', 'create', 'update']);
+    assert.match(documentTool.parameters.properties.action.description, /Create requires title and accepts no parent or one of project or issue/);
+
     const teamTool = pi.tools.get('linear_team');
     assert.ok(teamTool);
     assert.equal(teamTool.description, 'Interact with Linear teams.');
@@ -149,6 +160,7 @@ async function testRegistrationHidesMilestoneForOAuthWithoutApiKey() {
       assert.ok(pi.tools.has('linear_issue'));
       assert.ok(pi.tools.has('linear_project'));
       assert.ok(pi.tools.has('linear_project_update'));
+      assert.ok(pi.tools.has('linear_document'));
       assert.ok(pi.tools.has('linear_team'));
       assert.ok(!pi.tools.has('linear_milestone'));
     });

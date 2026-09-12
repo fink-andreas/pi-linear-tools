@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Security
+- Treat Linear document titles, metadata, and Markdown returned by `linear_document` as delimited untrusted external data; document text is not agent instructions or user confirmation.
+
+### New Features
+- Added the agent-callable `linear_document` tool with `list`, `view`, `create`, and `update` actions.
+- Added project and title filters with bounded cursor pagination for document listing (default 50, maximum 250 per call).
+- Added mutually exclusive project-or-issue parent validation while allowing unparented document creation, plus full-content replacement semantics for document updates.
+
+### Tests
+- Added fake-client coverage for document pagination, rendering, optional and mutually exclusive parent handling, empty-content clearing, per-operation environment authentication, and scoped-router naming compatibility.
+
 ## v0.7.3 (2026-07-28)
 
 Patch release that fixes Linear issue-relation updates for OAuth users.

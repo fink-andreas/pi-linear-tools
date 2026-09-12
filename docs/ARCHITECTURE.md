@@ -124,6 +124,7 @@ flowchart LR
         PROJECTS[Project List]
         TEAMS[Team List]
         MILESTONES[Milestone CRUD]
+        DOCUMENTS[Document List/View/Create/Update]
     end
 
     U1 --> CLI[CLI Parser]
@@ -145,6 +146,7 @@ flowchart LR
     GRAPHQL --> PROJECTS
     GRAPHQL --> TEAMS
     GRAPHQL --> MILESTONES
+    GRAPHQL --> DOCUMENTS
 ```
 
 ## Component Diagram
@@ -159,6 +161,7 @@ graph TB
         TOOL2[linear_project]
         TOOL3[linear_team]
         TOOL4[linear_milestone]
+        TOOL5[linear_document]
     end
 
     subgraph "CLI Interface"
@@ -185,6 +188,10 @@ graph TB
         H_MCREATE[executeMilestoneCreate]
         H_MUPDATE[executeMilestoneUpdate]
         H_MDELETE[executeMilestoneDelete]
+        H_DLIST[executeDocumentList]
+        H_DVIEW[executeDocumentView]
+        H_DCREATE[executeDocumentCreate]
+        H_DUPDATE[executeDocumentUpdate]
     end
 
     CMD1 --> CONFIG[Config Handler]
@@ -192,6 +199,12 @@ graph TB
     TOOL2 --> H_PROJ
     TOOL3 --> H_TEAM
     TOOL4 --> MILESTONE_H[Milestone Dispatcher]
+    TOOL5 --> DOCUMENT_H[Document Dispatcher]
+
+    DOCUMENT_H --> H_DLIST
+    DOCUMENT_H --> H_DVIEW
+    DOCUMENT_H --> H_DCREATE
+    DOCUMENT_H --> H_DUPDATE
 
     CLI_ISSUE --> ISSUE_H
     CLI_MILESTONE --> MILESTONE_H

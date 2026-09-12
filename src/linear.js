@@ -20,7 +20,7 @@ const teamsCache = new Map();
 const teamStatesCache = new Map();
 
 function getClientCacheKey(client) {
-  return client?.apiKey || 'default';
+  return client?.__piLinearTrackerKey || client?.apiKey || 'default';
 }
 
 function getCache(map, key) {
@@ -409,6 +409,35 @@ const PROJECT_UPDATE_UNARCHIVE_MUTATION = `
   }
 `;
 
+const DEFAULT_DOCUMENT_LIST_LIMIT = 50;
+const MAX_DOCUMENT_LIST_LIMIT = 250;
+
+const DOCUMENTS_QUERY = `
+  query Documents($first: Int!, $after: String, $filter: DocumentFilter) {
+    documents(first: $first, after: $after, filter: $filter) {
+      nodes {
+        id
+        title
+        url
+        updatedAt
+        project {
+          id
+          name
+        }
+        issue {
+          id
+          identifier
+          title
+        }
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+    }
+  }
+`;
+
 const DOCUMENT_DETAILS_QUERY = `
   query DocumentDetails($id: String!) {
     document(id: $id) {
@@ -441,6 +470,24 @@ const DOCUMENT_CREATE_MUTATION = `
       success
       document {
         id
+        title
+        content
+        icon
+        color
+        slugId
+        url
+        archivedAt
+        createdAt
+        updatedAt
+        project {
+          id
+          name
+        }
+        issue {
+          id
+          identifier
+          title
+        }
       }
     }
   }
@@ -452,6 +499,24 @@ const DOCUMENT_UPDATE_MUTATION = `
       success
       document {
         id
+        title
+        content
+        icon
+        color
+        slugId
+        url
+        archivedAt
+        createdAt
+        updatedAt
+        project {
+          id
+          name
+        }
+        issue {
+          id
+          identifier
+          title
+        }
       }
     }
   }
@@ -2233,7 +2298,16 @@ export async function fetchProjects(client, options = {}) {
       });
       nodes = data?.projects?.nodes ?? [];
     } else {
-      const result = await client.projects();
+      const result = await client.projects({ first: 50 });
+      const seenCursors = new Set();
+      while (result.pageInfo?.hasNextPage) {
+        const cursor = result.pageInfo.endCursor;
+        if (!cursor || seenCursors.has(cursor) || typeof result.fetchNext !== 'function') {
+          throw new Error('Linear returned an invalid project pagination cursor');
+        }
+        seenCursors.add(cursor);
+        await result.fetchNext();
+      }
       nodes = result.nodes ?? [];
     }
 
@@ -2793,6 +2867,84 @@ export async function unarchiveProjectUpdate(client, projectUpdateId) {
   }, 'unarchiveProjectUpdate');
 }
 
+/**
+ * Fetch one bounded page of accessible Linear documents.
+ * @param {LinearClient} client - Linear SDK client
+ * @param {Object} options
+ * @param {string|null} [options.projectId] - Project ID filter
+ * @param {string|null} [options.query] - Case-insensitive title filter
+ * @param {number} [options.limit=50] - Maximum documents to return (hard maximum: 250)
+ * @param {string|null} [options.cursor] - Cursor returned by a previous page
+ * @returns {Promise<{documents: Array, pageCount: number, limit: number, nextCursor: string|null, truncated: boolean}>}
+ */
+export async function fetchDocuments(client, options = {}) {
+  return withLinearErrorHandling(async () => {
+    const limit = normalizePositiveInteger(options.limit, 'limit', DEFAULT_DOCUMENT_LIST_LIMIT);
+    if (limit > MAX_DOCUMENT_LIST_LIMIT) {
+      throw new Error(`limit cannot exceed ${MAX_DOCUMENT_LIST_LIMIT}`);
+    }
+
+    let after = null;
+    if (options.cursor !== undefined && options.cursor !== null) {
+      if (typeof options.cursor !== 'string' || !options.cursor.trim()) {
+        throw new Error('cursor must be a non-empty string');
+      }
+      after = options.cursor.trim();
+    }
+
+    const filterParts = [];
+
+    if (options.projectId !== undefined && options.projectId !== null) {
+      const projectId = String(options.projectId).trim();
+      if (!projectId) {
+        throw new Error('projectId must not be empty');
+      }
+      filterParts.push({ project: { id: { eq: projectId } } });
+    }
+
+    if (options.query !== undefined && options.query !== null) {
+      const query = String(options.query).trim();
+      if (!query) {
+        throw new Error('query must not be empty');
+      }
+      filterParts.push({ title: { containsIgnoreCase: query } });
+    }
+
+    const filter = filterParts.length === 0
+      ? undefined
+      : (filterParts.length === 1 ? filterParts[0] : { and: filterParts });
+    const data = await executeGraphQL(client, DOCUMENTS_QUERY, {
+      first: limit,
+      after,
+      filter,
+    });
+    const connection = data?.documents;
+    if (!connection) {
+      throw new Error('Failed to list documents');
+    }
+
+    const nodes = Array.isArray(connection.nodes) ? connection.nodes : [];
+    if (nodes.length > limit) {
+      throw new Error('Linear returned more documents than requested');
+    }
+
+    const pageInfo = connection.pageInfo || {};
+    const truncated = pageInfo.hasNextPage === true;
+    const nextCursor = truncated ? pageInfo.endCursor : null;
+    if (truncated && (typeof nextCursor !== 'string' || !nextCursor.trim() || nextCursor === after)) {
+      throw new Error('Linear returned an invalid document pagination cursor');
+    }
+
+    return {
+      documents: nodes.map(transformDocument),
+      pageCount: 1,
+      limit,
+      nextCursor,
+      truncated,
+    };
+  }, 'fetchDocuments');
+}
+
 export async function fetchDocumentDetails(client, documentRef) {
   return withLinearErrorHandling(async () => {
     const id = String(documentRef || '').trim();
@@ -2821,8 +2973,8 @@ export async function createDocument(client, input = {}) {
     if (input.projectId !== undefined) createInput.projectId = input.projectId;
     if (input.issueId !== undefined) createInput.issueId = input.issueId;
 
-    if (!createInput.projectId && !createInput.issueId) {
-      throw new Error('Document create requires either projectId or issueId');
+    if (createInput.projectId && createInput.issueId) {
+      throw new Error('Document create accepts at most one parent: projectId or issueId');
     }
 
     for (const field of ['content', 'icon', 'color']) {
@@ -2839,8 +2991,25 @@ export async function createDocument(client, input = {}) {
       throw new Error('Failed to create document');
     }
 
-    return fetchDocumentDetails(client, payload.documentCreate.document.id);
+    return transformDocument(payload.documentCreate.document);
   }, 'createDocument');
+}
+
+async function assertExpectedDocumentUpdatedAt(client, documentRef, expectedUpdatedAt) {
+  const expected = String(expectedUpdatedAt ?? '').trim();
+  if (!expected) {
+    throw new Error('expectedUpdatedAt must be a non-empty timestamp');
+  }
+
+  // DocumentUpdateInput has no expectedUpdatedAt condition in Linear's schema.
+  // Read immediately before the mutation as a best-effort optimistic guard.
+  const currentDocument = await fetchDocumentDetails(client, documentRef);
+  const current = String(currentDocument.updatedAt ?? '').trim();
+  if (current !== expected) {
+    throw new Error(
+      `Document update conflict for ${documentRef}: expectedUpdatedAt "${expected}" does not match current updatedAt "${current || 'unavailable'}". The document changed after it was read; re-read it and retry with the latest updatedAt.`
+    );
+  }
 }
 
 export async function updateDocument(client, documentRef, patch = {}) {
@@ -2848,6 +3017,10 @@ export async function updateDocument(client, documentRef, patch = {}) {
     const id = String(documentRef || '').trim();
     if (!id) {
       throw new Error('Missing required field: document');
+    }
+
+    if (patch.projectId != null && patch.issueId != null) {
+      throw new Error('Document update accepts at most one parent: projectId or issueId');
     }
 
     const updateInput = {};
@@ -2861,6 +3034,10 @@ export async function updateDocument(client, documentRef, patch = {}) {
       throw new Error('No update fields provided');
     }
 
+    if (patch.expectedUpdatedAt !== undefined) {
+      await assertExpectedDocumentUpdatedAt(client, id, patch.expectedUpdatedAt);
+    }
+
     const payload = await executeGraphQL(client, DOCUMENT_UPDATE_MUTATION, {
       id,
       input: updateInput,
@@ -2870,7 +3047,7 @@ export async function updateDocument(client, documentRef, patch = {}) {
       throw new Error('Failed to update document');
     }
 
-    const document = await fetchDocumentDetails(client, payload.documentUpdate.document.id);
+    const document = transformDocument(payload.documentUpdate.document);
     return {
       document,
       changed: Object.keys(updateInput),

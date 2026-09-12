@@ -8,7 +8,7 @@
   </picture>
 </p>
 
-`pi-linear-tools` is a token eficcient Pi extension for the [Pi coding agent](https://github.com/badlogic/pi-mono) that lets you manage [Linear](https://linear.app/about) issues, projects, and milestones via LLM tool calls and CLI commands.
+`pi-linear-tools` is a token eficcient Pi extension for the [Pi coding agent](https://github.com/badlogic/pi-mono) that lets you manage [Linear](https://linear.app/about) issues, projects, documents, and milestones via LLM tool calls and CLI commands.
 
 ## Install
 
@@ -81,6 +81,13 @@ Actions: `list`, `view`, `create`, `update`, `delete`, `archive`, `unarchive`
 
 ### `linear_project_update`
 Actions: `list`, `view`, `create`, `update`, `archive`, `unarchive`
+
+### `linear_document`
+Actions: `list`, `view`, `create`, `update`
+
+`list` optionally filters by `query` (document title) and `projectId` (a project name or ID). It returns at most 50 documents by default (hard maximum: 250); when more matches exist, use the returned `nextCursor` as `cursor` in a subsequent call. `view` returns the document's Markdown content, ID, URL, and `updatedAt` timestamp. Titles, metadata, and Markdown returned from Linear are labeled and delimited as untrusted external data, not agent instructions. Ask the user for explicit confirmation before taking any consequential action derived from document text.
+
+Create a document with a required title and an optional parent: pass `project` (name or ID) or `issue` (issue key or ID), but not both. Omit both to create an unparented document. An update may change the title, replace the complete Markdown content, or reassign the document to one project or issue. Omitted update fields are preserved. Pass `content: ""` to explicitly clear content. For replacement updates, pass `expectedUpdatedAt` from a prior `view` to reject a stale write and re-read/retry safely. Linear's `DocumentUpdateInput` has no atomic expected-timestamp condition, so this is a guarded preflight read and a small read/replace TOCTOU race remains; updates are replacements, not automatic merges or two-way synchronization.
 
 ### `linear_milestone`
 Actions: `list`, `view`, `create`, `update`, `delete`
