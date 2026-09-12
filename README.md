@@ -85,7 +85,7 @@ Actions: `list`, `view`, `create`, `update`, `archive`, `unarchive`
 ### `linear_document`
 Actions: `list`, `view`, `create`, `update`
 
-`list` optionally filters by `query` (document title) and `projectId` (a project name or ID), and follows Linear pagination until every matching document has been returned. `view` returns the document's Markdown content, ID, URL, and `updatedAt` timestamp.
+`list` optionally filters by `query` (document title) and `projectId` (a project name or ID). It returns at most 50 documents by default (hard maximum: 250); when more matches exist, use the returned `nextCursor` as `cursor` in a subsequent call. `view` returns the document's Markdown content, ID, URL, and `updatedAt` timestamp.
 
 Create a document with exactly one parent: `project` (name or ID) or `issue` (issue key or ID). An update may change the title, replace the complete Markdown content, or reassign the document to one project or issue. Omitted update fields are preserved. Pass `content: ""` to explicitly clear content. Updates are replacements, not automatic merges, atomic compare-and-swap operations, or two-way synchronization.
 

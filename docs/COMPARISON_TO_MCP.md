@@ -422,7 +422,7 @@ Delete (archive) a project or initiative status update.
 
 ### linear_document
 
-List, view, create, or update Linear documents. Listing follows all cursor pages. Update fields replace current values; omitted fields are preserved, and `content: ""` clears the Markdown content.
+List, view, create, or update Linear documents. Listing returns a bounded page (default 50, maximum 250); use the returned cursor to continue. Update fields replace current values; omitted fields are preserved, and `content: ""` clears the Markdown content.
 
 **Parameters:**
 ```json
@@ -431,6 +431,8 @@ List, view, create, or update Linear documents. Listing follows all cursor pages
   "document": string,          // Document ID or slug (view/update)
   "query": string,             // Case-insensitive title filter (list)
   "projectId": string,         // Project name or ID filter (list)
+  "limit": number,             // Maximum results for this call (default: 50, max: 250)
+  "cursor": string,            // Cursor returned by a previous list call
   "title": string,             // Required for create; replacement on update
   "content": string,           // Full Markdown replacement on update
   "project": string,           // Project name or ID parent (create/update)

@@ -1179,6 +1179,16 @@ async function registerLinearTools(pi) {
           type: 'string',
           description: 'Project name or ID filter (for list)',
         },
+        limit: {
+          type: 'integer',
+          minimum: 1,
+          maximum: 250,
+          description: 'Maximum documents to return for one list call (default: 50; use cursor for more)',
+        },
+        cursor: {
+          type: 'string',
+          description: 'Opaque continuation cursor returned by a previous list call',
+        },
         title: {
           type: 'string',
           description: 'Document title (required for create; replaces the title on update)',

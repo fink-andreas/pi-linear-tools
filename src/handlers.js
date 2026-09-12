@@ -1475,6 +1475,16 @@ export async function executeProjectUpdateUnarchive(client, params) {
 
 // ===== DOCUMENT HANDLERS =====
 
+/**
+ * List a bounded page of documents.
+ * @param {LinearClient} client - Linear SDK client
+ * @param {Object} params - List filters and pagination parameters
+ * @param {string} [params.query] - Case-insensitive title filter
+ * @param {string} [params.projectId] - Project name or ID filter
+ * @param {number} [params.limit=50] - Maximum documents to return (hard maximum: 250)
+ * @param {string} [params.cursor] - Opaque cursor returned by a previous page
+ * @returns {Promise<{content: Array, details: Object}>}
+ */
 export async function executeDocumentList(client, params) {
   return withHandlerErrorHandling(async () => {
     let project = null;
@@ -1483,23 +1493,34 @@ export async function executeDocumentList(client, params) {
       project = await resolveProjectRef(client, projectRef);
     }
 
-    const { documents, pageCount } = await fetchDocuments(client, {
+    const result = await fetchDocuments(client, {
       query: params.query,
       projectId: project?.id,
+      limit: params.limit,
+      cursor: params.cursor,
     });
+    const { documents, pageCount, limit, nextCursor, truncated } = result;
+    const paginationDetails = {
+      documentCount: documents.length,
+      pageCount,
+      limit,
+      nextCursor,
+      truncated,
+      projectId: project?.id || null,
+      projectName: project?.name || null,
+      query: params.query ?? null,
+    };
 
     if (documents.length === 0) {
       const suffix = project ? ` in project "${project.name}"` : '';
-      return toTextResult(`No documents found${suffix}`, {
-        documentCount: 0,
-        pageCount,
-        projectId: project?.id || null,
-        query: params.query ?? null,
-      });
+      const continuation = truncated
+        ? `\n\n_More documents are available. Continue with cursor: \`${nextCursor}\`._`
+        : '';
+      return toTextResult(`No documents found${suffix}${continuation}`, paginationDetails);
     }
 
     const scope = project ? ` in project "${project.name}"` : '';
-    const lines = [`## Linear documents${scope} (${documents.length})`, ''];
+    const lines = [`## Linear documents${scope} (${documents.length}${truncated ? '+' : ''})`, ''];
     for (const document of documents) {
       const parent = document.project
         ? `project: ${document.project.name}`
@@ -1509,12 +1530,12 @@ export async function executeDocumentList(client, params) {
       if (document.url) lines.push(`  ${document.url}`);
     }
 
+    if (truncated) {
+      lines.push(`\n_More documents are available. Continue with cursor: \`${nextCursor}\`._`);
+    }
+
     return toTextResult(lines.join('\n'), {
-      documentCount: documents.length,
-      pageCount,
-      projectId: project?.id || null,
-      projectName: project?.name || null,
-      query: params.query ?? null,
+      ...paginationDetails,
       documents: documents.map((document) => ({
         id: document.id,
         title: document.title,

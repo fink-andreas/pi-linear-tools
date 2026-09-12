@@ -409,6 +409,9 @@ const PROJECT_UPDATE_UNARCHIVE_MUTATION = `
   }
 `;
 
+const DEFAULT_DOCUMENT_LIST_LIMIT = 50;
+const MAX_DOCUMENT_LIST_LIMIT = 250;
+
 const DOCUMENTS_QUERY = `
   query Documents($first: Int!, $after: String, $filter: DocumentFilter) {
     documents(first: $first, after: $after, filter: $filter) {
@@ -2864,9 +2867,31 @@ export async function unarchiveProjectUpdate(client, projectUpdateId) {
   }, 'unarchiveProjectUpdate');
 }
 
+/**
+ * Fetch one bounded page of accessible Linear documents.
+ * @param {LinearClient} client - Linear SDK client
+ * @param {Object} options
+ * @param {string|null} [options.projectId] - Project ID filter
+ * @param {string|null} [options.query] - Case-insensitive title filter
+ * @param {number} [options.limit=50] - Maximum documents to return (hard maximum: 250)
+ * @param {string|null} [options.cursor] - Cursor returned by a previous page
+ * @returns {Promise<{documents: Array, pageCount: number, limit: number, nextCursor: string|null, truncated: boolean}>}
+ */
 export async function fetchDocuments(client, options = {}) {
   return withLinearErrorHandling(async () => {
-    const first = normalizePositiveInteger(options.pageSize, 'pageSize', 50);
+    const limit = normalizePositiveInteger(options.limit, 'limit', DEFAULT_DOCUMENT_LIST_LIMIT);
+    if (limit > MAX_DOCUMENT_LIST_LIMIT) {
+      throw new Error(`limit cannot exceed ${MAX_DOCUMENT_LIST_LIMIT}`);
+    }
+
+    let after = null;
+    if (options.cursor !== undefined && options.cursor !== null) {
+      if (typeof options.cursor !== 'string' || !options.cursor.trim()) {
+        throw new Error('cursor must be a non-empty string');
+      }
+      after = options.cursor.trim();
+    }
+
     const filterParts = [];
 
     if (options.projectId !== undefined && options.projectId !== null) {
@@ -2888,34 +2913,35 @@ export async function fetchDocuments(client, options = {}) {
     const filter = filterParts.length === 0
       ? undefined
       : (filterParts.length === 1 ? filterParts[0] : { and: filterParts });
-    const documents = [];
-    const seenCursors = new Set();
-    let after = null;
-    let pageCount = 0;
-
-    while (true) {
-      const data = await executeGraphQL(client, DOCUMENTS_QUERY, { first, after, filter });
-      const connection = data?.documents;
-      if (!connection) {
-        throw new Error('Failed to list documents');
-      }
-
-      documents.push(...(connection.nodes || []).map(transformDocument));
-      pageCount += 1;
-
-      if (!connection.pageInfo?.hasNextPage) {
-        break;
-      }
-
-      const nextCursor = connection.pageInfo.endCursor;
-      if (!nextCursor || seenCursors.has(nextCursor)) {
-        throw new Error('Linear returned an invalid document pagination cursor');
-      }
-      seenCursors.add(nextCursor);
-      after = nextCursor;
+    const data = await executeGraphQL(client, DOCUMENTS_QUERY, {
+      first: limit,
+      after,
+      filter,
+    });
+    const connection = data?.documents;
+    if (!connection) {
+      throw new Error('Failed to list documents');
     }
 
-    return { documents, pageCount };
+    const nodes = Array.isArray(connection.nodes) ? connection.nodes : [];
+    if (nodes.length > limit) {
+      throw new Error('Linear returned more documents than requested');
+    }
+
+    const pageInfo = connection.pageInfo || {};
+    const truncated = pageInfo.hasNextPage === true;
+    const nextCursor = truncated ? pageInfo.endCursor : null;
+    if (truncated && (typeof nextCursor !== 'string' || !nextCursor.trim() || nextCursor === after)) {
+      throw new Error('Linear returned an invalid document pagination cursor');
+    }
+
+    return {
+      documents: nodes.map(transformDocument),
+      pageCount: 1,
+      limit,
+      nextCursor,
+      truncated,
+    };
   }, 'fetchDocuments');
 }
 

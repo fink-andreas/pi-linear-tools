@@ -41,7 +41,7 @@ Excluded:
 - caches are per running process and auth context; `/reload` / restart resets in-memory cache state
 - project references may be project name or project ID
 - issue references may be identifier (`ABC-123`) or Linear issue ID
-- `linear_document` lists all result pages and can filter by title query and project
+- `linear_document` lists a bounded page (default 50, maximum 250) and can filter by title query and project; use its continuation cursor for additional pages
 - document create requires exactly one project or issue parent; update accepts at most one parent
 - document update fields use replacement semantics: omitted fields are preserved and `content: ""` clears content
 - default team resolution order for issue creation:

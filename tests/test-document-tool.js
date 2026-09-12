@@ -65,7 +65,10 @@ async function testFetchDocumentsPaginatesAndFilters() {
         return {
           data: {
             documents: {
-              nodes: [documentPayload()],
+              nodes: [
+                documentPayload(),
+                documentPayload({ id: 'doc-2', title: 'Inbox decisions' }),
+              ],
               pageInfo: { hasNextPage: true, endCursor: 'cursor-1' },
             },
           },
@@ -75,7 +78,7 @@ async function testFetchDocumentsPaginatesAndFilters() {
       return {
         data: {
           documents: {
-            nodes: [documentPayload({ id: 'doc-2', title: 'Inbox decisions' })],
+            nodes: [documentPayload({ id: 'doc-3', title: 'Inbox follow-up' })],
             pageInfo: { hasNextPage: false, endCursor: null },
           },
         },
@@ -84,22 +87,93 @@ async function testFetchDocumentsPaginatesAndFilters() {
     },
   };
 
-  const result = await fetchDocuments(client, {
+  const firstPage = await fetchDocuments(client, {
     projectId: PROJECT_ID,
     query: 'inbox',
-    pageSize: 1,
+    limit: 2,
   });
 
-  assert.equal(result.documents.length, 2);
-  assert.equal(result.pageCount, 2);
-  assert.equal(requests.length, 2);
-  assert.equal(requests[1].variables.after, 'cursor-1');
+  assert.equal(firstPage.documents.length, 2);
+  assert.equal(firstPage.pageCount, 1);
+  assert.equal(firstPage.limit, 2);
+  assert.equal(firstPage.truncated, true);
+  assert.equal(firstPage.nextCursor, 'cursor-1');
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].variables.first, 2);
+  assert.equal(requests[0].variables.after, null);
   assert.deepEqual(requests[0].variables.filter, {
     and: [
       { project: { id: { eq: PROJECT_ID } } },
       { title: { containsIgnoreCase: 'inbox' } },
     ],
   });
+
+  const secondPage = await fetchDocuments(client, {
+    projectId: PROJECT_ID,
+    query: 'inbox',
+    limit: 2,
+    cursor: firstPage.nextCursor,
+  });
+
+  assert.deepEqual(secondPage.documents.map((document) => document.id), ['doc-3']);
+  assert.equal(secondPage.pageCount, 1);
+  assert.equal(secondPage.truncated, false);
+  assert.equal(secondPage.nextCursor, null);
+  assert.equal(requests.length, 2);
+  assert.equal(requests[1].variables.first, 2);
+  assert.equal(requests[1].variables.after, 'cursor-1');
+  assert.deepEqual(requests[1].variables.filter, requests[0].variables.filter);
+}
+
+async function testDocumentListUsesBoundedDefault() {
+  let requestVariables = null;
+  const client = {
+    rawRequest: async (_query, variables) => {
+      requestVariables = variables;
+      return {
+        data: {
+          documents: {
+            nodes: [],
+            pageInfo: { hasNextPage: false, endCursor: null },
+          },
+        },
+        headers: new Headers(),
+      };
+    },
+  };
+
+  const result = await fetchDocuments(client);
+
+  assert.equal(result.limit, 50);
+  assert.equal(result.truncated, false);
+  assert.equal(result.nextCursor, null);
+  assert.equal(requestVariables.first, 50);
+  assert.equal(requestVariables.after, null);
+}
+
+async function testDocumentListPaginationValidation() {
+  const client = {
+    rawRequest: async () => {
+      throw new Error('rawRequest should not run for invalid pagination input');
+    },
+  };
+
+  await assert.rejects(
+    () => fetchDocuments(client, { limit: 0 }),
+    /limit must be a positive integer/
+  );
+  await assert.rejects(
+    () => fetchDocuments(client, { limit: 251 }),
+    /limit cannot exceed 250/
+  );
+  await assert.rejects(
+    () => fetchDocuments(client, { cursor: '' }),
+    /cursor must be a non-empty string/
+  );
+  await assert.rejects(
+    () => fetchDocuments(client, { cursor: 123 }),
+    /cursor must be a non-empty string/
+  );
 }
 
 async function testDocumentHandlers() {
@@ -122,7 +196,7 @@ async function testDocumentHandlers() {
           data: {
             documents: {
               nodes: [documentPayload()],
-              pageInfo: { hasNextPage: false, endCursor: null },
+              pageInfo: { hasNextPage: true, endCursor: 'handler-cursor-1' },
             },
           },
           headers: new Headers(),
@@ -177,10 +251,18 @@ async function testDocumentHandlers() {
     },
   };
 
-  const listed = await executeDocumentList(client, { projectId: 'Inbox', query: 'spec' });
+  const listed = await executeDocumentList(client, {
+    projectId: 'Inbox',
+    query: 'spec',
+    limit: 1,
+  });
   assert.match(listed.content[0].text, /Inbox product spec/);
+  assert.match(listed.content[0].text, /More documents are available/);
   assert.equal(listed.details.projectId, PROJECT_ID);
   assert.equal(listed.details.pageCount, 1);
+  assert.equal(listed.details.limit, 1);
+  assert.equal(listed.details.truncated, true);
+  assert.equal(listed.details.nextCursor, 'handler-cursor-1');
 
   const viewed = await executeDocumentView(client, { document: 'inbox-product-spec-abc123' });
   assert.match(viewed.content[0].text, /Canonical specification/);
@@ -265,6 +347,10 @@ async function testRegistrationAuthAndRouterCompatibility() {
       assert.ok(tool, 'linear_document must be registered');
       assert.deepEqual(tool.parameters.properties.action.enum, ['list', 'view', 'create', 'update']);
       assert.match(tool.parameters.properties.content.description, /empty string to clear/);
+      assert.equal(tool.parameters.properties.limit.type, 'integer');
+      assert.equal(tool.parameters.properties.limit.minimum, 1);
+      assert.equal(tool.parameters.properties.limit.maximum, 250);
+      assert.equal(tool.parameters.properties.cursor.type, 'string');
 
       process.env.LINEAR_API_KEY = 'lin_fake_scoped_a';
       await tool.execute('document-auth-a', { action: 'list' });
@@ -294,6 +380,8 @@ async function testRegistrationAuthAndRouterCompatibility() {
 }
 
 await testFetchDocumentsPaginatesAndFilters();
+await testDocumentListUsesBoundedDefault();
+await testDocumentListPaginationValidation();
 await testDocumentHandlers();
 await testProjectResolutionCacheIsScopedByCredential();
 await testRegistrationAuthAndRouterCompatibility();

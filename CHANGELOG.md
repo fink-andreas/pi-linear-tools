@@ -4,7 +4,7 @@
 
 ### New Features
 - Added the agent-callable `linear_document` tool with `list`, `view`, `create`, and `update` actions.
-- Added project and title filters with complete cursor pagination for document listing.
+- Added project and title filters with bounded cursor pagination for document listing (default 50, maximum 250 per call).
 - Added explicit project-or-issue parent validation and full-content replacement semantics for document updates.
 
 ### Tests
