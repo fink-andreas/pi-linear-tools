@@ -240,6 +240,7 @@ async function testDocumentContentIsClearlyUntrusted() {
 }
 
 async function testDocumentHandlers() {
+  const createInputs = [];
   let updateVariables = null;
   let detailsRequests = 0;
   const projectConnection = {
@@ -276,20 +277,20 @@ async function testDocumentHandlers() {
         };
       }
       if (query.includes('DocumentCreate')) {
-        assert.deepEqual(variables.input, {
-          title: 'Issue notes',
-          issueId: ISSUE_ID,
-          content: 'Initial notes',
-        });
+        createInputs.push(variables.input);
         return {
           data: {
             documentCreate: {
               success: true,
               document: documentPayload({
                 title: variables.input.title,
-                content: variables.input.content,
-                project: null,
-                issue: { id: ISSUE_ID, identifier: 'INB-11', title: 'Document tool' },
+                ...(variables.input.content !== undefined ? { content: variables.input.content } : {}),
+                project: variables.input.projectId === PROJECT_ID
+                  ? { id: PROJECT_ID, name: 'Inbox' }
+                  : null,
+                issue: variables.input.issueId === ISSUE_ID
+                  ? { id: ISSUE_ID, identifier: 'INB-11', title: 'Document tool' }
+                  : null,
               }),
             },
           },
@@ -333,12 +334,28 @@ async function testDocumentHandlers() {
   assert.equal(viewed.details.url, documentPayload().url);
   assert.equal(viewed.details.updatedAt, documentPayload().updatedAt);
 
+  const unparented = await executeDocumentCreate(client, { title: 'Standalone notes' });
+  assert.equal(unparented.details.documentId, 'doc-1');
+  assert.equal(unparented.details.project, null);
+  assert.equal(unparented.details.issue, null);
+
+  const projectCreated = await executeDocumentCreate(client, {
+    title: 'Project notes',
+    project: 'Inbox',
+  });
+  assert.equal(projectCreated.details.project.id, PROJECT_ID);
+
   const created = await executeDocumentCreate(client, {
     title: 'Issue notes',
     content: 'Initial notes',
     issue: 'INB-11',
   });
   assert.equal(created.details.documentId, 'doc-1');
+  assert.deepEqual(createInputs, [
+    { title: 'Standalone notes' },
+    { title: 'Project notes', projectId: PROJECT_ID },
+    { title: 'Issue notes', issueId: ISSUE_ID, content: 'Initial notes' },
+  ]);
 
   const updated = await executeDocumentUpdate(client, { document: 'doc-1', content: '' });
   assert.deepEqual(updateVariables.input, { content: '' });
@@ -353,11 +370,11 @@ async function testDocumentHandlers() {
 
   await assert.rejects(
     () => executeDocumentCreate(client, { title: 'Invalid', project: 'Inbox', issue: 'INB-11' }),
-    /exactly one document parent/
+    /at most one document parent/
   );
   await assert.rejects(
     () => executeDocumentUpdate(client, { document: 'doc-1', project: 'Inbox', issue: 'INB-11' }),
-    /exactly one document parent/
+    /at most one document parent/
   );
 }
 

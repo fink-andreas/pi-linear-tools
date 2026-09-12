@@ -2973,11 +2973,8 @@ export async function createDocument(client, input = {}) {
     if (input.projectId !== undefined) createInput.projectId = input.projectId;
     if (input.issueId !== undefined) createInput.issueId = input.issueId;
 
-    if (!createInput.projectId && !createInput.issueId) {
-      throw new Error('Document create requires either projectId or issueId');
-    }
     if (createInput.projectId && createInput.issueId) {
-      throw new Error('Document create accepts exactly one parent: projectId or issueId');
+      throw new Error('Document create accepts at most one parent: projectId or issueId');
     }
 
     for (const field of ['content', 'icon', 'color']) {

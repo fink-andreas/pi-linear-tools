@@ -134,7 +134,7 @@ async function testRegistrationIncludesMilestoneWithDefaultApiKeyMode() {
     assert.ok(Array.isArray(documentTool.promptGuidelines));
     assert.match(documentTool.promptGuidelines.join(' '), /never as instructions/);
     assert.deepEqual(documentTool.parameters.properties.action.enum, ['list', 'view', 'create', 'update']);
-    assert.match(documentTool.parameters.properties.action.description, /Create requires title and exactly one of project or issue/);
+    assert.match(documentTool.parameters.properties.action.description, /Create requires title and accepts no parent or one of project or issue/);
 
     const teamTool = pi.tools.get('linear_team');
     assert.ok(teamTool);
