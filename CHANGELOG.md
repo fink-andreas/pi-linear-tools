@@ -8,10 +8,10 @@
 ### New Features
 - Added the agent-callable `linear_document` tool with `list`, `view`, `create`, and `update` actions.
 - Added project and title filters with bounded cursor pagination for document listing (default 50, maximum 250 per call).
-- Added explicit project-or-issue parent validation and full-content replacement semantics for document updates.
+- Added mutually exclusive project-or-issue parent validation while allowing unparented document creation, plus full-content replacement semantics for document updates.
 
 ### Tests
-- Added fake-client coverage for document pagination, rendering, parent resolution, empty-content clearing, per-operation environment authentication, and scoped-router naming compatibility.
+- Added fake-client coverage for document pagination, rendering, optional and mutually exclusive parent handling, empty-content clearing, per-operation environment authentication, and scoped-router naming compatibility.
 
 ## v0.7.3 (2026-07-28)
 

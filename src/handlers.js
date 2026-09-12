@@ -1643,15 +1643,12 @@ export async function executeDocumentView(client, params) {
   }, 'executeDocumentView');
 }
 
-async function resolveDocumentParent(client, params, { required }) {
+async function resolveDocumentParent(client, params) {
   const hasProject = params.project !== undefined;
   const hasIssue = params.issue !== undefined;
 
   if (hasProject && hasIssue) {
-    throw new Error('Provide exactly one document parent: project or issue');
-  }
-  if (required && !hasProject && !hasIssue) {
-    throw new Error('Missing required document parent: provide project or issue');
+    throw new Error('Provide at most one document parent: project or issue');
   }
 
   if (hasProject) {
@@ -1670,7 +1667,7 @@ async function resolveDocumentParent(client, params, { required }) {
 export async function executeDocumentCreate(client, params) {
   return withHandlerErrorHandling(async () => {
     const title = ensureNonEmpty(params.title, 'title');
-    const resolvedParent = await resolveDocumentParent(client, params, { required: true });
+    const resolvedParent = await resolveDocumentParent(client, params);
     const document = await createDocument(client, {
       title,
       content: params.content,
@@ -1695,7 +1692,7 @@ export async function executeDocumentCreate(client, params) {
 export async function executeDocumentUpdate(client, params) {
   return withHandlerErrorHandling(async () => {
     const documentRef = ensureNonEmpty(params.document, 'document');
-    const resolvedParent = await resolveDocumentParent(client, params, { required: false });
+    const resolvedParent = await resolveDocumentParent(client, params);
     const patch = {
       title: params.title,
       content: params.content,
