@@ -2998,6 +2998,23 @@ export async function createDocument(client, input = {}) {
   }, 'createDocument');
 }
 
+async function assertExpectedDocumentUpdatedAt(client, documentRef, expectedUpdatedAt) {
+  const expected = String(expectedUpdatedAt ?? '').trim();
+  if (!expected) {
+    throw new Error('expectedUpdatedAt must be a non-empty timestamp');
+  }
+
+  // DocumentUpdateInput has no expectedUpdatedAt condition in Linear's schema.
+  // Read immediately before the mutation as a best-effort optimistic guard.
+  const currentDocument = await fetchDocumentDetails(client, documentRef);
+  const current = String(currentDocument.updatedAt ?? '').trim();
+  if (current !== expected) {
+    throw new Error(
+      `Document update conflict for ${documentRef}: expectedUpdatedAt "${expected}" does not match current updatedAt "${current || 'unavailable'}". The document changed after it was read; re-read it and retry with the latest updatedAt.`
+    );
+  }
+}
+
 export async function updateDocument(client, documentRef, patch = {}) {
   return withLinearErrorHandling(async () => {
     const id = String(documentRef || '').trim();
@@ -3018,6 +3035,10 @@ export async function updateDocument(client, documentRef, patch = {}) {
 
     if (Object.keys(updateInput).length === 0) {
       throw new Error('No update fields provided');
+    }
+
+    if (patch.expectedUpdatedAt !== undefined) {
+      await assertExpectedDocumentUpdatedAt(client, id, patch.expectedUpdatedAt);
     }
 
     const payload = await executeGraphQL(client, DOCUMENT_UPDATE_MUTATION, {
