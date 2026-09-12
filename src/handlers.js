@@ -1699,6 +1699,7 @@ export async function executeDocumentUpdate(client, params) {
     const patch = {
       title: params.title,
       content: params.content,
+      expectedUpdatedAt: params.expectedUpdatedAt,
     };
     if (resolvedParent.projectId !== undefined) {
       patch.projectId = resolvedParent.projectId;

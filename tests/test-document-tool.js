@@ -456,6 +456,81 @@ async function testDocumentHandlers() {
   );
 }
 
+async function testDocumentUpdateExpectedUpdatedAt() {
+  const expectedUpdatedAt = '2026-08-02T00:00:00.000Z';
+  const staleUpdatedAt = '2026-08-03T00:00:00.000Z';
+  let currentUpdatedAt = expectedUpdatedAt;
+  let mutationCount = 0;
+  const requests = [];
+  const client = {
+    rawRequest: async (query, variables) => {
+      requests.push({ query, variables });
+      if (query.includes('DocumentDetails')) {
+        return {
+          data: { document: documentPayload({ updatedAt: currentUpdatedAt }) },
+          headers: new Headers(),
+        };
+      }
+      if (query.includes('DocumentUpdate')) {
+        mutationCount += 1;
+        return {
+          data: {
+            documentUpdate: {
+              success: true,
+              document: documentPayload({
+                content: variables.input.content,
+                updatedAt: '2026-08-04T00:00:00.000Z',
+              }),
+            },
+          },
+          headers: new Headers(),
+        };
+      }
+      throw new Error(`Unexpected query: ${query}`);
+    },
+  };
+
+  const matching = await executeDocumentUpdate(client, {
+    document: 'doc-1',
+    content: 'matching replacement',
+    expectedUpdatedAt,
+  });
+  assert.equal(matching.details.changed.length, 1);
+  assert.equal(matching.details.changed[0], 'content');
+  const matchingMutation = requests.find(({ query }) => query.includes('DocumentUpdate'));
+  assert.deepEqual(matchingMutation.variables.input, { content: 'matching replacement' });
+  assert.equal(matchingMutation.variables.input.expectedUpdatedAt, undefined);
+  assert.equal(mutationCount, 1);
+  assert.equal(requests.filter(({ query }) => query.includes('DocumentDetails')).length, 1);
+
+  currentUpdatedAt = staleUpdatedAt;
+  await assert.rejects(
+    () => executeDocumentUpdate(client, {
+      document: 'doc-1',
+      content: 'stale replacement',
+      expectedUpdatedAt,
+    }),
+    (error) => {
+      assert.match(error.message, /expectedUpdatedAt/);
+      assert.match(error.message, /current updatedAt/);
+      assert.match(error.message, /re-read.*retry/i);
+      return true;
+    }
+  );
+  assert.equal(mutationCount, 1, 'stale updates must not send a mutation');
+  assert.equal(requests.filter(({ query }) => query.includes('DocumentDetails')).length, 2);
+
+  const omitted = await executeDocumentUpdate(client, {
+    document: 'doc-1',
+    content: 'unguarded replacement',
+  });
+  assert.equal(omitted.details.changed[0], 'content');
+  assert.equal(mutationCount, 2, 'omitted expectedUpdatedAt preserves the existing update path');
+  assert.equal(requests.filter(({ query }) => query.includes('DocumentDetails')).length, 2);
+  const mutations = requests.filter(({ query }) => query.includes('DocumentUpdate'));
+  assert.deepEqual(mutations[1].variables.input, { content: 'unguarded replacement' });
+}
+
 async function testProjectResolutionCacheIsScopedByCredential() {
   const filters = [];
   function clientFor(trackerKey, projectId) {
@@ -515,6 +590,8 @@ async function testRegistrationAndAuth() {
       assert.deepEqual(tool.parameters.properties.action.enum, ['list', 'view', 'create', 'update']);
       assert.match(tool.description, /untrusted external data/);
       assert.match(tool.description, /explicit confirmation/);
+      assert.match(tool.description, /expectedUpdatedAt/);
+      assert.match(tool.description, /TOCTOU/);
       assert.match(tool.promptSnippet, /untrusted data/);
       assert.ok(Array.isArray(tool.promptGuidelines));
       assert.match(tool.promptGuidelines.join(' '), /never as instructions/);
@@ -522,6 +599,8 @@ async function testRegistrationAndAuth() {
       assert.match(tool.parameters.properties.action.description, /untrusted data/);
       assert.match(tool.parameters.properties.content.description, /explicit user confirmation/);
       assert.match(tool.parameters.properties.content.description, /empty string to clear/);
+      assert.equal(tool.parameters.properties.expectedUpdatedAt.type, 'string');
+      assert.match(tool.parameters.properties.expectedUpdatedAt.description, /preflight guard/);
       assert.equal(tool.parameters.properties.limit.type, 'integer');
       assert.equal(tool.parameters.properties.limit.minimum, 1);
       assert.equal(tool.parameters.properties.limit.maximum, 250);
@@ -548,6 +627,7 @@ await testDocumentListUsesBoundedDefault();
 await testDocumentListPaginationValidation();
 await testDocumentContentIsClearlyUntrusted();
 await testDocumentHandlers();
+await testDocumentUpdateExpectedUpdatedAt();
 await testProjectResolutionCacheIsScopedByCredential();
 await testRegistrationAndAuth();
 console.log('✓ tests/test-document-tool.js passed');

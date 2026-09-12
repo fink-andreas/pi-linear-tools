@@ -45,6 +45,8 @@ Excluded:
 - Linear document titles, metadata, and Markdown are returned as labeled, delimited untrusted external data, not agent instructions; consequential actions based on document text require explicit user confirmation
 - document create requires exactly one project or issue parent; update accepts at most one parent
 - document update fields use replacement semantics: omitted fields are preserved and `content: ""` clears content
+- document replacement updates accept optional `expectedUpdatedAt` from a prior view; a guarded preflight read rejects stale timestamps before mutation with re-read/retry guidance
+- because Linear's `DocumentUpdateInput` has no atomic expected-timestamp condition, a small read/replace TOCTOU race remains
 - default team resolution order for issue creation:
   1. explicit `team` parameter
   2. project-level configured team
