@@ -46,6 +46,11 @@ import {
   fetchIssueLabels,
   createIssueLabel,
   fetchProjectLabels,
+  fetchDocuments,
+  fetchDocumentDetails,
+  createDocument,
+  updateDocument,
+  resolveIssue,
   resolveLabelIds,
   addIssueLinks,
   withHandlerErrorHandling,
@@ -1466,6 +1471,169 @@ export async function executeProjectUpdateUnarchive(client, params) {
       }
     );
   }, 'executeProjectUpdateUnarchive');
+}
+
+// ===== DOCUMENT HANDLERS =====
+
+export async function executeDocumentList(client, params) {
+  return withHandlerErrorHandling(async () => {
+    let project = null;
+    if (params.projectId !== undefined) {
+      const projectRef = ensureNonEmpty(params.projectId, 'projectId');
+      project = await resolveProjectRef(client, projectRef);
+    }
+
+    const { documents, pageCount } = await fetchDocuments(client, {
+      query: params.query,
+      projectId: project?.id,
+    });
+
+    if (documents.length === 0) {
+      const suffix = project ? ` in project "${project.name}"` : '';
+      return toTextResult(`No documents found${suffix}`, {
+        documentCount: 0,
+        pageCount,
+        projectId: project?.id || null,
+        query: params.query ?? null,
+      });
+    }
+
+    const scope = project ? ` in project "${project.name}"` : '';
+    const lines = [`## Linear documents${scope} (${documents.length})`, ''];
+    for (const document of documents) {
+      const parent = document.project
+        ? `project: ${document.project.name}`
+        : (document.issue ? `issue: ${document.issue.identifier}` : 'no parent');
+      lines.push(`- **${document.title || 'Untitled'}** \`${document.id}\` (${parent})`);
+      if (document.updatedAt) lines.push(`  updated: ${document.updatedAt}`);
+      if (document.url) lines.push(`  ${document.url}`);
+    }
+
+    return toTextResult(lines.join('\n'), {
+      documentCount: documents.length,
+      pageCount,
+      projectId: project?.id || null,
+      projectName: project?.name || null,
+      query: params.query ?? null,
+      documents: documents.map((document) => ({
+        id: document.id,
+        title: document.title,
+        url: document.url,
+        updatedAt: document.updatedAt,
+        project: document.project,
+        issue: document.issue,
+      })),
+    });
+  }, 'executeDocumentList');
+}
+
+export async function executeDocumentView(client, params) {
+  return withHandlerErrorHandling(async () => {
+    const documentRef = ensureNonEmpty(params.document, 'document');
+    const document = await fetchDocumentDetails(client, documentRef);
+    const lines = [
+      `# ${document.title || 'Untitled'}`,
+      '',
+      `**Document ID:** \`${document.id}\``,
+      `**URL:** ${document.url || 'Unavailable'}`,
+      `**Updated:** ${document.updatedAt || 'Unknown'}`,
+    ];
+
+    if (document.project) lines.push(`**Project:** ${document.project.name} (\`${document.project.id}\`)`);
+    if (document.issue) lines.push(`**Issue:** ${document.issue.identifier} — ${document.issue.title} (\`${document.issue.id}\`)`);
+    lines.push('', document.content);
+
+    return toTextResult(lines.join('\n'), {
+      documentId: document.id,
+      title: document.title,
+      content: document.content,
+      url: document.url,
+      updatedAt: document.updatedAt,
+      project: document.project,
+      issue: document.issue,
+    });
+  }, 'executeDocumentView');
+}
+
+async function resolveDocumentParent(client, params, { required }) {
+  const hasProject = params.project !== undefined;
+  const hasIssue = params.issue !== undefined;
+
+  if (hasProject && hasIssue) {
+    throw new Error('Provide exactly one document parent: project or issue');
+  }
+  if (required && !hasProject && !hasIssue) {
+    throw new Error('Missing required document parent: provide project or issue');
+  }
+
+  if (hasProject) {
+    const projectRef = ensureNonEmpty(params.project, 'project');
+    const project = await resolveProjectRef(client, projectRef);
+    return { projectId: project.id };
+  }
+  if (hasIssue) {
+    const issueRef = ensureNonEmpty(params.issue, 'issue');
+    const issue = await resolveIssue(client, issueRef);
+    return { issueId: issue.id };
+  }
+  return {};
+}
+
+export async function executeDocumentCreate(client, params) {
+  return withHandlerErrorHandling(async () => {
+    const title = ensureNonEmpty(params.title, 'title');
+    const resolvedParent = await resolveDocumentParent(client, params, { required: true });
+    const document = await createDocument(client, {
+      title,
+      content: params.content,
+      projectId: resolvedParent.projectId,
+      issueId: resolvedParent.issueId,
+    });
+
+    return toTextResult(
+      `Created document **${document.title || 'Untitled'}** \`${document.id}\`\n${document.url || ''}`.trimEnd(),
+      {
+        documentId: document.id,
+        title: document.title,
+        url: document.url,
+        updatedAt: document.updatedAt,
+        project: document.project,
+        issue: document.issue,
+      }
+    );
+  }, 'executeDocumentCreate');
+}
+
+export async function executeDocumentUpdate(client, params) {
+  return withHandlerErrorHandling(async () => {
+    const documentRef = ensureNonEmpty(params.document, 'document');
+    const resolvedParent = await resolveDocumentParent(client, params, { required: false });
+    const patch = {
+      title: params.title,
+      content: params.content,
+    };
+    if (resolvedParent.projectId !== undefined) {
+      patch.projectId = resolvedParent.projectId;
+      patch.issueId = null;
+    } else if (resolvedParent.issueId !== undefined) {
+      patch.issueId = resolvedParent.issueId;
+      patch.projectId = null;
+    }
+    const result = await updateDocument(client, documentRef, patch);
+
+    return toTextResult(
+      `Updated document **${result.document.title || 'Untitled'}** (${result.changed.join(', ')} replaced)\n${result.document.url || ''}`.trimEnd(),
+      {
+        documentId: result.document.id,
+        title: result.document.title,
+        changed: result.changed,
+        url: result.document.url,
+        updatedAt: result.document.updatedAt,
+        project: result.document.project,
+        issue: result.document.issue,
+      }
+    );
+  }, 'executeDocumentUpdate');
 }
 
 // ===== TEAM HANDLERS =====

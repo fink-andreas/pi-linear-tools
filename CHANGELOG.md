@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### New Features
+- Added the agent-callable `linear_document` tool with `list`, `view`, `create`, and `update` actions.
+- Added project and title filters with complete cursor pagination for document listing.
+- Added explicit project-or-issue parent validation and full-content replacement semantics for document updates.
+
+### Tests
+- Added fake-client coverage for document pagination, rendering, parent resolution, empty-content clearing, per-operation environment authentication, and scoped-router naming compatibility.
+
 ## v0.7.3 (2026-07-28)
 
 Patch release that fixes Linear issue-relation updates for OAuth users.

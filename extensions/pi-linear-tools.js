@@ -86,6 +86,10 @@ import {
   executeProjectUpdateArchive,
   executeProjectUpdateUnarchive,
   executeProjectLabelList,
+  executeDocumentList,
+  executeDocumentView,
+  executeDocumentCreate,
+  executeDocumentUpdate,
   executeTeamList,
   executeMilestoneList,
   executeMilestoneView,
@@ -1151,6 +1155,81 @@ async function registerLinearTools(pi) {
   });
 
   pi.registerTool({
+    name: 'linear_document',
+    label: 'Linear Document',
+    description: 'List, read, create, and update Linear documents. Update fields replace their current values; omitted fields are preserved. This tool does not merge content or provide concurrency control.',
+    promptSnippet: 'Interact with Linear documents (list, view, create, update)',
+    parameters: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['list', 'view', 'create', 'update'],
+          description: 'Action to perform. Create requires title and exactly one of project or issue; update requires document and at least one replacement field.',
+        },
+        document: {
+          type: 'string',
+          description: 'Document ID or slug (for view and update)',
+        },
+        query: {
+          type: 'string',
+          description: 'Case-insensitive title filter (for list)',
+        },
+        projectId: {
+          type: 'string',
+          description: 'Project name or ID filter (for list)',
+        },
+        title: {
+          type: 'string',
+          description: 'Document title (required for create; replaces the title on update)',
+        },
+        content: {
+          type: 'string',
+          description: 'Markdown content. On update, replaces the full document content; omit to preserve it, or pass an empty string to clear it.',
+        },
+        project: {
+          type: 'string',
+          description: 'Project name or ID parent (for create/update). Create requires exactly one of project or issue; update may provide at most one.',
+        },
+        issue: {
+          type: 'string',
+          description: 'Issue key (ABC-123) or Linear issue ID parent (for create/update). Create requires exactly one of project or issue; update may provide at most one.',
+        },
+      },
+      required: ['action'],
+      additionalProperties: false,
+    },
+    renderResult: renderMarkdownResult,
+    async execute(_toolCallId, params) {
+      return executeToolSafely('Linear document operation failed', async () => {
+        const { isRateLimited, resetAt } = checkAndClearRateLimit();
+        if (isRateLimited) {
+          return buildRateLimitToolResult({ requestsResetAt: resetAt.getTime(), type: 'Ratelimited' }, { cached: true });
+        }
+
+        const settings = await loadSettings();
+        const rateLimitDebug = settings.rateLimitDebug || false;
+        const client = await createAuthenticatedClient();
+
+        return await withRequestUsageLogging(client, 'linear_document', params.action, async () => {
+          switch (params.action) {
+            case 'list':
+              return await executeDocumentList(client, params);
+            case 'view':
+              return await executeDocumentView(client, params);
+            case 'create':
+              return await executeDocumentCreate(client, params);
+            case 'update':
+              return await executeDocumentUpdate(client, params);
+            default:
+              throw new Error(`Unknown action: ${params.action}`);
+          }
+        }, rateLimitDebug);
+      });
+    },
+  });
+
+  pi.registerTool({
     name: 'linear_team',
     label: 'Linear Team',
     description: 'Interact with Linear teams.',
@@ -1406,6 +1485,7 @@ export default async function piLinearToolsExtension(pi) {
         '  linear_issue (list/view/images/download/activity/create/update/comment/start/delete)',
         '  linear_project (list/view/create/update/delete/archive/unarchive)',
         '  linear_project_update (list/view/create/update/archive/unarchive)',
+        '  linear_document (list/view/create/update)',
         '  linear_team (list)',
       ];
 

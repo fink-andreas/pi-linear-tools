@@ -6,7 +6,7 @@
 
 Included:
 - extension configuration command (`/linear-tools-config`)
-- issue/project/milestone tools powered by `@linear/sdk`
+- issue/project/document/milestone tools powered by `@linear/sdk`
 - issue label list/create and project label list actions
 - `labels` and `links` parameters on issue create/update
 - issue start flow with optional git branch creation/switch
@@ -22,7 +22,7 @@ Excluded:
 ## Core modules
 
 - `src/linear-client.js`: Linear SDK client factory
-- `src/linear.js`: issue/project/milestone/label operations and formatting helpers
+- `src/linear.js`: issue/project/document/milestone/label operations and formatting helpers
 - `src/settings.js`: settings defaults/validation/load/save
 - `src/logger.js`: structured logging
 - `extensions/pi-linear-tools.js`: command and tool registration
@@ -41,6 +41,9 @@ Excluded:
 - caches are per running process and auth context; `/reload` / restart resets in-memory cache state
 - project references may be project name or project ID
 - issue references may be identifier (`ABC-123`) or Linear issue ID
+- `linear_document` lists all result pages and can filter by title query and project
+- document create requires exactly one project or issue parent; update accepts at most one parent
+- document update fields use replacement semantics: omitted fields are preserved and `content: ""` clears content
 - default team resolution order for issue creation:
   1. explicit `team` parameter
   2. project-level configured team

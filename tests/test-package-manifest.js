@@ -35,6 +35,7 @@ async function main() {
   assert.match(extensionSource, /name: 'linear_issue'/, 'extension must register linear_issue tool');
   assert.match(extensionSource, /name: 'linear_project'/, 'extension must register linear_project tool');
   assert.match(extensionSource, /name: 'linear_project_update'/, 'extension must register linear_project_update tool');
+  assert.match(extensionSource, /name: 'linear_document'/, 'extension must register linear_document tool');
   assert.match(extensionSource, /name: 'linear_team'/, 'extension must register linear_team tool');
   assert.match(extensionSource, /name: 'linear_milestone'/, 'extension must register linear_milestone tool');
 

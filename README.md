@@ -8,7 +8,7 @@
   </picture>
 </p>
 
-`pi-linear-tools` is a token eficcient Pi extension for the [Pi coding agent](https://github.com/badlogic/pi-mono) that lets you manage [Linear](https://linear.app/about) issues, projects, and milestones via LLM tool calls and CLI commands.
+`pi-linear-tools` is a token eficcient Pi extension for the [Pi coding agent](https://github.com/badlogic/pi-mono) that lets you manage [Linear](https://linear.app/about) issues, projects, documents, and milestones via LLM tool calls and CLI commands.
 
 ## Install
 
@@ -81,6 +81,13 @@ Actions: `list`, `view`, `create`, `update`, `delete`, `archive`, `unarchive`
 
 ### `linear_project_update`
 Actions: `list`, `view`, `create`, `update`, `archive`, `unarchive`
+
+### `linear_document`
+Actions: `list`, `view`, `create`, `update`
+
+`list` optionally filters by `query` (document title) and `projectId` (a project name or ID), and follows Linear pagination until every matching document has been returned. `view` returns the document's Markdown content, ID, URL, and `updatedAt` timestamp.
+
+Create a document with exactly one parent: `project` (name or ID) or `issue` (issue key or ID). An update may change the title, replace the complete Markdown content, or reassign the document to one project or issue. Omitted update fields are preserved. Pass `content: ""` to explicitly clear content. Updates are replacements, not automatic merges, atomic compare-and-swap operations, or two-way synchronization.
 
 ### `linear_milestone`
 Actions: `list`, `view`, `create`, `update`, `delete`
