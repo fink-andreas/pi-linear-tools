@@ -1,17 +1,44 @@
 # Changelog
 
-## Unreleased
+## v0.8.1 (2026-09-12)
 
-### Security
-- Treat Linear document titles, metadata, and Markdown returned by `linear_document` as delimited untrusted external data; document text is not agent instructions or user confirmation.
+Release adding direct Linear document management through the agent tool.
 
 ### New Features
-- Added the agent-callable `linear_document` tool with `list`, `view`, `create`, and `update` actions.
-- Added project and title filters with bounded cursor pagination for document listing (default 50, maximum 250 per call).
-- Added mutually exclusive project-or-issue parent validation while allowing unparented document creation, plus full-content replacement semantics for document updates.
+- **Manage Linear documents**: Added the `linear_document` tool with `list`, `view`, `create`, and `update` actions.
+- **Filter and paginate document lists**: Added title and project filters with bounded cursor pagination (default 50, hard maximum 250 per call).
+- **Validate document parents**: Document creation supports unparented documents or exactly one project/issue parent; updates can reassign between parent types.
+- **Protect replacement updates**: Omitted fields are preserved, `content: ""` clears content explicitly, and `expectedUpdatedAt` guards against stale writes before replacement.
+
+### Security
+- **Treat document content as untrusted**: Titles, metadata, and Markdown returned by Linear are labeled and delimited as external data, not agent instructions or user confirmation.
 
 ### Tests
-- Added fake-client coverage for document pagination, rendering, optional and mutually exclusive parent handling, empty-content clearing, per-operation environment authentication, and scoped-router naming compatibility.
+- Added fake-client and production-contract coverage for document pagination, rendering, parent handling, content clearing, authentication precedence, cache isolation, and scoped-router naming compatibility.
+
+### Contributors
+- [@dgalarza](https://github.com/dgalarza) (Damian Galarza) — [#36](https://github.com/fink-andreas/pi-linear-tools/pull/36)
+
+## v0.8.0 (2026-08-21)
+
+Minor release adding labels, links, and issue search, plus reliability improvements to tool execution and rendering.
+
+### New Features
+- **Manage issue labels and links**: `linear_issue` can list and create labels, and issue create/update operations can set labels and append link attachments. The CLI exposes matching commands and `--labels` / `--link` flags.
+- **List project labels**: `linear_project(action="labels")` lists project labels, optionally filtered by name.
+- **Search issue text**: `linear_issue(action="list")` accepts `query` to search issue titles and descriptions.
+
+### Bug Fixes
+- **Resolve the default project from Git origin**: Project defaults now use the repository origin name, which works reliably in worktrees and nested directories.
+- **Honor Ctrl+O tool-result expansion**: Long Linear tool output now collapses to a preview and expands correctly.
+- **Surface failed Linear operations as errors**: Rejected API operations no longer appear as successful empty results; their error messages now consistently include the operation label.
+- **Resolve labels for team issues and support link-only updates**: Label resolution handles workspace/team labels, comma-separated labels work, and link-only updates are accepted.
+
+### Tests
+- Added coverage for labels and links, issue text queries, collapsed rendering, default-project resolution, and surfaced error handling.
+
+### Contributors
+- [@elecnix](https://github.com/elecnix) (Nicolas Marchildon) — [#24](https://github.com/fink-andreas/pi-linear-tools/pull/24), [#29](https://github.com/fink-andreas/pi-linear-tools/pull/29), [#32](https://github.com/fink-andreas/pi-linear-tools/pull/32), [#33](https://github.com/fink-andreas/pi-linear-tools/pull/33), [#35](https://github.com/fink-andreas/pi-linear-tools/pull/35)
 
 ## v0.7.3 (2026-07-28)
 
