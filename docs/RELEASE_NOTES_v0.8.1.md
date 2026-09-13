@@ -26,6 +26,10 @@ Document listing returns 50 documents by default and permits at most 250 per cal
 
 Update fields are replacement-oriented: omitted fields are preserved, while `content: ""` explicitly clears content. Passing `expectedUpdatedAt` performs a guarded preflight check and rejects stale writes with retry guidance. Linear does not provide an atomic expected-timestamp mutation condition, so a small read/replace race remains.
 
+## Error handling
+
+Non-rate-limit Linear tool failures now include a consistent operation prefix while preserving the original cause and error type for diagnostics.
+
 ## Security and safety
 
 Document titles, metadata, and Markdown are labeled and delimited as untrusted external data. They are not agent instructions or user confirmation. Consequential actions derived from document text require explicit user confirmation.

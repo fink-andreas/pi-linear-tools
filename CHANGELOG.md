@@ -10,6 +10,9 @@ Release adding direct Linear document management through the agent tool.
 - **Validate document parents**: Document creation supports unparented documents or exactly one project/issue parent; updates can reassign between parent types.
 - **Protect replacement updates**: Omitted fields are preserved, `content: ""` clears content explicitly, and `expectedUpdatedAt` guards against stale writes before replacement.
 
+### Bug Fixes
+- **Normalize surfaced tool errors**: Non-rate-limit failures now include a consistent operation prefix while preserving the original cause and error type.
+
 ### Security
 - **Treat document content as untrusted**: Titles, metadata, and Markdown returned by Linear are labeled and delimited as external data, not agent instructions or user confirmation.
 
