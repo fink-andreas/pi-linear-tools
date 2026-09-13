@@ -345,5 +345,5 @@ Then in pi:
 
 If install/remove sources changed, restart pi before validating.
 
-Release checklist: see `RELEASE.md`.
-Post-release verification checklist: see `POST_RELEASE_CHECKLIST.md`.
+Release checklist: see [`docs/RELEASE.md`](docs/RELEASE.md).
+Post-release verification checklist: see [`docs/POST_RELEASE_CHECKLIST.md`](docs/POST_RELEASE_CHECKLIST.md).
