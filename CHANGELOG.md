@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.8.2 (2026-09-13)
+
+Corrective patch aligning the npm artifact with the GitHub release contents.
+
+### Bug Fixes
+- **Ship normalized error handling in the npm package**: The published package now includes consistent operation prefixes for non-rate-limit failures while preserving the original cause and error type.
+
+### Contributors
+- [@dgalarza](https://github.com/dgalarza) (Damian Galarza) — document tooling carried forward from [#36](https://github.com/fink-andreas/pi-linear-tools/pull/36)
+
 ## v0.8.1 (2026-09-12)
 
 Release adding direct Linear document management through the agent tool.
