@@ -8,7 +8,7 @@
   </picture>
 </p>
 
-`pi-linear-tools` is a token eficcient Pi extension for the [Pi coding agent](https://github.com/badlogic/pi-mono) that lets you manage [Linear](https://linear.app/about) issues, projects, documents, and milestones via LLM tool calls and CLI commands.
+`pi-linear-tools` is a token eficcient Pi extension for the [Pi coding agent](https://github.com/badlogic/pi-mono) that lets you manage [Linear](https://linear.app/about) issues, projects, documents, releases, and milestones via LLM tool calls and CLI commands.
 
 ## Install
 
@@ -347,3 +347,59 @@ If install/remove sources changed, restart pi before validating.
 
 Release checklist: see [`docs/RELEASE.md`](docs/RELEASE.md).
 Post-release verification checklist: see [`docs/POST_RELEASE_CHECKLIST.md`](docs/POST_RELEASE_CHECKLIST.md).
+
+### Linear Releases (ALPHA)
+
+`linear_release` and `pi-linear-tools release` manage pipeline releases, distinct from
+project milestones. Actions: `list`, `view`, `create`, `update`, `archive`, `unarchive`,
+`delete`, `pipelines`, `stages`, `issues`, `add-issue`, `remove-issue`. References are explicit release/pipeline/stage IDs;
+no default project or milestone name resolution applies.
+
+```bash
+pi-linear-tools release pipelines
+pi-linear-tools release stages
+pi-linear-tools release list --limit 20 --include-archived
+pi-linear-tools release list --after <end-cursor>
+pi-linear-tools release view <release-id>
+pi-linear-tools release create --name "v1.0" --pipeline-id <pipeline-id> --version 1.0
+pi-linear-tools release update <release-id> --stage-id <stage-id> --target-date 2026-12-31
+pi-linear-tools release archive <release-id>
+pi-linear-tools release unarchive <release-id>
+pi-linear-tools release delete <release-id>
+```
+
+Create requires `name` and `pipelineId`; omitting `stageId` uses the API's first
+started stage. Create/update accept `description`, `version`, `commitSha`, `stageId`,
+`pipelineId`, `startDate`, and `targetDate`. Dates use `YYYY-MM-DD`. The extension
+accepts explicit `null` to clear nullable fields on update; CLI flags supply strings.
+Status transitions use `stageId`, not milestone status values.
+
+Lists return one page (default 50, limit 1–100), with `pageInfo.hasNextPage` and
+`pageInfo.endCursor` in tool details. Pass `after` for the next page. Pipelines and
+stages are workspace-wide discovery lists; stage results include their pipeline.
+The schema has no filter argument on the root releases query. `includeArchived`
+defaults to false. Mutations use GraphQL success payloads and report unsuccessful
+operations as errors.
+
+These operations follow `docs/linear-schema.graphql`, where Releases are marked
+ALPHA. Workspace feature availability and credential permissions are enforced by
+Linear; API errors propagate without falling back to project milestones. Pipeline
+and stage administration and deployment/access-key automation
+are outside this tool's scope.
+
+Release issue membership:
+
+```bash
+pi-linear-tools release issues <release-id> --limit 20
+pi-linear-tools release issues <release-id> --after <end-cursor>
+pi-linear-tools release add-issue <release-id> --issue ENG-123
+pi-linear-tools release remove-issue <release-id> --issue ENG-123
+```
+
+The extension uses the same actions with `release` and `issue` parameters. Issue
+references accept identifiers or UUIDs. `issues` filters on release membership on
+the server, supports the same cursor options, and returns issue IDs, identifiers,
+titles, URLs, and workflow states. `includeArchived` includes archived issues.
+`add-issue` creates an issue-to-release association; `remove-issue` deletes only
+that association, preserving both the issue and release. Duplicate additions and
+missing memberships follow Linear's API behavior; errors are surfaced.

@@ -71,3 +71,14 @@ Excluded:
   }
 }
 ```
+
+## Releases
+
+- Extension: `linear_release`; CLI: `pi-linear-tools release`.
+- Pipeline resources, independent of project milestones and default projects.
+- List/view/create/update/archive/unarchive/delete releases; discover pipelines/stages.
+- Explicit IDs, cursor pagination, archived inclusion, nullable extension updates.
+- ALPHA API: workspace availability and authorization require live validation.
+- See README for fields, examples, and scope.
+
+- Release membership: `issues`, `add-issue`, `remove-issue`; server-filtered issue pagination and identifier/UUID references. Removal preserves the issue.

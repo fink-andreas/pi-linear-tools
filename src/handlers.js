@@ -8,6 +8,7 @@
 import path from 'path';
 import { mkdir, open, unlink } from 'node:fs/promises';
 import {
+  runReleaseOperation,
   prepareIssueStart,
   setIssueState,
   addIssueComment,
@@ -2039,4 +2040,25 @@ export async function executeMilestoneDelete(client, params) {
       success: result.success,
     }
   );
+}
+
+/** Shared release handler for extension and CLI. Does not resolve projects/milestones. */
+export async function executeRelease(client, params = {}) {
+  return withHandlerErrorHandling(async () => {
+    const result = await runReleaseOperation(client, params);
+    if (result.nodes) {
+      const lines = result.nodes.map(item => params.action === 'issues'
+        ? `- **${item.identifier}** ${item.title} (\`${item.id}\`)${item.state ? ` [${item.state.name}]` : ''}`
+        : `- **${item.name}** \`${item.id}\`${item.stage ? ` [${item.stage.name}]` : ''}${params.action === 'stages' ? ` — Pipeline: **${item.pipeline.name}** (\`${item.pipeline.id}\`)` : ''}`);
+      if (result.pageInfo?.hasNextPage) lines.push(`More results available; after: ${result.pageInfo.endCursor}`);
+      return toTextResult(lines.length ? lines.join('\n') : `No ${params.action === 'pipelines' ? 'release pipelines' : params.action === 'stages' ? 'release stages' : params.action === 'issues' ? 'issues in release' : 'releases'} found.`, { action: params.action, ...result });
+    }
+    if (params.action === 'add-issue' || params.action === 'remove-issue') {
+      return toTextResult(`${params.action === 'add-issue' ? 'Added' : 'Removed'} issue \`${result.issue}\` ${params.action === 'add-issue' ? 'to' : 'from'} release \`${result.releaseId}\``, { action: params.action, ...result });
+    }
+    const text = result.name
+      ? `**${result.name}** (\`${result.id}\`)${result.stage ? ` [${result.stage.name}]` : ''}\n${result.url || ''}\nPipeline: ${result.pipeline?.name || ''} (${result.pipeline?.id || ''})\nVersion: ${result.version ?? 'None'}\nStart: ${result.startDate ?? 'None'}; target: ${result.targetDate ?? 'None'}\n${result.description || ''}`
+      : `Release ${params.action} succeeded: \`${result.releaseId}\``;
+    return toTextResult(text, { action: params.action, ...result });
+  }, 'Release handler');
 }

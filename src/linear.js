@@ -4776,3 +4776,98 @@ export function formatIssueActivityAsMarkdown(issueData, options = {}) {
 
   return lines.join('\n');
 }
+
+// Releases are pipeline resources, independent of project milestones.
+const RELEASE_FIELDS = `id name description version commitSha startDate targetDate
+  startedAt completedAt canceledAt archivedAt url
+  pipeline { id name } stage { id name type }`;
+const RELEASE_INPUT_FIELDS = ['name', 'description', 'version', 'commitSha', 'pipelineId', 'stageId', 'startDate', 'targetDate'];
+
+/** Execute release queries/mutations with plain GraphQL results (no lazy relations). */
+export async function runReleaseOperation(client, params = {}) {
+  return withHandlerErrorHandling(async () => {
+    const { action } = params;
+    if (!['list', 'pipelines', 'stages', 'view', 'create', 'update', 'archive', 'unarchive', 'delete', 'issues', 'add-issue', 'remove-issue'].includes(action)) throw new Error(`Unknown release action: ${action}`);
+    const lists = { list: ['releases', RELEASE_FIELDS], pipelines: ['releasePipelines', 'id name archivedAt'],
+      stages: ['releaseStages', 'id name type position archivedAt pipeline { id name }'] };
+    if (lists[action]) {
+      const first = params.limit ?? 50;
+      if (!Number.isInteger(first) || first < 1 || first > 100) throw new Error('limit must be an integer between 1 and 100');
+      const [field, fields] = lists[action];
+      const data = await executeGraphQL(client, `query ReleaseList($first: Int!, $after: String, $includeArchived: Boolean) {
+        ${field}(first: $first, after: $after, includeArchived: $includeArchived) {
+          nodes { ${fields} } pageInfo { hasNextPage endCursor }
+        }
+      }`, { first, after: params.after, includeArchived: params.includeArchived ?? false });
+      if (!data?.[field]) throw new Error(`Missing ${field} response`);
+      return data[field];
+    }
+    const requireString = (value, field) => {
+      if (typeof value !== 'string' || !value.trim()) throw new Error(`Missing required field: ${field}`);
+      return value.trim();
+    };
+    const id = action === 'create' ? undefined : requireString(params.release, 'release');
+    if (action === 'issues') {
+      const first = params.limit ?? 50;
+      if (!Number.isInteger(first) || first < 1 || first > 100) throw new Error('limit must be an integer between 1 and 100');
+      const data = await executeGraphQL(client, `query ReleaseIssues($first: Int!, $after: String, $includeArchived: Boolean, $filter: IssueFilter!) {
+        issues(first: $first, after: $after, includeArchived: $includeArchived, filter: $filter) {
+          nodes { id identifier title url state { id name type } }
+          pageInfo { hasNextPage endCursor }
+        }
+      }`, { first, after: params.after, includeArchived: params.includeArchived ?? false,
+        filter: { releases: { some: { id: { eq: id } } } } });
+      if (!data?.issues) throw new Error('Missing release issues response');
+      return { ...data.issues, releaseId: id };
+    }
+    if (action === 'add-issue' || action === 'remove-issue') {
+      const issueId = requireString(params.issue, 'issue');
+      if (action === 'add-issue') {
+        const data = await executeGraphQL(client, `mutation ReleaseAddIssue($input: IssueToReleaseCreateInput!) {
+          issueToReleaseCreate(input: $input) {
+            success issueToRelease { id issue { id identifier title } release { id name } }
+          }
+        }`, { input: { issueId, releaseId: id } });
+        if (!data?.issueToReleaseCreate?.success || !data.issueToReleaseCreate.issueToRelease) throw new Error('Failed to add issue to release');
+        return { success: true, releaseId: id, issue: issueId, membership: data.issueToReleaseCreate.issueToRelease };
+      }
+      const data = await executeGraphQL(client, `mutation ReleaseRemoveIssue($issueId: String!, $releaseId: String!) {
+        issueToReleaseDeleteByIssueAndRelease(issueId: $issueId, releaseId: $releaseId) { success }
+      }`, { issueId, releaseId: id });
+      if (!data?.issueToReleaseDeleteByIssueAndRelease?.success) throw new Error('Failed to remove issue from release');
+      return { success: true, releaseId: id, issue: issueId };
+    }
+    if (action === 'view') {
+      const data = await executeGraphQL(client, `query ReleaseView($id: String!) { release(id: $id) { ${RELEASE_FIELDS} } }`, { id });
+      if (!data?.release) throw new Error(`Release not found: ${id}`);
+      return data.release;
+    }
+    if (action === 'create' || action === 'update') {
+      const input = Object.fromEntries(RELEASE_INPUT_FIELDS.filter(key => params[key] !== undefined).map(key => [key, params[key]]));
+      if (action === 'create') {
+        input.name = requireString(input.name, 'name');
+        input.pipelineId = requireString(input.pipelineId, 'pipelineId');
+      }
+      for (const key of ['name', 'pipelineId', 'stageId']) {
+        if (input[key] !== undefined) input[key] = requireString(input[key], key);
+      }
+      if (action === 'update' && !Object.keys(input).length) throw new Error('No release updates provided');
+      const create = action === 'create';
+      const field = create ? 'releaseCreate' : 'releaseUpdate';
+      const data = await executeGraphQL(client, `mutation Release${create ? 'Create' : 'Update'}(${create ? '' : '$id: String!, '}$input: ${create ? 'ReleaseCreateInput' : 'ReleaseUpdateInput'}!) {
+        ${field}(${create ? '' : 'id: $id, '}input: $input) { success release { ${RELEASE_FIELDS} } }
+      }`, create ? { input } : { id, input });
+      if (!data?.[field]?.success || !data[field].release) throw new Error(`Failed to ${action} release`);
+      return data[field].release;
+    }
+    if (['archive', 'unarchive', 'delete'].includes(action)) {
+      const field = `release${action[0].toUpperCase()}${action.slice(1)}`;
+      const data = await executeGraphQL(client, `mutation Release${action[0].toUpperCase()}${action.slice(1)}($id: String!) {
+        ${field}(id: $id) { success ${action === 'delete' ? '' : `entity { ${RELEASE_FIELDS} }`} }
+      }`, { id });
+      if (!data?.[field]?.success) throw new Error(`Failed to ${action} release`);
+      return { releaseId: id, ...data[field] };
+    }
+    throw new Error(`Unknown release action: ${action}`);
+  }, 'Release operation');
+}

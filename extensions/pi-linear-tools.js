@@ -60,6 +60,7 @@ try {
 }
 
 import {
+  executeRelease,
   executeIssueList,
   executeIssueView,
   executeIssueImages,
@@ -1287,6 +1288,44 @@ async function registerLinearTools(pi) {
     },
   });
 
+  pi.registerTool({
+    name: 'linear_release',
+    label: 'Linear Release',
+    description: 'Manage Linear Releases (ALPHA), distinct from project milestones. Use pipelines/stages to discover IDs. Lists return one cursor page.',
+    promptSnippet: 'Manage pipeline releases: list, view, create, update, archive, unarchive, delete; discover pipelines and stages; list/add/remove release issues',
+    parameters: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['list', 'view', 'create', 'update', 'archive', 'unarchive', 'delete', 'pipelines', 'stages', 'issues', 'add-issue', 'remove-issue'] },
+        release: { type: 'string', description: 'Release ID for view/update/archive/unarchive/delete/issues/add-issue/remove-issue' },
+        issue: { type: 'string', description: 'Issue identifier (ENG-123) or UUID for add-issue/remove-issue' },
+        name: { type: 'string' },
+        pipelineId: { type: 'string', description: 'Required for create; explicit pipeline ID' },
+        stageId: { type: 'string', description: 'Stage ID; omit on create for API default' },
+        description: { type: ['string', 'null'] },
+        version: { type: ['string', 'null'] },
+        commitSha: { type: ['string', 'null'] },
+        startDate: { type: ['string', 'null'], description: 'YYYY-MM-DD; null clears on update' },
+        targetDate: { type: ['string', 'null'], description: 'YYYY-MM-DD; null clears on update' },
+        limit: { type: 'integer', minimum: 1, maximum: 100 },
+        after: { type: 'string' },
+        includeArchived: { type: 'boolean' },
+      },
+      required: ['action'], additionalProperties: false,
+    },
+    renderResult: renderMarkdownResult,
+    async execute(_toolCallId, params) {
+      return executeToolSafely('Linear release operation failed', async () => {
+        const { isRateLimited, resetAt } = checkAndClearRateLimit();
+        if (isRateLimited) return buildRateLimitToolResult({ requestsResetAt: resetAt.getTime(), type: 'Ratelimited' }, { viaCachedPreCheck: true });
+        const settings = await loadSettings();
+        const client = await createAuthenticatedClient();
+        return withRequestUsageLogging(client, 'linear_release', params.action,
+          () => executeRelease(client, params), settings.rateLimitDebug || false);
+      });
+    },
+  });
+
   if (await shouldExposeMilestoneTool()) {
     pi.registerTool({
       name: 'linear_milestone',
@@ -1509,6 +1548,7 @@ export default async function piLinearToolsExtension(pi) {
         '  linear_project_update (list/view/create/update/archive/unarchive)',
         '  linear_document (list/view/create/update)',
         '  linear_team (list)',
+        '  linear_release (list/view/create/update/archive/unarchive/delete/pipelines/stages/issues/add-issue/remove-issue)',
       ];
 
       if (showMilestoneTool) {

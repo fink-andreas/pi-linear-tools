@@ -16,6 +16,7 @@ import {
   getAccessToken,
 } from './auth/index.js';
 import {
+  executeRelease,
   executeIssueList,
   executeIssueView,
   executeIssueImages,
@@ -161,6 +162,7 @@ Commands:
   project-update <action> [options]  Manage project updates (Linear Updates tab entries)
   sync-doc [action] [options]   Sync local markdown into Linear fields
   team <action> [options]       Manage teams
+  release <action> [options]    Manage pipeline releases (ALPHA)
   milestone <action> [options]  Manage milestones
 
 Other commands:
@@ -1712,6 +1714,32 @@ async function handleMilestone(args) {
   }
 }
 
+async function handleRelease(args) {
+  const [action, ...rest] = args;
+  if (!action || action === '--help' || action === '-h' || rest.includes('--help')) {
+    console.log(`pi-linear-tools release <list|view|create|update|archive|unarchive|delete|pipelines|stages|issues|add-issue|remove-issue>
+  view/update/archive/unarchive/delete/issues <release-id>
+  add-issue/remove-issue <release-id> --issue ENG-123
+  create --name X --pipeline-id ID [--stage-id ID]
+  create/update: --name --description --version --commit-sha --pipeline-id --stage-id --start-date --target-date
+  list/pipelines/stages/issues: [--limit 1..100] [--after CURSOR] [--include-archived]
+  Releases are distinct from project milestones. Dates use YYYY-MM-DD.`);
+    return;
+  }
+  const params = { action };
+  if (['view', 'update', 'archive', 'unarchive', 'delete', 'issues', 'add-issue', 'remove-issue'].includes(action)) params.release = rest[0]?.startsWith('-') ? undefined : rest[0];
+  for (const [key, flag] of Object.entries({ issue: '--issue', name: '--name', description: '--description', version: '--version', commitSha: '--commit-sha', pipelineId: '--pipeline-id', stageId: '--stage-id', startDate: '--start-date', targetDate: '--target-date', after: '--after' })) {
+    const value = readFlag(rest, flag);
+    if (value !== undefined) params[key] = value;
+  }
+  const limit = readFlag(rest, '--limit');
+  if (limit !== undefined) params.limit = Number(limit);
+  params.includeArchived = rest.includes('--include-archived');
+  const client = await createAuthenticatedClient();
+  const result = await executeRelease(client, params);
+  console.log(result.content[0].text);
+}
+
 // ===== MAIN CLI ENTRY =====
 
 export async function runCli(argv = process.argv.slice(2)) {
@@ -1754,6 +1782,11 @@ export async function runCli(argv = process.argv.slice(2)) {
 
   if (command === 'team') {
     await handleTeam(rest);
+    return;
+  }
+
+  if (command === 'release') {
+    await handleRelease(rest);
     return;
   }
 

@@ -15,6 +15,7 @@ In `../pi-linear-tools/index.js`, these tools are registered:
 - `linear_issue`
 - `linear_project`
 - `linear_team`
+- `linear_release` (pipeline releases; distinct from milestones)
 - `linear_milestone` (conditional)
 
 Check whether each of these registrations includes:
@@ -31,6 +32,7 @@ Example intent:
 
 - `linear_issue` → one-line summary of issue operations
 - `linear_project` → one-line summary of project listing
+- `linear_release` → release CRUD, archive/unarchive, pipeline/stage discovery, issue membership
 - `linear_team` → one-line summary of team listing
 - `linear_milestone` → one-line summary of milestone operations
 
@@ -48,6 +50,7 @@ And equivalent snippets for:
 
 - `linear_project`
 - `linear_team`
+- `linear_release` (pipeline releases; distinct from milestones)
 - `linear_milestone`
 
 Keep snippets short because they are meant for the prompt summary, not full documentation.
